@@ -119,6 +119,7 @@ datasets = [
 ]
 
 for infile, varname, outfile in datasets:
-    infile_path=os.path.join(INPUT_DIR,infile)
-    outfile_path=os.path.join(OUTPUT_DIR,outfile)
-    conservative_coarsening(infile, varname, block_size=11, outfile=outfile_path)
+    infile_path = INPUT_DIR / infile
+    outfile_path = OUTPUT_DIR / outfile
+    conservative_coarsening(infile_path, varname, block_size=11, outfile=outfile_path)
+print("All datasets processed")
