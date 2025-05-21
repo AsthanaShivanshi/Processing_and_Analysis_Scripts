@@ -1,3 +1,5 @@
+import sys
+sys.path.append("Scripts/Functions")
 from Gamma_KS_Test import Gamma_KS_gridded
 import xarray as xr
 import numpy as np
@@ -13,7 +15,7 @@ season_months_map = {
 }
 months=season_months_map.get(season_name)
 
-ds2 = xr.open_dataset("../../data/processed/Bicubic/Train/targets_precip_masked_train.nc", chunks={"time": 100})
+ds2 = xr.open_dataset("Split_Data/Targets/train/rhiresd_targets_train.nc", chunks={"time": 100})
 
 RhiresD = ds2['RhiresD']
 

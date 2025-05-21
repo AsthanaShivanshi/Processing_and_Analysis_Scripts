@@ -105,7 +105,7 @@ def Gamma_KS_gridded(temp, data_path, alpha=0.05, block_size=20, season="Season"
     plt.title(f'Gamma KS Test: Wet Day Precipitation - {season}')
     plt.tight_layout()
 
-    plt.savefig(f"../../Outputs/plots/Gamma_KS_Test_training_set_{season}.png", dpi=300)
+    plt.savefig(f"../../Outputs/KS_Gamma/Gamma_KS_Test_training_set_{season}.png", dpi=300)
     plt.close()
 
     return KS_Stat, p_val_ks_stat
