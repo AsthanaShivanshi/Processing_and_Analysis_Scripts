@@ -10,3 +10,6 @@ Also make sure that all modulefiles written in TCL start with the string
 
 
 
+cdi  warning (cdfScanVarAttr): NetCDF: Variable not found - swiss_lv95_coordinates
+cdi  warning (cdfScanVarAttr): NetCDF: Variable not found - swiss_lv95_coordinates
+cdi  warning (cdfScanVarAttr): NetCDF: Variable not found - swiss_lv95_coordinates
