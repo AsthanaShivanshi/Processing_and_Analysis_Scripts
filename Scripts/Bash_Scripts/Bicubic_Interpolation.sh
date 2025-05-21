@@ -7,10 +7,9 @@
 #SBATCH --mem=32G
 #SBATCH --time=3-00:00:00
 
-# Load paths from ignored config
-source ../Variable_Config_Scripts/env_filepaths_bicubic.sh
 
 cd "$BASE_DIR"
+
 module load cdo
 
 cdo remapbic,"$GRID_DIR/RhiresD_wet_1971_2023.nc" "$FEATURE_DIR/rhiresd_wet_coarsened.nc" "$OUTPUT_DIR/bicubic_rhiresd.nc"
