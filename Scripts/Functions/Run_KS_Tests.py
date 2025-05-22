@@ -4,8 +4,8 @@ import numpy as np
 
 def run_ks_tests():
     # Load datasets
-    ds1 = xr.open_dataset("../../data/processed/Bicubic/Train/targets_tas_masked_train.nc", chunks={"time": 100})
-    ds2 = xr.open_dataset("../../data/processed/Bicubic/Train/targets_precip_masked_train.nc", chunks={"time": 100})
+    ds1 = xr.open_dataset("", chunks={"time": 100})
+    ds2 = xr.open_dataset("", chunks={"time": 100})
 
     TabsD = ds1['TabsD']
     RhiresD = ds2['RhiresD']

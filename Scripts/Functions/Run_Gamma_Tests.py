@@ -1,39 +1,46 @@
 import sys
-sys.path.append("Scripts/Functions")
-from Gamma_KS_Test import Gamma_KS_gridded
+import os
+from pathlib import Path
+
 import xarray as xr
 import numpy as np
-from dask.distributed import Client
-import sys
 
-season_name=sys.argv[1] #Season is passed from the way it is written in Slurm script. Seasonwise processing, looping over seasons redundant
+try:
+    BASE_DIR = Path(os.environ["BASE_DIR"])
+except KeyError:
+    raise EnvironmentError("BASE_DIR environment variable is not set. Did you source environment.sh?")
+
+sys.path.append(str(BASE_DIR / "Scripts/Functions"))
+from Gamma_KS_Test import Gamma_KS_gridded
+
+season_name = sys.argv[1]
 season_months_map = {
     "JJA": [6, 7, 8],
     "SON": [9, 10, 11],
     "DJF": [12, 1, 2],
     "MAM": [3, 4, 5]
 }
-months=season_months_map.get(season_name)
 
-ds2 = xr.open_dataset("Split_Data/Targets/train/rhiresd_targets_train.nc", chunks={"time": 100})
+months = season_months_map.get(season_name)
+if not months:
+    raise ValueError(f"Invalid season name: {season_name}")
 
-RhiresD = ds2['RhiresD']
+data_path = BASE_DIR / "Split_Data/Targets/train/rhiresd_targets_train.nc"
+if not data_path.exists():
+    raise FileNotFoundError(f"Dataset not found at path: {data_path}")
 
-lon = RhiresD.lon
-lat = RhiresD.lat
-mask = np.isnan(lon) | np.isnan(lat)
-RhiresD_gridded = RhiresD.where(~mask)
+ds = xr.open_dataset(data_path, chunks={"time": 100})
 
-# Only wet days
-RhiresD_wet = RhiresD_gridded.where(RhiresD_gridded >= 0.1)
+RhiresD = ds['RhiresD']
+RhiresD = RhiresD.where(~np.isnan(RhiresD.lon) & ~np.isnan(RhiresD.lat))
 
-mask_months=RhiresD_gridded["time"].dt.month.isin(months)
+wet_days = RhiresD.where(RhiresD >= 0.1)
+season_mask = wet_days["time"].dt.month.isin(months)
+seasonal_data = wet_days.sel(time=season_mask)
 
-RhiresD_wet_season=RhiresD_wet.sel(time=mask_months)
-
-
-#Running KS test for gamma gridpointwise for current season selected from the Slurm script
-
-KS_Stat , p_val_ks_stat=Gamma_KS_gridded(RhiresD_wet_season,data_path=ds2,block_size=10, season=season_name)
-
-
+KS_Stat, p_val_ks_stat = Gamma_KS_gridded(
+    seasonal_data,
+    data_path=ds,
+    block_size=10,
+    season=season_name
+)

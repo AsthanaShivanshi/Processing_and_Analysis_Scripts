@@ -1,3 +1,4 @@
 *.txt
 *.nc
 environment.sh
+base_dir.sh
