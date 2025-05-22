@@ -42,17 +42,20 @@ def process_block_precip(temp_block, i_start, j_start):
     for ii in range(block_data.shape[1]):
         for jj in range(block_data.shape[2]):
             data = block_data[:, ii, jj]
-            data = data[~np.isnan(data)]
-            if len(data) > 0:
-                alpha_mle, beta_mle = fit_gamma_mle(data)
-                if np.isnan(alpha_mle) or np.isnan(beta_mle):
-                    continue
-                stat, pval = kstest(data, 'gamma', args=(alpha_mle, 0, beta_mle))
-                block_KS[ii, jj] = stat
-                block_pval[ii, jj] = pval
+            data = data[~np.isnan(data)]  # Remove NaNs
+
+            if len(data) == 0:
+                continue  # Skip if all values are NaN
+
+            alpha_mle, beta_mle = fit_gamma_mle(data)
+            if np.isnan(alpha_mle) or np.isnan(beta_mle):
+                continue  # Skip if MLE failed
+
+            stat, pval = kstest(data, 'gamma', args=(alpha_mle, 0, beta_mle))
+            block_KS[ii, jj] = stat
+            block_pval[ii, jj] = pval
 
     return block_KS, block_pval
-
 
 
 def Gamma_KS_gridded(temp, data_path, alpha=0.05, block_size=20, season="Season"):
