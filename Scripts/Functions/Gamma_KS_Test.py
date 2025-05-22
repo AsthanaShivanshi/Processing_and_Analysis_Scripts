@@ -19,22 +19,47 @@ def NLL(params, data):
 
 def fit_gamma_mle(data):
     """ Fit Gamma distribution to data via MLE """
+
+    data = data[np.isfinite(data) & (data > 0)]  # Gamma only for positive values
+
+    if len(data) == 0:
+        return np.nan, np.nan
+
     mean_data = np.mean(data)
     var_data = np.var(data)
+
+    if mean_data <= 0 or var_data <= 0:
+        return np.nan, np.nan
+
     alpha_0 = mean_data**2 / var_data
     beta_0 = var_data / mean_data
     guess_0 = [alpha_0, beta_0]
 
-    result = minimize(NLL, guess_0, args=(data,), method='L-BFGS-B', bounds=[(1e-6, None), (1e-6, None)])
-    if result.success:
+    def safe_nll(params):
+        alpha, beta = params
+        if alpha <= 0 or beta <= 0:
+            return np.inf
+        logpdf = gamma.logpdf(data, a=alpha, scale=beta)
+        if not np.all(np.isfinite(logpdf)):
+            return np.inf
+        return -np.sum(logpdf)
+
+    result = minimize(
+        safe_nll,
+        guess_0,
+        method='L-BFGS-B',
+        bounds=[(1e-6, None), (1e-6, None)]
+    )
+
+    if result.success and np.all(np.isfinite(result.x)):
         return result.x  # alpha_mle, beta_mle
     else:
         return np.nan, np.nan
+
     
 @delayed
 def process_block_precip(temp_block, i_start, j_start):
-    # Force evaluation once
-    block_data = temp_block.compute()  # shape: (time, block_lat, block_lon)
+    block_data = temp_block.compute()  
 
     block_KS = np.full(block_data.shape[1:], np.nan)
     block_pval = np.full(block_data.shape[1:], np.nan)
@@ -89,7 +114,7 @@ def Gamma_KS_gridded(temp, data_path, alpha=0.05, block_size=20, season="Season"
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
     lon, lat = transformer.transform(E_grid, N_grid)
 
-    # Binary mask: 1 if null accepted, 0 if rejected
+    # Binary mask: 1 if accepted, 0 if rejected
     accept_h0 = (p_val_ks_stat > alpha).astype(int)
 
     fig = plt.figure(figsize=(12, 8))
