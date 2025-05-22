@@ -33,10 +33,8 @@ ds = xr.open_dataset(data_path, chunks={"time": 100})
 
 RhiresD = ds['RhiresD']
 RhiresD = RhiresD.where(~np.isnan(RhiresD.lon) & ~np.isnan(RhiresD.lat))
-
-wet_days = RhiresD.where(RhiresD >= 0.1)
-season_mask = wet_days["time"].dt.month.isin(months)
-seasonal_data = wet_days.sel(time=season_mask)
+season_mask = RhiresD["time"].dt.month.isin(months)
+seasonal_data = RhiresD.sel(time=season_mask)
 
 KS_Stat, p_val_ks_stat = Gamma_KS_gridded(
     seasonal_data,
