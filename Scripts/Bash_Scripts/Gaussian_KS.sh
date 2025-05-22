@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=Gaussian_tests     
+#SBATCH --job-name=Gaussian_TabsD     
 #SBATCH --output=job_output-%j.txt 
 #SBATCH --error=job_error-%j.txt  
 #SBATCH --ntasks=1              
@@ -9,10 +9,12 @@
 #SBATCH --partition=cpu         
 # (NO --gres=gpu:1)
 
-module load python
+module load micromamba
 
-source ../../environment.sh
+source environment.sh
 
-cd ../Scripts/Functions
+micromamba run -p "$ENVIRONMENT" which python
 
-python Run_KS_Tests.py
+cd Scripts/Functions
+
+micromamba run -p "$ENVIRONMENT" python Run_KS_Tests.py
