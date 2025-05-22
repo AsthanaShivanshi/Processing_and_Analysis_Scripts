@@ -8,7 +8,6 @@ from dask import delayed, compute
 from dask.diagnostics import ProgressBar
 import dask
 
-# Optional: Dask memory control (if needed)
 dask.config.set({"distributed.worker.memory.target": 0.8})
 
 ProgressBar().register()
@@ -37,7 +36,6 @@ def process_block(temp, mean, std, i_start, i_end, j_start, j_end):
 
     return block_KS, block_pval
 
-# Main function
 def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_size=20, season="Season"):
     """Performs KS test for each grid cell and plots the result."""
 
@@ -45,27 +43,23 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     KS_Stat = np.full((n_lat, n_lon), np.nan)
     p_val_ks_stat = np.full((n_lat, n_lon), np.nan)
 
-    # Build Dask delayed task list
     tasks = []
 
     for i in range(0, n_lat, block_size):
         for j in range(0, n_lon, block_size):
             i_end = min(i + block_size, n_lat)
             j_end = min(j + block_size, n_lon)
-            task = process_block(temp, mean, std, i, i_end, j, j_end)  # Pass dask arrays directly
+            task = process_block(temp, mean, std, i, i_end, j, j_end) 
             tasks.append((i, j, task))
 
-    # Compute all tasks in parallel using processes
     with ProgressBar():
         results = compute(*[t[2] for t in tasks], scheduler="processes")
 
-    # Assign results back to the full grid
     for idx, (i, j, _) in enumerate(tasks):
         block_KS, block_pval = results[idx]
         KS_Stat[i:i+block_KS.shape[0], j:j+block_KS.shape[1]] = block_KS
         p_val_ks_stat[i:i+block_pval.shape[0], j:j+block_pval.shape[1]] = block_pval
 
-    # Prepare grid for plotting
     E = data_path["E"].values
     N = data_path["N"].values
     E_grid, N_grid = np.meshgrid(E, N)
@@ -76,7 +70,6 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     # Binary mask: 1 if null hypothesis accepted, 0 if rejected
     accept_h0 = (p_val_ks_stat > alpha).astype(int)
 
-    # Plotting
     fig = plt.figure(figsize=(12, 8))
     ax = plt.subplot(1, 1, 1, projection=ccrs.PlateCarree())
     ax.coastlines(resolution='10m')
@@ -93,7 +86,6 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     plt.title(f'KS Test: Normality of Wet Day Temperature - {season}')
     plt.tight_layout()
 
-    # Save plot
     plt.savefig(f"Outputs/plots/KS_Test_training_set_{season}.png", dpi=300)
     plt.close()
 

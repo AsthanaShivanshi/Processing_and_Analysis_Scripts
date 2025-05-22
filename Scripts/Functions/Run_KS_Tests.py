@@ -1,56 +1,41 @@
-from KS_gridded import Kalmogorov_Smirnov_gridded
+import sys
+import os
+from pathlib import Path
 import xarray as xr
 import numpy as np
 
-def run_ks_tests():
-    # Load datasets
-    ds1 = xr.open_dataset("", chunks={"time": 100})
-    ds2 = xr.open_dataset("", chunks={"time": 100})
+from KS_gridded import Kalmogorov_Smirnov_gridded
 
-    TabsD = ds1['TabsD']
-    RhiresD = ds2['RhiresD']
+BASE_DIR = Path(os.environ["BASE_DIR"])
 
-    # Apply mask for NaN in lat/lon
-    lon = TabsD.lon
-    lat = TabsD.lat
-    mask = np.isnan(lon) | np.isnan(lat)
-    TabsD_gridded = TabsD.where(~mask)
-    RhiresD_gridded = RhiresD.where(~mask)
+season_name = sys.argv[1]
+season_months_map = {
+    "JJA": [6, 7, 8],
+    "SON": [9, 10, 11],
+    "DJF": [12, 1, 2],
+    "MAM": [3, 4, 5]
+}
+months = season_months_map.get(season_name)
+if not months:
+    raise ValueError(f"Invalid season: {season_name}")
 
-    # Only wet days
-    TabsD_wet = TabsD_gridded.where(RhiresD_gridded >= 0.1)
-    RhiresD_wet = RhiresD_gridded.where(RhiresD_gridded >= 0.1)
+data_path = BASE_DIR / "Split_Data/Targets/train/tabsd_targets_train.nc"
+if not data_path.exists():
+    raise FileNotFoundError(f"TabsD NetCDF file not found at: {data_path}")
 
-    # Define seasons
-    seasons = {
-        "JJA": [6, 7, 8],
-        "SON": [9, 10, 11],
-        "DJF": [12, 1, 2],
-        "MAM": [3, 4, 5]
-    }
+ds = xr.open_dataset(data_path, chunks={"time": 100})
+TabsD = ds["TabsD"]
 
-    # Loop over seasons
-    for season_name, months in seasons.items():
-        mask_months = TabsD_wet['time'].dt.month.isin(months)
-        TabsD_wet_season = TabsD_wet.sel(time=mask_months)
-        RhiresD_wet_season = RhiresD_wet.sel(time=mask_months)
+TabsD_season = TabsD.sel(time=TabsD["time"].dt.month.isin(months))
 
-        # Compute seasonal mean and std
-        Mu_TabsD_season = TabsD_wet_season.mean(dim="time", skipna=True)
-        Sigma_TabsD_season = TabsD_wet_season.std(dim="time", ddof=0, skipna=True)
+Mu_TabsD = TabsD_season.mean(dim="time", skipna=True)
+Sigma_TabsD = TabsD_season.std(dim="time", ddof=0, skipna=True)
 
-        # Run KS test
-        KS_Stat, p_val_ks_stat = Kalmogorov_Smirnov_gridded(
-            TabsD_wet_season, 
-            Mu_TabsD_season, 
-            Sigma_TabsD_season, 
-            data_path=ds1,
-            block_size=20,
-            season=season_name
-        )
-
-        print(f"Finished KS Test and plotting for {season_name}")
-
-if __name__ == "__main__":
-    run_ks_tests()
-
+KS_Stat, p_val_ks_stat = Kalmogorov_Smirnov_gridded(
+    TabsD_season,
+    Mu_TabsD,
+    Sigma_TabsD,
+    data_path=ds,
+    block_size=20,
+    season=season_name
+)
