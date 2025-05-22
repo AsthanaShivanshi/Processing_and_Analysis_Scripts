@@ -97,7 +97,7 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     cbar = plt.colorbar(plot, ax=ax, shrink=0.7, orientation='horizontal', ticks=[0, 1])
     cbar.ax.set_xticklabels(['Reject H₀', 'Accept H₀'])
     cbar.set_label(f'KS Test Hypothesis Test (α={alpha})')
-    plt.title('KS Test: Normality of Wet Day TminD')
+    plt.title('KS Test: Normality of Wet Day TabsD')
     plt.tight_layout()
     plt.show()
 

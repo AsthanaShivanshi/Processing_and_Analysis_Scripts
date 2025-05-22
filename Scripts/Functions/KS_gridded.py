@@ -83,10 +83,10 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     cbar = plt.colorbar(plot, ax=ax, shrink=0.7, orientation='horizontal', ticks=[0, 1])
     cbar.ax.set_xticklabels(['Reject H₀', 'Accept H₀'])
     cbar.set_label(f'KS Test Hypothesis Test (α={alpha})')
-    plt.title(f'KS Test: Normality of TminD - {season}')
+    plt.title(f'KS Test: Normality of TmaxD - {season}')
     plt.tight_layout()
 
-    plt.savefig(f"Outputs/plots/TminD_KS_Test_training_set_{season}.png", dpi=300)
+    plt.savefig(f"Outputs/TabsD_KS_Test_training_set_{season}.png", dpi=300)
     plt.close()
 
     return KS_Stat, p_val_ks_stat
