@@ -83,7 +83,7 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     cbar = plt.colorbar(plot, ax=ax, shrink=0.7, orientation='horizontal', ticks=[0, 1])
     cbar.ax.set_xticklabels(['Reject H₀', 'Accept H₀'])
     cbar.set_label(f'KS Test Hypothesis Test (α={alpha})')
-    plt.title(f'KS Test: Normality of TmaxD - {season}')
+    plt.title(f'KS Test: Normality of TabsD - {season}')
     plt.tight_layout()
 
     plt.savefig(f"/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/Outputs/TabsD_KS_Test_training_set_{season}.png", dpi=300)
