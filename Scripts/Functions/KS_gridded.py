@@ -86,7 +86,7 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     plt.title(f'KS Test: Normality of TmaxD - {season}')
     plt.tight_layout()
 
-    plt.savefig(f"Outputs/TabsD_KS_Test_training_set_{season}.png", dpi=300)
+    plt.savefig(f"/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/Outputs/TabsD_KS_Test_training_set_{season}.png", dpi=300)
     plt.close()
 
     return KS_Stat, p_val_ks_stat
