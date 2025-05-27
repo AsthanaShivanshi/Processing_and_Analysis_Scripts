@@ -22,20 +22,20 @@ if __name__ == "__main__":
 
     data_path = BASE_DIR / "Split_Data/Targets/train/tmax_targets_train.nc"
     if not data_path.exists():
-        raise FileNotFoundError(f"TmaxD NetCDF file not found at: {data_path}")
+        raise FileNotFoundError(f"TminD NetCDF file not found at: {data_path}")
 
     ds = xr.open_dataset(data_path, chunks={"time": 100})
-    TmaxD = ds["TmaxD"]
+    TminD = ds["TminD"]
 
-    TmaxD_season = TmaxD.sel(time=TmaxD["time"].dt.month.isin(months))
+    TminD_season = TminD.sel(time=TminD["time"].dt.month.isin(months))
 
-    Mu_TmaxD = TmaxD_season.mean(dim="time", skipna=True)
-    Sigma_TmaxD = TmaxD_season.std(dim="time", ddof=0, skipna=True)
+    Mu_TminD = TminD_season.mean(dim="time", skipna=True)
+    Sigma_TminD = TminD_season.std(dim="time", ddof=0, skipna=True)
 
     KS_Stat, p_val_ks_stat = Kalmogorov_Smirnov_gridded(
-        TmaxD_season,
-        Mu_TmaxD,
-        Sigma_TmaxD,
+        TminD_season,
+        Mu_TminD,
+        Sigma_TminD,
         data_path=ds,
         block_size=20,
         season=season_name

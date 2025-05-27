@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=KS_Gaussian_test_gridded_tmaxd
+#SBATCH --job-name=KS_Gaussian_test_gridded_tmaxd_90pc_confidence
 #SBATCH --array=0-3
 #SBATCH --output=logs/job_output-%A_%a.txt 
 #SBATCH --error=logs/job_error-%A_%a.txt  
