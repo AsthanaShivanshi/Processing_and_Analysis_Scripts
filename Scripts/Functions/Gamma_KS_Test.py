@@ -115,6 +115,7 @@ def Gamma_KS_gridded(temp, data_path, alpha=0.05, block_size=20, season="Season"
     lon, lat = transformer.transform(E_grid, N_grid)
 
     # Binary mask: 1 if accepted, 0 if rejected
+    # Null hypothesis is that the data follows the Gamma distribution
     accept_h0 = (p_val_ks_stat > alpha).astype(int)
 
     fig = plt.figure(figsize=(12, 8))
@@ -124,7 +125,7 @@ def Gamma_KS_gridded(temp, data_path, alpha=0.05, block_size=20, season="Season"
     ax.add_feature(cfeature.LAKES, alpha=0.4)
     ax.set_extent([lon.min(), lon.max(), lat.min(), lat.max()], crs=ccrs.PlateCarree())
 
-    cmap = plt.get_cmap('bwr', 2)
+    cmap = plt.get_cmap('bwr_r', 2)
 
     plot = ax.pcolormesh(lon, lat, accept_h0, cmap=cmap, shading="auto", vmin=0, vmax=1, transform=ccrs.PlateCarree())
     cbar = plt.colorbar(plot, ax=ax, shrink=0.7, orientation='horizontal', ticks=[0, 1])

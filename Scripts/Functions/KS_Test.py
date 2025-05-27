@@ -82,6 +82,7 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     lon, lat = transformer.transform(E_grid, N_grid)
 
     # Binary mask: 1 if null accepted, 0 if rejected
+    # Null hypothesis: the data follows the specified distribution
     accept_h0 = (p_val_ks_stat > alpha).astype(int)
 
     fig = plt.figure(figsize=(12, 8))
@@ -91,13 +92,13 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     ax.add_feature(cfeature.LAKES, alpha=0.4)
     ax.set_extent([lon.min(), lon.max(), lat.min(), lat.max()], crs=ccrs.PlateCarree())
 
-    cmap = plt.get_cmap('bwr', 2)  # blue=accepted, red=rejected
+    cmap = plt.get_cmap('bwr_r', 2)  # blue=accepted, red=rejected
 
     plot = ax.pcolormesh(lon, lat, accept_h0, cmap=cmap, shading="auto", vmin=0, vmax=1, transform=ccrs.PlateCarree())
     cbar = plt.colorbar(plot, ax=ax, shrink=0.7, orientation='horizontal', ticks=[0, 1])
     cbar.ax.set_xticklabels(['Reject H₀', 'Accept H₀'])
     cbar.set_label(f'KS Test Hypothesis Test (α={alpha})')
-    plt.title('KS Test: Normality of Wet Day Tmin')
+    plt.title('KS Test: Normality of Wet Day TminD')
     plt.tight_layout()
     plt.show()
 

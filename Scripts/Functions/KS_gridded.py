@@ -67,8 +67,10 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
     lon, lat = transformer.transform(E_grid, N_grid)
 
-    # Binary mask: 1 if null hypothesis accepted, 0 if rejected
+    # Binary mask: 1 if null hypothesis accepted, 0 if rejected. Null h<ypothesis is that the data follows the parametric distribution
     accept_h0 = (p_val_ks_stat > alpha).astype(int)
+    # the test gets harsher for big sample sizes this also seems legit, since there IS a difference in the distributions, even if it is not that big.
+    #Source : https://stats.stackexchange.com/questions/570430/kolmogorov-smirnov-p-value-and-alpha-value-in-python
 
     fig = plt.figure(figsize=(12, 8))
     ax = plt.subplot(1, 1, 1, projection=ccrs.PlateCarree())
@@ -77,7 +79,7 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     ax.add_feature(cfeature.LAKES, alpha=0.4)
     ax.set_extent([lon.min(), lon.max(), lat.min(), lat.max()], crs=ccrs.PlateCarree())
 
-    cmap = plt.get_cmap('bwr', 2)  # blue=accepted, red=rejected
+    cmap = plt.get_cmap('bwr_r', 2) 
 
     plot = ax.pcolormesh(lon, lat, accept_h0, cmap=cmap, shading="auto", vmin=0, vmax=1, transform=ccrs.PlateCarree())
     cbar = plt.colorbar(plot, ax=ax, shrink=0.7, orientation='horizontal', ticks=[0, 1])
