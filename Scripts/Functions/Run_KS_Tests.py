@@ -22,7 +22,7 @@ if __name__ == "__main__":
 
     data_path = BASE_DIR / "Split_Data/Targets/train/tabsd_targets_train.nc"
     if not data_path.exists():
-        raise FileNotFoundError(f"TmaxD NetCDF file not found at: {data_path}")
+        raise FileNotFoundError(f"TabsD NetCDF file not found at: {data_path}")
 
     ds = xr.open_dataset(data_path, chunks={"time": 100})
     TabsD = ds["TabsD"]

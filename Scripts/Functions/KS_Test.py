@@ -18,7 +18,7 @@ def Kalmogorov_Smirnov_Grid_Cell(tabsd_wet, mu, sigma, rhiresd_wet, alpha, beta,
     """
     # KS test (normal)
     ks_stat_tabsd, p_value_tabsd = kstest(tabsd_wet, "norm", args=(mu, sigma))
-    print(f"KS statistic for average temperature on wet days in {city_name} is {ks_stat_tabsd:.3f} with a p-value of {p_value_tabsd:.3f}")
+    print(f"KS statistic for TabsD on wet days in {city_name} is {ks_stat_tabsd:.3f} with a p-value of {p_value_tabsd:.3f}")
 
     # KS test (gamma)
     ks_stat_precip, p_value_precip = kstest(rhiresd_wet, "gamma", args=(alpha, 0, beta))  # gamma uses shape, loc, scale
