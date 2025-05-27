@@ -20,7 +20,7 @@ if __name__ == "__main__":
     if not months:
         raise ValueError(f"Invalid season: {season_name}")
 
-    data_path = BASE_DIR / "Split_Data/Targets/train/tmax_targets_train.nc"
+    data_path = BASE_DIR / "Split_Data/Targets/train/tmin_targets_train.nc"
     if not data_path.exists():
         raise FileNotFoundError(f"TminD NetCDF file not found at: {data_path}")
 
