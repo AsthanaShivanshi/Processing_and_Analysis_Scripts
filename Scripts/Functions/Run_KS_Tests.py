@@ -20,22 +20,22 @@ if __name__ == "__main__":
     if not months:
         raise ValueError(f"Invalid season: {season_name}")
 
-    data_path = BASE_DIR / "Split_Data/Targets/train/tmin_targets_train.nc"
+    data_path = BASE_DIR / "Split_Data/Targets/train/tmax_targets_train.nc"
     if not data_path.exists():
-        raise FileNotFoundError(f"TabsD NetCDF file not found at: {data_path}")
+        raise FileNotFoundError(f"TmaxD NetCDF file not found at: {data_path}")
 
     ds = xr.open_dataset(data_path, chunks={"time": 100})
-    TminD = ds["TminD"]
+    TmaxD = ds["TmaxD"]
 
-    TminD_season = TminD.sel(time=TminD["time"].dt.month.isin(months))
+    TmaxD_season = TmaxD.sel(time=TmaxD["time"].dt.month.isin(months))
 
-    Mu_TminD = TminD_season.mean(dim="time", skipna=True)
-    Sigma_TminD = TminD_season.std(dim="time", ddof=0, skipna=True)
+    Mu_TmaxD = TmaxD_season.mean(dim="time", skipna=True)
+    Sigma_TmaxD = TmaxD_season.std(dim="time", ddof=0, skipna=True)
 
     KS_Stat, p_val_ks_stat = Kalmogorov_Smirnov_gridded(
-        TminD_season,
-        Mu_TminD,
-        Sigma_TminD,
+        TmaxD_season,
+        Mu_TmaxD,
+        Sigma_TmaxD,
         data_path=ds,
         block_size=20,
         season=season_name
