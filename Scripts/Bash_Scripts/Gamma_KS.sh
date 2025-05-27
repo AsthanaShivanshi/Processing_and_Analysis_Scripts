@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=Gamma_test_gridded_rhiresd    
+#SBATCH --job-name=Gamma_test_gridded_rhiresd_90_pc_confidence   
 #SBATCH --array=0-3
 #SBATCH --output=logs/job_output-%A_%a.txt 
 #SBATCH --error=logs/job_error-%A_%a.txt  

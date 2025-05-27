@@ -36,7 +36,7 @@ def process_block(temp, mean, std, i_start, i_end, j_start, j_end):
 
     return block_KS, block_pval
 
-def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_size=20, season="Season"):
+def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.10, block_size=20, season="Season"):
     """Performs KS test for each grid cell and plots the result."""
 
     n_lat, n_lon = temp.sizes['N'], temp.sizes['E']
@@ -88,7 +88,7 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     plt.title(f'KS Test: Normality of TmaxD - {season}')
     plt.tight_layout()
 
-    plt.savefig(f"/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/Outputs/TmaxD/TmaxD_KS_Test_training_set_{season}.png", dpi=300)
+    plt.savefig(f"/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/Outputs/TmaxD/90_pc_confidence_TmaxD_KS_Test_training_set_{season}.png", dpi=300)
     plt.close()
 
     return KS_Stat, p_val_ks_stat

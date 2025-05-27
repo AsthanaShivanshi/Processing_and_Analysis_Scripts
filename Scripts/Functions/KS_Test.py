@@ -47,7 +47,7 @@ def process_block(temp, mean, std, i_start, i_end, j_start, j_end):
     return block_KS, block_pval
 
 # Main function
-def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_size=20):
+def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.10, block_size=20):
     """Performs KS test for each grid cell and plot the resulting gridwise plot along with rejedction/acceptance in accordance with 
     the p value (rejecting/accepting the null hypothesis)"""
 
@@ -98,7 +98,7 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     cbar = plt.colorbar(plot, ax=ax, shrink=0.7, orientation='horizontal', ticks=[0, 1])
     cbar.ax.set_xticklabels(['Reject H₀', 'Accept H₀'])
     cbar.set_label(f'KS Test Hypothesis Test (α={alpha})')
-    plt.title('KS Test: Normality of Wet Day TmaxD')
+    plt.title('KS Test: Normality of Wet Day TmaxD with 90% confidence level')
     plt.tight_layout()
     plt.show()
 
