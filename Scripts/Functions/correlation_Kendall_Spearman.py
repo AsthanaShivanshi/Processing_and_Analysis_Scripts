@@ -13,7 +13,7 @@ def calculate_correlation(ds1_path, ds2_path, n_jobs=4):
     ds1 = xr.open_dataset(ds1_path, chunks={"time": 100})
     ds2 = xr.open_dataset(ds2_path, chunks={"time": 100})
     
-    TabsD = ds1['TabsD']
+    TabsD = ds1['TmaxD']
     RhiresD = ds2['RhiresD']
 
     # Precompute grid coordinates

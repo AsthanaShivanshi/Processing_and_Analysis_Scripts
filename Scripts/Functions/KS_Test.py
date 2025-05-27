@@ -11,14 +11,14 @@ from dask import delayed, compute
 from dask.diagnostics import ProgressBar
 ProgressBar().register()
 
-def Kalmogorov_Smirnov_Grid_Cell(tabsd_wet, mu, sigma, rhiresd_wet, alpha, beta, city_name="City"):
+def Kalmogorov_Smirnov_Grid_Cell(temp, mu, sigma, rhiresd_wet, alpha, beta, city_name="City"):
     """
     Prints KS statistics and p-values for temperature (assuming normal distribution) and precipitation 
     (assuming gamma distribution) for the grid cell specified considering their parameters are already available for that grid cell
     """
     # KS test (normal)
-    ks_stat_tabsd, p_value_tabsd = kstest(tabsd_wet, "norm", args=(mu, sigma))
-    print(f"KS statistic for TabsD on wet days in {city_name} is {ks_stat_tabsd:.3f} with a p-value of {p_value_tabsd:.3f}")
+    ks_stat_temp, p_value_temp = kstest(temp, "norm", args=(mu, sigma))
+    print(f"KS statistic for Tmin on wet days in {city_name} is {ks_stat_temp:.3f} with a p-value of {p_value_temp:.3f}")
 
     # KS test (gamma)
     ks_stat_precip, p_value_precip = kstest(rhiresd_wet, "gamma", args=(alpha, 0, beta))  # gamma uses shape, loc, scale
@@ -97,7 +97,7 @@ def Kalmogorov_Smirnov_gridded(temp, mean, std, data_path, alpha=0.05, block_siz
     cbar = plt.colorbar(plot, ax=ax, shrink=0.7, orientation='horizontal', ticks=[0, 1])
     cbar.ax.set_xticklabels(['Reject H₀', 'Accept H₀'])
     cbar.set_label(f'KS Test Hypothesis Test (α={alpha})')
-    plt.title('KS Test: Normality of Wet Day TabsD')
+    plt.title('KS Test: Normality of Wet Day Tmin')
     plt.tight_layout()
     plt.show()
 
