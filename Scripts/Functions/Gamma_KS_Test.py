@@ -67,7 +67,7 @@ def process_block_precip(temp_block, i_start, j_start):
     for ii in range(block_data.shape[1]):
         for jj in range(block_data.shape[2]):
             data = block_data[:, ii, jj]
-            data = data[~np.isnan(data)]  # Remove NaNs
+            data = data[~np.isnan(data)]  # removing NaNs
 
             if len(data) == 0:
                 continue  # Skip if all values are NaN

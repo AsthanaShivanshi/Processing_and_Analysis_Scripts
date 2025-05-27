@@ -8,7 +8,7 @@ import numpy as np
 try:
     BASE_DIR = Path(os.environ["BASE_DIR"])
 except KeyError:
-    raise EnvironmentError("BASE_DIR environment variable is not set. Did you source environment.sh?")
+    raise EnvironmentError("environment.sh sourced or not?")
 
 sys.path.append(str(BASE_DIR / "Scripts/Functions"))
 from Gamma_KS_Test import Gamma_KS_gridded
