@@ -12,4 +12,4 @@ eval "$(micromamba shell hook --shell=bash)"
 source environment.sh
 
 # Run your evaluation script
-python Python_Pipeline_Scripts/eval_metrics.py config_files/evaluation_metrics.yaml
+python Python_Pipeline_Scripts/eval_metrics_gridded.py config_files/evaluation_metrics_gridded.yaml
