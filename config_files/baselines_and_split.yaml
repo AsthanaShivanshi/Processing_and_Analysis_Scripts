@@ -1,5 +1,5 @@
 wet_mask_variable: RhiresD
-wet_mask_threshold: 0.05
+wet_mask_threshold: 0.1
 use_wet_mask: true
 generate_bicubic_baseline: true
 
@@ -19,9 +19,10 @@ highres_vars:
 
 highres_template: data/HR_files_full/RhiresD_1971_2023.nc
 
-train_period: [1971, 2013]
-val_period: [2014, 2018]
-test_period: [2019, 2023]
+train_period: [1971, 2007] #37 years
+val_period:   [2008, 2018] #11 years
+test_period:  [2019, 2023] #5 years
+
 
 output_dir: data/processed_standardised_split_data
 
