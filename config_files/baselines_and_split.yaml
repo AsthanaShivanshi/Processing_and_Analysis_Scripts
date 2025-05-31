@@ -1,5 +1,5 @@
 wet_mask_variable: RhiresD
-wet_mask_threshold: 0.1
+wet_mask_threshold: 0.05
 use_wet_mask: true
 generate_bicubic_baseline: true
 

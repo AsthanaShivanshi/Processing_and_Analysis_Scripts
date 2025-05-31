@@ -1,26 +1,26 @@
-########This script together takes of masking based on coarse wet days, 
-# bicubic interpolation baseline, normalisation/standardisation and 
-# splitting of data into train test and val for bicubic baseoine and HR targets
-
 import os
 import yaml
 import subprocess
 import xarray as xr
 import numpy as np
+import json
 
 def run(cmd):
-    print(f"\nRunning command: {cmd}")
+    print(f"Running command:\n{cmd}\n")
     subprocess.run(cmd, shell=True, check=True)
 
+def print_shape(path, var):
+    ds = xr.open_dataset(path)
+    print(f"Saved: {path} | Shape: {ds[var].shape} | Dims: {ds[var].dims}")
+    ds.close()
+
 def norm_params(ds, var_name):
-    """Calculating mean and std for temperature files"""
     var = ds[var_name]
     mean = var.mean(dim="time", skipna=True).compute()
     std = var.std(dim="time", skipna=True).compute()
     return mean, std
 
 def min_max_calculator(ds, var_name):
-    """Calculating min and max for precipitation files"""
     var = ds[var_name]
     min_ = var.min(dim="time", skipna=True).compute()
     max_ = var.max(dim="time", skipna=True).compute()
@@ -34,7 +34,6 @@ def min_max_scaler(var, min_, max_):
 
 def standardise(input_path, output_path, var, mean=None, std=None, min_=None, max_=None):
     ds = xr.open_dataset(input_path, chunks={"time": 100})
-
     if var in ["pr", "RhiresD"]:
         if min_ is None or max_ is None:
             min_, max_ = min_max_calculator(ds, var)
@@ -50,110 +49,127 @@ def standardise(input_path, output_path, var, mean=None, std=None, min_=None, ma
 
     scaled_ds = scaled_var.to_dataset(name=var)
     scaled_ds.to_netcdf(output_path)
-    print(f"Standardized {output_path}")
+    print_shape(output_path, var)
     return params
 
-## ppline for processing masking and bicubic baselins ##
+def make_dirs(base_dir):
+    full_path = os.path.join(base_dir, "Full_files")
+    split_path = os.path.join(base_dir, "Split_files")
+    for folder in [full_path] + [os.path.join(split_path, s) for s in ["Train", "Val", "Test"]]:
+        os.makedirs(folder, exist_ok=True)
+    return full_path, split_path
 
-# Loading config file
+def get_out_path(base, kind, split=None, var=None):
+    if split:
+        return os.path.join(base, "Split_files", split.capitalize(), f"{var}.nc")
+    else:
+        return os.path.join(base, "Full_files", f"{var}.nc")
+
+# Loading  configuration from the baselines YAML file
 with open("config_files/baselines_and_split.yaml", "r") as f:
     config = yaml.safe_load(f)
 
-# Creating the output directories for processed files
 output_dir = config["output_dir"]
-os.makedirs(output_dir, exist_ok=True)
-
 masked_dir = os.path.join(output_dir, "masked")
 baseline_dir = os.path.join(output_dir, "baseline")
 standardised_dir = os.path.join(output_dir, "standardised")
 
-for d in [masked_dir, baseline_dir, standardised_dir]:
-    os.makedirs(d, exist_ok=True)
+for base in [masked_dir, baseline_dir, standardised_dir]:
+    make_dirs(base)
 
-# Creating wet-day mask: precip for each timestep for each grid cell >= 0.1 mm per day
-wet_mask_file = os.path.join(masked_dir, "coarse_wet_mask.nc")
+# Creating wet day mask from coarse rhiresD dataset
+wet_mask_file = os.path.join(masked_dir, "Full_files", "coarse_wet_mask.nc")
 if config["use_wet_mask"]:
-    varname = config["wet_mask_variable"]
-    threshold = config["wet_mask_threshold"]
-    expr = f'{varname}=({varname}>={threshold})'
+    expr = f'{config["wet_mask_variable"]}=({config["wet_mask_variable"]}>={config["wet_mask_threshold"]})'
     cmd = f'cdo -expr,"{expr}" {config["coarse_precip_file"]} {wet_mask_file}'
 else:
     cmd = f"cdo setmisstoc,0 {config['coarse_precip_file']} {wet_mask_file}"
 run(cmd)
+print_shape(wet_mask_file, config["wet_mask_variable"])
 
-# Coarsened and masked files (setting grid cells not meeting threshold to NaN)
+# Applying mask to coarse files: all four
 masked_coarse = {}
-for var, file in config["coarse_vars"].items():
-    out_file = os.path.join(masked_dir, f"coarse_masked_{var}.nc")
-    run(f"cdo ifthen {wet_mask_file} {file} {out_file}")
-    masked_coarse[var] = out_file
+for var, path in config["coarse_vars"].items():
+    out_path = get_out_path(masked_dir, "masked", None, f"coarse_masked_{var}")
+    run(f"cdo ifthen {wet_mask_file} {path} {out_path}")
+    print_shape(out_path, var)
+    masked_coarse[var] = out_path
 
-# Upscaling of the above coarse mask to HR using NN interp
-hr_mask_file = os.path.join(masked_dir, "highres_mask.nc")
+# Upscaling mask to HR grid using remapnn
+hr_mask_file = os.path.join(masked_dir, "Full_files", "highres_mask.nc")
 run(f"cdo remapnn,{config['highres_template']} {wet_mask_file} {hr_mask_file}")
+print_shape(hr_mask_file, config["wet_mask_variable"])
 
-# Masking HR files using upscaled original coarsened mask (dry days set to NaN)
+# Applying HR mask to HR data: all four files
 masked_hr = {}
-for var, file in config["highres_vars"].items():
-    out_file = os.path.join(masked_dir, f"hr_masked_{var}.nc")
-    run(f"cdo ifthen {hr_mask_file} {file} {out_file}")
-    masked_hr[var] = out_file
+for var, path in config["highres_vars"].items():
+    out_path = get_out_path(masked_dir, "masked", None, f"hr_masked_{var}")
+    run(f"cdo ifthen {hr_mask_file} {path} {out_path}")
+    print_shape(out_path, var)
+    masked_hr[var] = out_path
 
-# For splitting the HR and baseline files into train, val and test sets
-splits = {
-    "train": config["train_period"],
-    "val": config["val_period"],
-    "test": config["test_period"]
-}
+# Splitting masked HR data
+splits = {"train": config["train_period"], "val": config["val_period"], "test": config["test_period"]}
 split_files = {"hr": {}, "baseline": {}}
 
 for split, years in splits.items():
-    for var, file in masked_hr.items():
-        out_file = os.path.join(masked_dir, f"{split}_hr_{var}.nc")
-        run(f"cdo selyear,{years[0]}/{years[1]} {file} {out_file}")
-        split_files["hr"].setdefault(split, {})[var] = out_file
+    for var, path in masked_hr.items():
+        out_path = get_out_path(masked_dir, "masked", split, f"{var}")
+        run(f"cdo selyear,{years[0]}/{years[1]} {path} {out_path}")
+        print_shape(out_path, var)
+        split_files["hr"].setdefault(split, {})[var] = out_path
 
-# Creating bicubic interpolation baseline, for feeding into the Unet
+# Step 6: Bicubic baseline and split
 baseline_files = {}
 if config.get("generate_bicubic_baseline", True):
-    for var, file in masked_coarse.items():
-        out_file = os.path.join(baseline_dir, f"baseline_hr_{var}.nc")
-        run(f"cdo remapbic,{config['highres_template']} {file} {out_file}")
-        baseline_files[var] = out_file
+    for var, path in masked_coarse.items():
+        out_path = get_out_path(baseline_dir, "baseline", None, f"baseline_hr_{var}")
+        run(f"cdo remapbic,{config['highres_template']} {path} {out_path}")
+        print_shape(out_path, var)
+        baseline_files[var] = out_path
 
-    # Splitting the bicubic baseline files
     for split, years in splits.items():
-        for var, file in baseline_files.items():
-            out_file = os.path.join(baseline_dir, f"{split}_baseline_hr_{var}.nc")
-            run(f"cdo selyear,{years[0]}/{years[1]} {file} {out_file}")
-            split_files["baseline"].setdefault(split, {})[var] = out_file
+        for var, path in baseline_files.items():
+            out_path = get_out_path(baseline_dir, "baseline", split, f"{var}")
+            run(f"cdo selyear,{years[0]}/{years[1]} {path} {out_path}")
+            print_shape(out_path, var)
+            split_files["baseline"].setdefault(split, {})[var] = out_path
 
-# Standardizing using train set only
+# Standardize with train stats only
 norm_params_dict = {}
 for var in ["RhiresD", "TabsD", "TminD", "TmaxD"]:
-    # Target HR standardization
-    train_file = split_files["hr"]["train"][var]
-    std_train_out = os.path.join(standardised_dir, f"std_train_hr_{var}.nc")
-    params = standardise(train_file, std_train_out, var)
+    # Standardising HR
+    train_path = split_files["hr"]["train"][var]
+    train_std_out = get_out_path(standardised_dir, "standardised", "train", f"hr_{var}")
+    params = standardise(train_path, train_std_out, var)
     norm_params_dict[f"{var}_target"] = params
 
     for split in ["val", "test"]:
-        in_file = split_files["hr"][split][var]
-        out_file = os.path.join(standardised_dir, f"std_{split}_hr_{var}.nc")
-        standardise(in_file, out_file, var, **params)
+        in_path = split_files["hr"][split][var]
+        out_path = get_out_path(standardised_dir, "standardised", split, f"hr_{var}")
+        standardise(in_path, out_path, var, **params)
 
-    # Bicubic baseline standardisation
+    # Standardising bicubic baseline
     if config.get("generate_bicubic_baseline", True):
-        train_file = split_files["baseline"]["train"][var]
-        std_train_base = os.path.join(standardised_dir, f"std_train_baseline_hr_{var}.nc")
-        base_params = standardise(train_file, std_train_base, var)
+        train_base_path = split_files["baseline"]["train"][var]
+        train_base_std_out = get_out_path(standardised_dir, "standardised", "train", f"baseline_hr_{var}")
+        base_params = standardise(train_base_path, train_base_std_out, var)
         norm_params_dict[f"{var}_baseline"] = base_params
 
         for split in ["val", "test"]:
-            in_file = split_files["baseline"][split][var]
-            out_file = os.path.join(standardised_dir, f"std_{split}_baseline_hr_{var}.nc")
-            standardise(in_file, out_file, var, **base_params)
+            in_path = split_files["baseline"][split][var]
+            out_path = get_out_path(standardised_dir, "standardised", split, f"baseline_hr_{var}")
+            standardise(in_path, out_path, var, **base_params)
 
-# Saving parameters for destandardisation later
-np.savez(os.path.join(output_dir, "norm_params.npz"), **norm_params_dict)
-print("\n Normalization parameters saved.")
+#Saving standardization parameters for later use
+
+norm_params_serializable = {
+    k: {kk: float(vv.values) for kk, vv in v.items()}
+    for k, v in norm_params_dict.items()
+}
+
+with open(os.path.join(output_dir, "norm_params.yaml"), "w") as f:
+    yaml.dump(norm_params_serializable, f)
+
+print(f"\n Normalization parameters saved to: {output_dir}/norm_params.yaml")
+
