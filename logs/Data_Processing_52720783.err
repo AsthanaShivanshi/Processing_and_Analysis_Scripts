@@ -1,0 +1,4 @@
+cdi  warning (cdfScanVarAttr): NetCDF: Variable not found - swiss_lv95_coordinates
+cdi  warning (cdfScanVarAttr): NetCDF: Variable not found - swiss_lv95_coordinates
+cdi  warning (cdfScanVarAttr): NetCDF: Variable not found - swiss_lv95_coordinates
+slurmstepd: error: *** JOB 52720783 ON dna074 CANCELLED AT 2025-05-31T15:35:52 ***
