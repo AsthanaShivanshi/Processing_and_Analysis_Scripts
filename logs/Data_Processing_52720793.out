@@ -1,0 +1,3 @@
+/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/bin/python
+cdo    remapnn: Nearest neighbor weights from curvilinear (34x22) to curvilinear (370x240) grid, with source mask (463)
+cdo    remapnn: Nearest neighbor weights from curvilinear (34x22) to curvilinear (370x240) grid, with source mask (527)
