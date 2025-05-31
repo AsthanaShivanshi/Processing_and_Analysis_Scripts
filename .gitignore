@@ -3,3 +3,5 @@
 environment.sh
 base_dir.sh
 *.png
+*.npz
+logs/
