@@ -1,0 +1,40 @@
+datasets:
+  train:
+    pred:
+      - "data/processed_standardised_split_data/baseline/train_baseline_hr_RhiresD.nc"
+      - "data/processed_standardised_split_data/baseline/train_baseline_hr_TabsD.nc"
+      - "data/processed_standardised_split_data/baseline/train_baseline_hr_TminD.nc"
+      - "data/processed_standardised_split_data/baseline/train_baseline_hr_TmaxD.nc"
+
+    truth:
+      - "path/to/train_truth_var1.nc"
+      - "path/to/train_truth_var2.nc"
+      - "path/to/train_truth_var3.nc"
+      - "path/to/train_truth_var4.nc"
+  val:
+    pred:
+      - "data/processed_standardised_split_data/baseline/val_baseline_hr_RhiresD.nc"
+      - "data/processed_standardised_split_data/baseline/val_baseline_hr_TabsD.nc"
+      - "data/processed_standardised_split_data/baseline/val_baseline_hr_TminD.nc"
+      - "data/processed_standardised_split_data/baseline/val_baseline_hr_TmaxD.nc"
+
+    truth:
+      - "path/to/val_truth_var1.nc"
+      - "path/to/val_truth_var2.nc"
+      - "path/to/val_truth_var3.nc"
+      - "path/to/val_truth_var4.nc"
+  test:
+    pred:
+      - "data/processed_standardised_split_data/baseline/test_baseline_hr_RhiresD.nc"
+      - "data/processed_standardised_split_data/baseline/test_baseline_hr_TabsD.nc"
+      - "data/processed_standardised_split_data/baseline/test_baseline_hr_TminD.nc"
+      - "data/processed_standardised_split_data/baseline/test_baseline_hr_TmaxD.nc"
+    truth:
+      - "path/to/test_truth_var1.nc"
+      - "path/to/test_truth_var2.nc"
+      - "path/to/test_truth_var3.nc"
+      - "path/to/test_truth_var4.nc"
+
+variables:
+  pred: ["RhiresD", "TabsD", "TminD", "TmaxD"]
+  truth: ["RhiresD", "TabsD", "TminD", "TmaxD"]
