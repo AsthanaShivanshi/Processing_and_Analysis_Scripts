@@ -35,7 +35,7 @@ def standardise(input_path, output_path, var, mean=None, std=None, min_=None, ma
         if min_ is None or max_ is None:
             min_, max_ = min_max_calculator(ds, var)
         scaled_var = min_max_scaler(ds[var], min_, max_)
-        params = {"min": min_.values, "max": max_.values}
+        params = {"min_": min_.values, "max_": max_.values}
     elif var in ["tas", "TabsD", "TminD", "TmaxD"]:
         if mean is None or std is None:
             mean, std = norm_params(ds, var)
