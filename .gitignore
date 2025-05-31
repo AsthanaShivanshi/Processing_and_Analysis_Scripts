@@ -5,3 +5,8 @@ base_dir.sh
 *.png
 *.npz
 logs/
+*.csv
+*.json
+*.h5
+*.pth
+*.pt
