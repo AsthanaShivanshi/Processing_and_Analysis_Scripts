@@ -4,7 +4,7 @@ from pathlib import Path
 import xarray as xr
 import numpy as np
 
-from KS_gridded import Kalmogorov_Smirnov_gridded
+from Scripts.Functions.Copulas.KS_gridded import Kalmogorov_Smirnov_gridded
 
 if __name__ == "__main__":
     BASE_DIR = Path(os.environ["BASE_DIR"])

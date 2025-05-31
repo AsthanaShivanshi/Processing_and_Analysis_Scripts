@@ -11,7 +11,7 @@ except KeyError:
     raise EnvironmentError("environment.sh sourced or not?")
 
 sys.path.append(str(BASE_DIR / "Scripts/Functions"))
-from Gamma_KS_Test import Gamma_KS_gridded
+from Scripts.Functions.Copulas.Gamma_KS_Test import Gamma_KS_gridded
 
 season_name = sys.argv[1]
 season_months_map = {

@@ -83,7 +83,7 @@ def process_block_precip(temp_block, i_start, j_start):
     return block_KS, block_pval
 
 
-def Gamma_KS_gridded(temp, data_path, alpha=0.10, block_size=20, season="Season"):
+def Gamma_KS_gridded(temp, data_path, alpha=0.05, block_size=20, season="Season"):
     """Performs KS test for each grid cell and plot gridwise for precipitation Gamma fitting"""
     
     n_lat, n_lon = temp.sizes['N'], temp.sizes['E']
