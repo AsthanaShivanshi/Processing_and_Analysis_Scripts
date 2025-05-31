@@ -34,13 +34,13 @@ def main(config_path):
             results.append({
                 "Split_Category": split,
                 "Variable_Name": pred_var,
-                "RMSE": round(rmse, 4),
-                "R2": round(r2, 4)
+                "RMSE": round(rmse, 3),
+                "R2": round(r2, 3)
             })
 
     df = pd.DataFrame(results)
     print(df.to_string(index=False))
-    df.to_csv("Outputs/metrics_summary.csv", index=False)
+    df.to_csv("Outputs/metrics_summary_bicubic_vs_truth.csv", index=False)
 
 if __name__ == "__main__":
     import sys
