@@ -27,30 +27,31 @@ def gridded_R_squared(pred_path, truth_path, var1, var2, chunk_size={'time': 50}
 
 
 def pooled_R_squared(pred_path, truth_path, var1, var2, chunk_size={'time': 100}):
-    """
-    Renders pooled R squared by pooling all values across all time steps and grid cells.
-    """
     ds_pred = xr.open_dataset(pred_path, chunks=chunk_size)
     ds_true = xr.open_dataset(truth_path, chunks=chunk_size)
-    
-    var1_data, var2_data = xr.align(ds_pred[var1], ds_true[var2])
-    
-    valid_mask = (~np.isnan(var1_data)) & (~np.isnan(var2_data))
-    valid_mask=valid_mask.compute()
-    diff_squared = (var1_data - var2_data) ** 2
-    diff_squared = diff_squared.where(valid_mask)
-    ss_res = diff_squared.sum()
-    
-    truth_valid = var2_data.where(valid_mask)
-    truth_mean = truth_valid.mean()
-    
-    ss_tot = ((truth_valid - truth_mean) ** 2).sum()
-    
-    r2_total = 1.0 - (ss_res / ss_tot) #1-ratio(residual sum of squares/total sum of squares)
-    
-    r2_total = r2_total.astype(np.float32)
-    
-    return r2_total
+    print(f"🔍 Variable: {var1} vs {var2}")
+
+    var1_data, var2_data = xr.align(ds_pred[var1], ds_true[var2], join='inner')
+    var1_data = var1_data.load()
+    var2_data = var2_data.load()
+
+    diff = var1_data - var2_data
+    truth = var2_data
+
+    # Stacking and dropping NaNs globally
+    diff_sq_flat = (diff ** 2).stack(points=diff.dims).dropna(dim='points')
+    truth_flat = truth.stack(points=truth.dims).dropna(dim='points')
+
+    if diff_sq_flat.size == 0 or truth_flat.size == 0:
+        return xr.DataArray(np.nan)
+
+    ss_res = diff_sq_flat.sum()
+    mean_truth = truth_flat.mean()
+    ss_tot = ((truth_flat - mean_truth) ** 2).sum()
+
+    r2 = 1.0 - (ss_res / ss_tot)
+    return r2.astype(np.float32)
+
 
 
 def gridded_RMSE(pred_path, truth_path, var1, var2, chunk_size={'time': 100}):
@@ -79,27 +80,30 @@ def gridded_RMSE(pred_path, truth_path, var1, var2, chunk_size={'time': 100}):
     return rmse
 
 def pooled_RMSE(pred_path, truth_path, var1, var2, chunk_size={'time': 100}):
-    """
-    Calculate pooled RMSE across all time steps and grid cells.
-    Outputs a single float32 scalar.
-    """
     ds_pred = xr.open_dataset(pred_path, chunks=chunk_size)
     ds_true = xr.open_dataset(truth_path, chunks=chunk_size)
-    
-    var1_data, var2_data = xr.align(ds_pred[var1], ds_true[var2])
-    
-    valid_mask = (~np.isnan(var1_data)) & (~np.isnan(var2_data))
-    
-    diff_squared = (var1_data - var2_data) ** 2
-    diff_squared = diff_squared.where(valid_mask)
-    
-    mse_total = diff_squared.sum() / valid_mask.sum()
-    
-    rmse_total = np.sqrt(mse_total)
-    
-    rmse_total = rmse_total.astype(np.float32)
-    
-    return rmse_total
+
+    print(f"🔍 Variable: {var1} vs {var2}")
+
+    var1_data, var2_data = xr.align(ds_pred[var1], ds_true[var2], join='inner')
+    var1_data = var1_data.load()
+    var2_data = var2_data.load()
+
+    # Compute squared differences and flatten
+    diff = var1_data - var2_data
+    diff_squared = diff ** 2
+
+    # Stack across all dims (e.g., time, lat, lon)
+    flat_diff = diff_squared.stack(points=diff_squared.dims).dropna(dim='points')
+
+    if flat_diff.size == 0:
+        return xr.DataArray(np.nan)
+
+    mse = flat_diff.mean()
+    rmse = np.sqrt(mse)
+
+    return rmse.astype(np.float32)
+
 
 
 
