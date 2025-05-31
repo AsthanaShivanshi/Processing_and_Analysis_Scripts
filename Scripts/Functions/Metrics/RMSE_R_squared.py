@@ -12,10 +12,8 @@ def gridded_R_squared(pred_path, truth_path, var1, var2, chunk_size={'time': 50}
     
     valid_mask = (~np.isnan(var1_data)) & (~np.isnan(var2_data))
     
-    # Residual sum of squares
     ss_res = ((var1_data - var2_data) ** 2).where(valid_mask).sum(dim='time')
     
-    # Total sum of squares
     mean_true = var2_data.where(valid_mask).mean(dim='time')
     ss_tot = ((var2_data - mean_true) ** 2).where(valid_mask).sum(dim='time')
     
@@ -38,7 +36,6 @@ def pooled_R_squared(pred_path, truth_path, var1, var2, chunk_size={'time': 100}
     diff = var1_data - var2_data
     truth = var2_data
 
-    # Stacking and dropping NaNs globally
     diff_sq_flat = (diff ** 2).stack(points=diff.dims).dropna(dim='points')
     truth_flat = truth.stack(points=truth.dims).dropna(dim='points')
 
@@ -62,10 +59,8 @@ def gridded_RMSE(pred_path, truth_path, var1, var2, chunk_size={'time': 100}):
     ds_pred = xr.open_dataset(pred_path, chunks=chunk_size)
     ds_true = xr.open_dataset(truth_path, chunks=chunk_size)
     
-    # Align the variables
     var1_data, var2_data = xr.align(ds_pred[var1], ds_true[var2])
     
-    # Mask valid data (non-NaN)
     valid_mask = (~np.isnan(var1_data)) & (~np.isnan(var2_data))
     
     diff_squared = (var1_data - var2_data) ** 2
@@ -89,11 +84,9 @@ def pooled_RMSE(pred_path, truth_path, var1, var2, chunk_size={'time': 100}):
     var1_data = var1_data.load()
     var2_data = var2_data.load()
 
-    # Compute squared differences and flatten
     diff = var1_data - var2_data
     diff_squared = diff ** 2
 
-    # Stack across all dims (e.g., time, lat, lon)
     flat_diff = diff_squared.stack(points=diff_squared.dims).dropna(dim='points')
 
     if flat_diff.size == 0:
