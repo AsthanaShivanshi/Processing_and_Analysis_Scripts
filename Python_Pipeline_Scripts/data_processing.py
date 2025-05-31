@@ -1,3 +1,7 @@
+########This script together takes of masking based on coarse wet days, 
+# bicubic interpolation baseline, normalisation/standardisation and 
+# splitting of data into train test and val for bicubic baseoine and HR targets
+
 import os
 import yaml
 import subprocess
@@ -35,12 +39,12 @@ def standardise(input_path, output_path, var, mean=None, std=None, min_=None, ma
         if min_ is None or max_ is None:
             min_, max_ = min_max_calculator(ds, var)
         scaled_var = min_max_scaler(ds[var], min_, max_)
-        params = {"min_": min_.values, "max_": max_.values}
+        params = {"min_": min_, "max_": max_}
     elif var in ["tas", "TabsD", "TminD", "TmaxD"]:
         if mean is None or std is None:
             mean, std = norm_params(ds, var)
         scaled_var = normalise(ds[var], mean, std)
-        params = {"mean": mean.values, "std": std.values}
+        params = {"mean": mean, "std": std}
     else:
         raise ValueError(f"Unknown variable: {var}")
 
