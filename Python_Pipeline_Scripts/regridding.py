@@ -112,10 +112,10 @@ def conservative_coarsening(
 
 
 datasets = [
-    ("RhiresD_1971_2023.nc", "RhiresD", "RhiresD_011deg_coarsened.nc"),
-    ("TabsD_1971_2023.nc", "TabsD", "TabsD_011deg_coarsened.nc"),
-    ("TminD_1971_2023.nc", "TminD", "TminD_011deg_coarsened.nc"),
-    ("TmaxD_1971_2023.nc", "TmaxD", "TmaxD_011deg_coarsened.nc")
+    ("data/HR_files_full/RhiresD_1971_2023.nc", "RhiresD", "data/Coarsened_files_full/RhiresD_011deg_coarsened.nc"),
+    ("data/HR_files_full/TabsD_1971_2023.nc", "TabsD", "data/Coarsened_files_full/TabsD_011deg_coarsened.nc"),
+    ("data/HR_files_full/TminD_1971_2023.nc", "TminD", "data/Coarsened_files_full/TminD_011deg_coarsened.nc"),
+    ("data/HR_files_full/TmaxD_1971_2023.nc", "TmaxD", "data/Coarsened_files_full/TmaxD_011deg_coarsened.nc")
 ]
 
 for infile, varname, outfile in datasets:
