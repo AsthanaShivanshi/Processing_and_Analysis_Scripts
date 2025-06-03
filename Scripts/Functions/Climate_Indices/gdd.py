@@ -4,9 +4,9 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
-def growing_degree_days_gridded(file_path, base_temp=5.0, season=None):
+def growing_degree_days_gridded(file_path, base_temp=5.0, season=None,save=False,save_path=None):
     """
-    Computing and plotting Growing Degree Days (GDD).
+    Computing and plotting Growing Degree Days.
     """
     ds = xr.open_dataset(file_path)
     time_dim = [dim for dim in ds['TabsD'].dims if dim not in ['lat', 'lon']][0]
@@ -16,7 +16,7 @@ def growing_degree_days_gridded(file_path, base_temp=5.0, season=None):
     if season:
         tabs = tabs.sel(time=tabs['time.season'] == season)
 
-    # Caluclating daily GDD: only days where TabsD > base_temp
+    # Caluclating GDD: only days where TabsD > base_temp
     gdd_daily = (tabs - base_temp).where(tabs > base_temp, 0)
 
     # Summing GDD over time
@@ -32,8 +32,10 @@ def growing_degree_days_gridded(file_path, base_temp=5.0, season=None):
     im = ax.pcolormesh(ds['lon'], ds['lat'], gdd_sum,
                        transform=ccrs.PlateCarree(), shading='auto')
     plt.colorbar(im, ax=ax, label=f'GDD (Base {base_temp}°C)')
-    title = f'Growing Degree Days per Grid Cell'
+    title = f'Growing Degree Days(based on threshold of 5 degrees C) per Grid Cell'
     if season:
         title += f' ({season})'
     plt.title(title)
+    plt.savefig(save_path) if save and save_path else None
+    plt.tight_layout()
     plt.show()
