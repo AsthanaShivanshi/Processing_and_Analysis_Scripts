@@ -4,33 +4,38 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
-def mean_dtr_gridded(file_path):
-    ds = xr.open_dataset(file_path)
+def dtr_mean_gridded(
+    tmax_file,
+    tmin_file,
+    output_file=None,
+    save=False,
+    title_suffix=""
+):
+    ds_tmax = xr.open_dataset(tmax_file)
+    ds_tmin = xr.open_dataset(tmin_file)
 
-    if 'latitude' in ds:
-        ds = ds.rename({'latitude': 'lat'})
-    if 'longitude' in ds:
-        ds = ds.rename({'longitude': 'lon'})
+    if 'TmaxD' not in ds_tmax or 'TminD' not in ds_tmin:
+        raise ValueError("Datasets must contain 'TmaxD' and 'TminD' respectively.")
 
-    if not all(var in ds for var in ['TmaxD', 'TminD']):
-        raise ValueError("Dataset must contain 'TmaxD' and 'TminD'.")
+    #  DTR and mean over time
+    dtr = ds_tmax['TmaxD'] - ds_tmin['TminD']
+    mean_dtr = dtr.mean(dim="time", skipna=True)
 
-    dtr = ds['TmaxD'] - ds['TminD']
-
-    dims = list(dtr.dims)
-    time_dim = [dim for dim in dims if dim not in ['lat', 'lon']][0]
-
-    mean_dtr = dtr.mean(dim=time_dim, skipna=True)
-
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(10, 6))
     ax = plt.axes(projection=ccrs.PlateCarree())
-    ax.set_global()
-    ax.coastlines()
+    ax.set_extent([5.9, 10.5, 45.8, 47.8], crs=ccrs.PlateCarree())
+    ax.coastlines(resolution='10m')
     ax.add_feature(cfeature.BORDERS, linestyle=':')
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
 
-    im = ax.pcolormesh(ds['lon'], ds['lat'], mean_dtr,
-                       transform=ccrs.PlateCarree(), shading='auto')
+    im = ax.pcolormesh(ds_tmax['lon'], ds_tmax['lat'], mean_dtr,
+                       transform=ccrs.PlateCarree(), shading='auto',vmin=0, vmax=15, cmap='coolwarm')
     plt.colorbar(im, ax=ax, label='Mean Diurnal Temperature Range (°C)')
-    plt.title('Average Diurnal Temperature Range per Grid Cell')
+    plt.title(f'Mean DTR over Switzerland {title_suffix}')
+
+    
+    if save:
+        plt.savefig(output_file)
+        print(f"Mean DTR saved to {output_file}")
+        
     plt.show()
