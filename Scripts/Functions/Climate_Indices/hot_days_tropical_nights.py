@@ -14,8 +14,8 @@ def hot_days_gridded(ds, threshold=30.0, title='Hot Days per Grid Cell',save=Fal
     if 'TmaxD' not in ds:
         raise ValueError("Dataset must contain 'TmaxD'.")
 
-    time_dim = [dim for dim in ds['TminD'].dims if dim not in ['lat', 'lon']][0]
-    tropical_nights = (ds['TminD'] > threshold).sum(dim=time_dim, skipna=True)
+    time_dim = [dim for dim in ds['TmaxD'].dims if dim not in ['lat', 'lon']][0]
+    tropical_nights = (ds['TmaxD'] > threshold).sum(dim=time_dim, skipna=True)
 
     plt.figure(figsize=(12, 6))
     ax = plt.axes(projection=ccrs.PlateCarree())
