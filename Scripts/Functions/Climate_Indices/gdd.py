@@ -32,7 +32,7 @@ def growing_degree_days_gridded(data, base_temp=5.0, season=None, save=False, sa
     ax.add_feature(cfeature.LAND, facecolor='lightgray')
 
     im = ax.pcolormesh(tabs['lon'], tabs['lat'], gdd_sum,
-                       transform=ccrs.PlateCarree(), shading='auto')
+                       transform=ccrs.PlateCarree(), vmin=0, vmax=900,shading='auto')
     plt.colorbar(im, ax=ax, label=f'GDD (Base {base_temp}°C)')
 
     title = 'Growing Degree Days (Base 5°C)'
