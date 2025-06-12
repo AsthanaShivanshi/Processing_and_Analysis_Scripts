@@ -11,10 +11,13 @@ import rioxarray
 import pyproj
 from pyproj import CRS
 import warnings
+import psutil
+import multiprocessing as mp
+
 #Ignoring repeated warnings from pyproj
 warnings.filterwarnings("ignore", message=".*pyproj unable to set PROJ database path.*")
 warnings.filterwarnings("ignore", message=".*angle from rectified to skew grid parameter lost.*")
-os.environ["PROJ_DATA"] = pyproj.datadir.get_data_dir()
+os.environ["PROJ_LIB"] = pyproj.datadir.get_data_dir()
 
 
 
@@ -226,7 +229,33 @@ def main():
         print(f"Processed '{varname}' successfully.")
 
 if __name__ == "__main__":
-    cluster = LocalCluster(n_workers=4, threads_per_worker=1, memory_limit="16GB")
+    # multiprocessing to 'fork'
+    mp.set_start_method("fork", force=True)
+
+    # Detecting total memory and cores
+    total_mem_gb = psutil.virtual_memory().total / 1e9
+    total_cores = psutil.cpu_count(logical=False)
+
+    # Using 80% of total memory (safety margin)
+    usable_mem_gb = int(total_mem_gb * 0.8)
+
+    # number of workers (half of physical cores, max 16)
+    n_workers = max(1, min(16, total_cores // 2))
+
+    # Distribute memory equally per worker
+    mem_per_worker = f"{usable_mem_gb // n_workers}GB"
+
+    print(f"[INFO] Total memory: {total_mem_gb:.1f} GB | Using {n_workers} workers @ {mem_per_worker} each")
+
+    # Starting Dask cluster
+    cluster = LocalCluster(
+        n_workers=n_workers,
+        threads_per_worker=1,
+        memory_limit=mem_per_worker
+    )
     client = Client(cluster)
     print("Dask dashboard:", client.dashboard_link)
+
+    # main pipeline now running
     main()
+
