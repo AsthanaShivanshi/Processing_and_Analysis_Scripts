@@ -14,12 +14,12 @@ import warnings
 import psutil
 import multiprocessing as mp
 
-#Ignoring repeated warnings from pyproj
+print("PROJ_LIB =", os.environ.get("PROJ_LIB"))
+print("proj.db exists:", os.path.exists(os.path.join(os.environ["PROJ_LIB"], "proj.db")))
+
+#Ignoring warnings from pyproj
 warnings.filterwarnings("ignore", message=".*pyproj unable to set PROJ database path.*")
 warnings.filterwarnings("ignore", message=".*angle from rectified to skew grid parameter lost.*")
-os.environ["PROJ_LIB"] = pyproj.datadir.get_data_dir()
-
-
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
