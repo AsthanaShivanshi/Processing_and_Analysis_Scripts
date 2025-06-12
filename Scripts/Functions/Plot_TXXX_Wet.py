@@ -5,18 +5,7 @@ from scipy.stats import norm, probplot
 import pandas as pd
 
 def plot_temperature_gridwise(temp_wet, mu_cell, sigma_cell, city_name="City",label="TabsD"):
-    """
-    Plots seasonal histogram, QQ plot, and CDF comparison for a temperature series on wet days,
-    separated by meteorological seasons: DJF, MAM, JJA, SON.
-    
-    Parameters:
-        temp_wet (xarray.DataArray or pandas.Series): Time series with datetime index.
-        mu_cell (float): Mean temperature across all wet days.
-        sigma_cell (float): Standard deviation of temperature across all wet days.
-        city_name (str): Name of the city.
-    """
 
-    # Convert to pandas Series
     if hasattr(temp_wet, 'to_series'):
         temp_wet = temp_wet.to_series()
     
@@ -37,7 +26,6 @@ def plot_temperature_gridwise(temp_wet, mu_cell, sigma_cell, city_name="City",la
     temp_wet_by_season = temp_wet.groupby(seasons)
     seasons = ['DJF', 'MAM', 'JJA', 'SON']
     for season,data in temp_wet_by_season:
-        # Histogram
         plt.figure(figsize=(10, 6))
         sns.histplot(data, kde=False, color="red", stat="density", bins=50)
         xmin, xmax = plt.xlim()
@@ -51,7 +39,6 @@ def plot_temperature_gridwise(temp_wet, mu_cell, sigma_cell, city_name="City",la
         plt.grid(True)
         plt.show()
 
-        # QQ Plot
         plt.figure(figsize=(8, 6))
         probplot(data, dist="norm", sparams=(mu_cell, sigma_cell), plot=plt)
         plt.title(f"QQ Plot for {label} ({season}) Rainy Days in {city_name}")
@@ -60,7 +47,6 @@ def plot_temperature_gridwise(temp_wet, mu_cell, sigma_cell, city_name="City",la
         plt.grid(True)
         plt.show()
 
-        # Empirical vs Parametric CDF
         sorted_data = np.sort(data)
         empirical_CDF = np.arange(1, len(sorted_data) + 1) / len(sorted_data)
         fitted_CDF = norm.cdf(sorted_data, loc=mu_cell, scale=sigma_cell)
