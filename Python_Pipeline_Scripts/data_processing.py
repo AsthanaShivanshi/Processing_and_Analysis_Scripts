@@ -119,7 +119,7 @@ for split, years in splits.items():
         print_shape(out_path, var)
         split_files["hr"].setdefault(split, {})[var] = out_path
 
-# Step 6: Bicubic baseline and split
+# Bicubic baseline and split
 baseline_files = {}
 if config.get("generate_bicubic_baseline", True):
     for var, path in masked_coarse.items():

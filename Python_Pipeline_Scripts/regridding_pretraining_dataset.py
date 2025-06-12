@@ -6,6 +6,7 @@ import subprocess
 import json
 import gc
 from dask.distributed import Client, LocalCluster
+import argparse
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
@@ -29,7 +30,7 @@ def conservative_coarsening(infile, varname, block_size, outfile, latname='lat',
         var = da
 
         if lat.shape != var.shape[-2:] or lon.shape != var.shape[-2:]:
-            raise ValueError("lat/lon shape mismatch")
+            raise ValueError("lat/lon mismatch")
 
         ny, nx = lat.shape
         ny_pad = (block_size - ny % block_size) % block_size
@@ -84,7 +85,7 @@ def conservative_coarsening(infile, varname, block_size, outfile, latname='lat',
     return outfile
 
 def interpolate_bicubic(coarse_file, target_file, output_file):
-    print(f"Running CDO bicubic interpolation: {coarse_file} → {output_file}")
+    print(f"Running CDO bicubic : {coarse_file} → {output_file}")
     cmd = ["cdo", f"remapbic,{target_file}", str(coarse_file), str(output_file)]
     subprocess.run(cmd, check=True)
 
@@ -95,7 +96,6 @@ def split(ds, seed, train_ratio):
     split_idx = int(train_ratio * len(indices))
     return ds.isel(time=indices[:split_idx]), ds.isel(time=indices[split_idx:])
 
-import subprocess
 
 def get_cdo_stats(file_path, method):
     stats = {}
@@ -137,45 +137,72 @@ def apply_cdo_scaling(ds, stats, method):
     else:
         raise ValueError(f"Unknown method: {method}")
 
+import argparse
+
 def main():
-    datasets = [
-        ("precip_1771_2010.nc", "precip", "minmax"),
-        ("temp_1771_2010.nc", "temp", "standard"),
-        ("tmin_1771_2010.nc", "tmin", "standard"),
-        ("tmax_1771_2010.nc", "tmax", "standard"),
-    ]
-    for infile, varname, scale_type in datasets:
-        infile_path = INPUT_DIR / infile
-        coarse_path = OUTPUT_DIR / f"{varname}_coarse.nc"
-        interp_path = OUTPUT_DIR / f"{varname}_interp.nc"
-        conservative_coarsening(infile_path, varname, block_size=11, outfile=coarse_path)
-        interpolate_bicubic(coarse_path, infile_path, interp_path)
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--var",
+        type=str,
+        required=True,
+        help="Variable to process (e.g., precip, temp, tmin, tmax)"
+    )
+    args = parser.parse_args()
 
-        with xr.open_dataset(infile_path, chunks={"time": 50}) as highres_ds, \
-             xr.open_dataset(interp_path, chunks={"time": 50}) as upsampled_ds:
-            highres = highres_ds[varname]
-            upsampled = upsampled_ds[varname]
-            x_train, x_val = split(upsampled, SEED, TRAIN_RATIO)
-            y_train, y_val = split(highres, SEED, TRAIN_RATIO)
+    varname = args.var
+    dataset_map = {
+        "precip": ("precip_1771_2010.nc", "minmax"),
+        "temp": ("temp_1771_2010.nc", "standard"),
+        "tmin": ("tmin_1771_2010.nc", "standard"),
+        "tmax": ("tmax_1771_2010.nc", "standard"),
+    }
 
-            stats = get_cdo_stats(infile_path, varname, scale_type)
+    if varname not in dataset_map:
+        raise ValueError(f"Variable '{varname}' not recognized. Choose from: {list(dataset_map.keys())}")
 
-            x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
-            x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
-            y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
-            y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
+    infile, scale_type = dataset_map[varname]
+    infile_path = INPUT_DIR / infile
+    coarse_path = OUTPUT_DIR / f"{varname}_coarse.nc"
+    interp_path = OUTPUT_DIR / f"{varname}_interp.nc"
 
-            x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled.nc")
-            x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
-            y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
-            y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled.nc")
+    # Coarsen
+    conservative_coarsening(infile_path, varname, block_size=11, outfile=coarse_path)
 
-            with open(OUTPUT_DIR / f"{varname}_scaling_params.json", "w") as f:
-                json.dump(stats, f, indent=2)
+    # Interpolate
+    interpolate_bicubic(coarse_path, infile_path, interp_path)
 
-            del x_train, x_val, y_train, y_val, x_train_scaled, x_val_scaled, y_train_scaled, y_val_scaled
-            gc.collect()
-            print(f"Processed {varname} dataset successfully.")
+    # Load 
+    with xr.open_dataset(infile_path, chunks={"time": 50}) as highres_ds, \
+         xr.open_dataset(interp_path, chunks={"time": 50}) as upsampled_ds:
+
+        highres = highres_ds[varname]
+        upsampled = upsampled_ds[varname]
+
+        #  Split
+        x_train, x_val = split(upsampled, SEED, TRAIN_RATIO)
+        y_train, y_val = split(highres, SEED, TRAIN_RATIO)
+
+        # Scaling
+        stats = get_cdo_stats(infile_path, scale_type)
+
+        x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
+        x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
+        y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
+        y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
+
+        #  Save
+        x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled.nc")
+        x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
+        y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
+        y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled.nc")
+
+        with open(OUTPUT_DIR / f"{varname}_scaling_params.json", "w") as f:
+            json.dump(stats, f, indent=2)
+
+        del x_train, x_val, y_train, y_val, x_train_scaled, x_val_scaled, y_train_scaled, y_val_scaled
+        gc.collect()
+        print(f"Processed '{varname}' successfully.")
+
 
 if __name__ == "__main__":
     cluster = LocalCluster(n_workers=4, threads_per_worker=1, memory_limit="16GB")
