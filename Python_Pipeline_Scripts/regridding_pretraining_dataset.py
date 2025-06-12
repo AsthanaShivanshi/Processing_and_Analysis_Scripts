@@ -85,13 +85,10 @@ def conservative_coarsening(infile, varname, block_size, outfile, latname='lat',
     ds_out.to_netcdf(outfile)
     return outfile
 
-
-
 def interpolate_bicubic(coarse_file, target_file, output_file):
     print(f"Running CDO bicubic : {coarse_file} → {output_file}")
     cmd = ["cdo", f"remapbic,{target_file}", str(coarse_file), str(output_file)]
     subprocess.run(cmd, check=True)
-
 
 def split(ds, seed, train_ratio):
     np.random.seed(seed)
@@ -100,12 +97,11 @@ def split(ds, seed, train_ratio):
     split_idx = int(train_ratio * len(indices))
     return ds.isel(time=indices[:split_idx]), ds.isel(time=indices[split_idx:])
 
-
 def get_cdo_stats(file_path, method):
     stats = {}
     file_path = str(file_path)
 
-    if method == "standard": #For gaussian scaling
+    if method == "standard":
         result = subprocess.check_output(
             ["cdo", "output", "-fldmean", "-timmean", file_path]
         )
@@ -132,7 +128,6 @@ def get_cdo_stats(file_path, method):
 
     return stats
 
-
 def apply_cdo_scaling(ds, stats, method):
     if method == "standard":
         return (ds - stats['mean']) / stats['std']
@@ -140,8 +135,6 @@ def apply_cdo_scaling(ds, stats, method):
         return (ds - stats['min']) / (stats['max'] - stats['min'])
     else:
         raise ValueError(f"Unknown method: {method}")
-
-import argparse
 
 def main():
     parser = argparse.ArgumentParser()
@@ -170,7 +163,6 @@ def main():
     interp_path = OUTPUT_DIR / f"{varname}_interp.nc"
 
     conservative_coarsening(infile_path, varname, block_size=11, outfile=coarse_path)
-
     interpolate_bicubic(coarse_path, infile_path, interp_path)
 
     with xr.open_dataset(infile_path, chunks={"time": 100}) as highres_ds, \
@@ -178,6 +170,16 @@ def main():
 
         highres = highres_ds[varname]
         upsampled = upsampled_ds[varname]
+
+        upsampled = upsampled.assign_coords({
+            'lat': highres_ds['lat'],
+            'lon': highres_ds['lon']
+        })
+        upsampled['lat'].attrs = highres_ds['lat'].attrs
+        upsampled['lon'].attrs = highres_ds['lon'].attrs
+
+        assert np.allclose(upsampled['lat'].values, highres_ds['lat'].values)
+        assert np.allclose(upsampled['lon'].values, highres_ds['lon'].values)
 
         x_train, x_val = split(upsampled, SEED, TRAIN_RATIO)
         y_train, y_val = split(highres, SEED, TRAIN_RATIO)
@@ -200,7 +202,6 @@ def main():
         del x_train, x_val, y_train, y_val, x_train_scaled, x_val_scaled, y_train_scaled, y_val_scaled
         gc.collect()
         print(f"Processed '{varname}' successfully.")
-
 
 if __name__ == "__main__":
     cluster = LocalCluster(n_workers=4, threads_per_worker=1, memory_limit="16GB")
