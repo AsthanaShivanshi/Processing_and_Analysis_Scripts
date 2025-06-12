@@ -8,7 +8,15 @@ import gc
 from dask.distributed import Client, LocalCluster
 import argparse
 import rioxarray
+import pyproj
 from pyproj import CRS
+import warnings
+#Ignoring repeated warnings from pyproj
+warnings.filterwarnings("ignore", message=".*pyproj unable to set PROJ database path.*")
+warnings.filterwarnings("ignore", message=".*angle from rectified to skew grid parameter lost.*")
+os.environ["PROJ_DATA"] = pyproj.datadir.get_data_dir()
+
+
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
@@ -18,29 +26,45 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TRAIN_RATIO = 0.8
 SEED = 42
 
-def reprojection(infile, outfile, varname):
+def reprojection_latlon(infile, outfile, varname):
     ds = xr.open_dataset(infile)
-    ds = ds.rio.write_crs("EPSG:2056")  # Swiss 
-    ds_reprojected = ds.rio.reproject("EPSG:4326")  # latlon
-    ds_reprojected = ds_reprojected.rename({"x": "lon", "y": "lat"})  
-    ds_reprojected[varname].attrs.update(ds[varname].attrs) 
+
+    if 'time' not in ds.dims:
+        ds = ds.rio.write_crs("EPSG:2056")
+        ds_reproj = ds.rio.reproject("EPSG:4326")
+        ds_reproj = ds_reproj.drop_vars([v for v in ['x', 'y'] if v in ds_reproj.coords])
+        ds_reproj[varname].attrs.update(ds[varname].attrs)
+        ds_reproj.to_netcdf(outfile)
+        return outfile
+
+    reprojected_slices = []
+    for i in range(ds.sizes["time"]):
+        slice_ds = ds.isel(time=i)
+        slice_ds = slice_ds.rio.write_crs("EPSG:2056")
+        slice_reproj = slice_ds.rio.reproject("EPSG:4326")
+        slice_reproj = slice_reproj.drop_vars([v for v in ['x', 'y'] if v in slice_reproj.coords])
+
+        # Reattaching the correct time value using assign_coords
+        slice_reproj = slice_reproj.expand_dims("time")
+        slice_reproj = slice_reproj.assign_coords(time=[ds["time"].values[i]])
+
+        reprojected_slices.append(slice_reproj)
+
+    ds_reprojected = xr.concat(reprojected_slices, dim="time")
+    ds_reprojected[varname].attrs.update(ds[varname].attrs)
     ds_reprojected.to_netcdf(outfile)
-    print(f"Reprojected {infile} → {outfile} (EPSG:4326)")
+    print(f"Reprojected, saved: {outfile}")
     return outfile
+
+
 
 def conservative_coarsening(infile, varname, block_size, outfile, latname='lat', lonname='lon'):
     ds = xr.open_dataset(infile)
     da = ds[varname]
     has_time = 'time' in da.dims
 
-    if latname not in ds or lonname not in ds:
-        raise ValueError("lat/lon not found in input file.")
-
     lat = ds[latname].values
     lon = ds[lonname].values
-
-    if lat.shape != da.shape[-2:] or lon.shape != da.shape[-2:]:
-        raise ValueError("lat/lon shape mismatch with data")
 
     ny, nx = lat.shape
     ny_pad = (block_size - ny % block_size) % block_size
@@ -112,26 +136,12 @@ def get_cdo_stats(file_path, method):
     file_path = str(file_path)
 
     if method == "standard":
-        result = subprocess.check_output(
-            ["cdo", "output", "-fldmean", "-timmean", file_path]
-        )
-        stats['mean'] = float(result.decode().strip())
-
-        result = subprocess.check_output(
-            ["cdo", "output", "-fldmean", "-timstd", file_path]
-        )
-        stats['std'] = float(result.decode().strip())
+        stats['mean'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timmean", file_path]).decode().strip())
+        stats['std'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timstd", file_path]).decode().strip())
 
     elif method == "minmax":
-        result = subprocess.check_output(
-            ["cdo", "output", "-fldmin", "-timmin", file_path]
-        )
-        stats['min'] = float(result.decode().strip())
-
-        result = subprocess.check_output(
-            ["cdo", "output", "-fldmax", "-timmax", file_path]
-        )
-        stats['max'] = float(result.decode().strip())
+        stats['min'] = float(subprocess.check_output(["cdo", "output", "-fldmin", "-timmin", file_path]).decode().strip())
+        stats['max'] = float(subprocess.check_output(["cdo", "output", "-fldmax", "-timmax", file_path]).decode().strip())
 
     else:
         raise ValueError(f"Unsupported method: {method}")
@@ -173,7 +183,7 @@ def main():
     coarse_path = OUTPUT_DIR / f"{varname}_coarse.nc"
     interp_path = OUTPUT_DIR / f"{varname}_interp.nc"
 
-    reprojection(infile_path, reprojected_path, varname)
+    reprojection_latlon(infile_path, reprojected_path, varname)
     conservative_coarsening(reprojected_path, varname, block_size=11, outfile=coarse_path)
     interpolate_bicubic(coarse_path, reprojected_path, interp_path)
 
