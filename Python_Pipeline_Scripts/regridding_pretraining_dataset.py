@@ -7,6 +7,8 @@ import json
 import gc
 from dask.distributed import Client, LocalCluster
 import argparse
+import rioxarray
+from pyproj import CRS
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
@@ -15,6 +17,16 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 TRAIN_RATIO = 0.8
 SEED = 42
+
+def reprojection(infile, outfile, varname):
+    ds = xr.open_dataset(infile)
+    ds = ds.rio.write_crs("EPSG:2056")  # Swiss 
+    ds_reprojected = ds.rio.reproject("EPSG:4326")  # latlon
+    ds_reprojected = ds_reprojected.rename({"x": "lon", "y": "lat"})  
+    ds_reprojected[varname].attrs.update(ds[varname].attrs) 
+    ds_reprojected.to_netcdf(outfile)
+    print(f"Reprojected {infile} → {outfile} (EPSG:4326)")
+    return outfile
 
 def conservative_coarsening(infile, varname, block_size, outfile, latname='lat', lonname='lon'):
     ds = xr.open_dataset(infile)
@@ -78,10 +90,8 @@ def conservative_coarsening(infile, varname, block_size, outfile, latname='lat',
     var_da.attrs = da.attrs  
 
     ds_out = var_da.to_dataset()
-
     ds_out["lat"].attrs.update({'units': 'degrees_north', 'standard_name': 'latitude'})
     ds_out["lon"].attrs.update({'units': 'degrees_east', 'standard_name': 'longitude'})
-
     ds_out.to_netcdf(outfile)
     return outfile
 
@@ -159,13 +169,15 @@ def main():
 
     infile, scale_type = dataset_map[varname]
     infile_path = INPUT_DIR / infile
+    reprojected_path = OUTPUT_DIR / f"{varname}_latlon.nc"
     coarse_path = OUTPUT_DIR / f"{varname}_coarse.nc"
     interp_path = OUTPUT_DIR / f"{varname}_interp.nc"
 
-    conservative_coarsening(infile_path, varname, block_size=11, outfile=coarse_path)
-    interpolate_bicubic(coarse_path, infile_path, interp_path)
+    reprojection(infile_path, reprojected_path, varname)
+    conservative_coarsening(reprojected_path, varname, block_size=11, outfile=coarse_path)
+    interpolate_bicubic(coarse_path, reprojected_path, interp_path)
 
-    with xr.open_dataset(infile_path, chunks={"time": 100}) as highres_ds, \
+    with xr.open_dataset(reprojected_path, chunks={"time": 100}) as highres_ds, \
          xr.open_dataset(interp_path, chunks={"time": 100}) as upsampled_ds:
 
         highres = highres_ds[varname]
@@ -184,7 +196,7 @@ def main():
         x_train, x_val = split(upsampled, SEED, TRAIN_RATIO)
         y_train, y_val = split(highres, SEED, TRAIN_RATIO)
 
-        stats = get_cdo_stats(infile_path, scale_type)
+        stats = get_cdo_stats(reprojected_path, scale_type)
 
         x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
         x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
