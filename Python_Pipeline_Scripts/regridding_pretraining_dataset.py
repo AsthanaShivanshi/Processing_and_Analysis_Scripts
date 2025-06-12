@@ -92,6 +92,7 @@ def interpolate_bicubic(coarse_file, target_file, output_file):
     cmd = ["cdo", f"remapbic,{target_file}", str(coarse_file), str(output_file)]
     subprocess.run(cmd, check=True)
 
+
 def split(ds, seed, train_ratio):
     np.random.seed(seed)
     indices = np.arange(ds.sizes['time'])
@@ -172,8 +173,8 @@ def main():
 
     interpolate_bicubic(coarse_path, infile_path, interp_path)
 
-    with xr.open_dataset(infile_path, chunks={"time": 50}) as highres_ds, \
-         xr.open_dataset(interp_path, chunks={"time": 50}) as upsampled_ds:
+    with xr.open_dataset(infile_path, chunks={"time": 100}) as highres_ds, \
+         xr.open_dataset(interp_path, chunks={"time": 100}) as upsampled_ds:
 
         highres = highres_ds[varname]
         upsampled = upsampled_ds[varname]
