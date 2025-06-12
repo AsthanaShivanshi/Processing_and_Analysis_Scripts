@@ -9,5 +9,5 @@
 module load micromamba
 eval "$(micromamba shell hook --shell=bash)"
 source environment.sh
-python regridding_pretraining_dataset.py
+python Python_Pipeline_Scripts/regridding_pretraining_dataset.py
 
