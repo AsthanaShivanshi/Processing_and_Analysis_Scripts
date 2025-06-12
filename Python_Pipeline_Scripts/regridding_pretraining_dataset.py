@@ -34,7 +34,7 @@ def conservative_coarsening(infile, varname, block_size, outfile, latname='lat',
     ny_pad = (block_size - ny % block_size) % block_size
     nx_pad = (block_size - nx % block_size) % block_size
 
-    # Pad variables
+    # Pad data and coordinates
     da = da.pad({da.dims[-2]: (0, ny_pad), da.dims[-1]: (0, nx_pad)}, mode='edge')
     lat = np.pad(lat, ((0, ny_pad), (0, nx_pad)), mode='edge')
     lon = np.pad(lon, ((0, ny_pad), (0, nx_pad)), mode='edge')
@@ -65,22 +65,31 @@ def conservative_coarsening(infile, varname, block_size, outfile, latname='lat',
     lon_coarse = lon.reshape((lon.shape[0] // block_size, block_size,
                               lon.shape[1] // block_size, block_size)).mean(axis=(1, 3))
 
+    # Prepare the dataset
     coords = {
         "lat": (["y", "x"], lat_coarse),
-        "lon": (["y", "x"], lon_coarse),
-        varname: (["time", "y", "x"], data_coarse),
+        "lon": (["y", "x"], lon_coarse)
     }
 
-    ds_out = xr.Dataset(coords)
+    if has_time:
+        coords["time"] = da["time"]
+        dims = ("time", "y", "x")
+    else:
+        data_coarse = data_coarse.squeeze()
+        dims = ("y", "x")
+
+    var_da = xr.DataArray(data_coarse, coords=coords, dims=dims, name=varname)
+    var_da.attrs = da.attrs  # preserve variable metadata
+
+    ds_out = var_da.to_dataset()
+
+    # Set coordinate metadata explicitly
     ds_out["lat"].attrs.update({'units': 'degrees_north', 'standard_name': 'latitude'})
     ds_out["lon"].attrs.update({'units': 'degrees_east', 'standard_name': 'longitude'})
 
-    if has_time:
-        ds_out["time"] = da["time"]
-
-    ds_out[varname].attrs = da.attrs  
     ds_out.to_netcdf(outfile)
     return outfile
+
 
 
 def interpolate_bicubic(coarse_file, target_file, output_file):
