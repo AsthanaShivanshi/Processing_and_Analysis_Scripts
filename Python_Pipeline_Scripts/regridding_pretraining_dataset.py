@@ -9,7 +9,7 @@ from dask.distributed import Client, LocalCluster
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
-OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Data_pretraining"
+OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Pretraining_Dataset"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 TRAIN_RATIO = 0.8
@@ -65,7 +65,10 @@ def conservative_coarsening(infile, varname, block_size, outfile, latname='lat',
         lon_coarse = lon.reshape(ny_pad // block_size + ny // block_size, block_size,
                                  nx_pad // block_size + nx // block_size, block_size).mean(axis=(1, 3))
 
-        coords = {'lat': (['y', 'x'], lat_coarse), 'lon': (['y', 'x'], lon_coarse)}
+        coords = {'lat': (['y', 'x'], lat_coarse, {'units': 'degrees_north','standard_name': 'latitude'}),
+            'lon': (['y', 'x'], lon_coarse, {
+             'units': 'degrees_east',
+            'standard_name': 'longitude'})}
         if has_time:
             coords['time'] = var['time']
             dims = ('time', 'y', 'x')
