@@ -19,70 +19,69 @@ SEED = 42
 def conservative_coarsening(infile, varname, block_size, outfile, latname='lat', lonname='lon'):
     ds = xr.open_dataset(infile)
     da = ds[varname]
-    dims = da.dims
-    has_time = 'time' in dims
+    has_time = 'time' in da.dims
 
-    if 'E' in dims and 'N' in dims:
-        da_coarse = da.coarsen(N=block_size, E=block_size, boundary='pad').mean()
-    elif latname in ds and lonname in ds:
-        lat = ds[latname].values
-        lon = ds[lonname].values
-        var = da
+    if latname not in ds or lonname not in ds:
+        raise ValueError("lat/lon not found in input file.")
 
-        if lat.shape != var.shape[-2:] or lon.shape != var.shape[-2:]:
-            raise ValueError("lat/lon mismatch")
+    lat = ds[latname].values
+    lon = ds[lonname].values
 
-        ny, nx = lat.shape
-        ny_pad = (block_size - ny % block_size) % block_size
-        nx_pad = (block_size - nx % block_size) % block_size
+    if lat.shape != da.shape[-2:] or lon.shape != da.shape[-2:]:
+        raise ValueError("lat/lon shape mismatch with data")
 
-        var = var.pad({var.dims[-2]: (0, ny_pad), var.dims[-1]: (0, nx_pad)}, mode='edge')
-        lat = np.pad(lat, ((0, ny_pad), (0, nx_pad)), mode='edge')
-        lon = np.pad(lon, ((0, ny_pad), (0, nx_pad)), mode='edge')
+    ny, nx = lat.shape
+    ny_pad = (block_size - ny % block_size) % block_size
+    nx_pad = (block_size - nx % block_size) % block_size
 
-        R = 6371000
-        dlat = np.deg2rad(np.diff(lat[:, 0]).mean())
-        dlon = np.deg2rad(np.diff(lon[0, :]).mean())
-        area = (R ** 2) * dlat * dlon * np.cos(np.deg2rad(lat))
+    # Pad variables
+    da = da.pad({da.dims[-2]: (0, ny_pad), da.dims[-1]: (0, nx_pad)}, mode='edge')
+    lat = np.pad(lat, ((0, ny_pad), (0, nx_pad)), mode='edge')
+    lon = np.pad(lon, ((0, ny_pad), (0, nx_pad)), mode='edge')
 
-        if not has_time:
-            var = var.expand_dims('time')
+    # Compute area weighting
+    R = 6371000
+    dlat = np.deg2rad(np.diff(lat[:, 0]).mean())
+    dlon = np.deg2rad(np.diff(lon[0, :]).mean())
+    area = (R ** 2) * dlat * dlon * np.cos(np.deg2rad(lat))
 
-        data = var.values
-        area_blocks = area.reshape(ny_pad // block_size + ny // block_size, block_size,
-                                   nx_pad // block_size + nx // block_size, block_size)
-        var_blocks = data.reshape(
-            data.shape[0],
-            ny_pad // block_size + ny // block_size, block_size,
-            nx_pad // block_size + nx // block_size, block_size
-        )
+    if not has_time:
+        da = da.expand_dims('time')
 
-        weighted = (var_blocks * area_blocks).sum(axis=(2, 4))
-        total_area = area_blocks.sum(axis=(1, 3))
-        data_coarse = weighted / total_area
+    data = da.values
+    area_blocks = area.reshape((area.shape[0] // block_size, block_size,
+                                area.shape[1] // block_size, block_size))
+    var_blocks = data.reshape((data.shape[0],
+                               area.shape[0] // block_size, block_size,
+                               area.shape[1] // block_size, block_size))
 
-        lat_coarse = lat.reshape(ny_pad // block_size + ny // block_size, block_size,
-                                 nx_pad // block_size + nx // block_size, block_size).mean(axis=(1, 3))
-        lon_coarse = lon.reshape(ny_pad // block_size + ny // block_size, block_size,
-                                 nx_pad // block_size + nx // block_size, block_size).mean(axis=(1, 3))
+    weighted = (var_blocks * area_blocks).sum(axis=(2, 4))
+    total_area = area_blocks.sum(axis=(1, 3))
+    data_coarse = weighted / total_area
 
-        coords = {'lat': (['y', 'x'], lat_coarse, {'units': 'degrees_north','standard_name': 'latitude'}),
-            'lon': (['y', 'x'], lon_coarse, {
-             'units': 'degrees_east',
-            'standard_name': 'longitude'})}
-        if has_time:
-            coords['time'] = var['time']
-            dims = ('time', 'y', 'x')
-        else:
-            data_coarse = data_coarse.squeeze()
-            dims = ('y', 'x')
+    # Coarsen lat/lon
+    lat_coarse = lat.reshape((lat.shape[0] // block_size, block_size,
+                              lat.shape[1] // block_size, block_size)).mean(axis=(1, 3))
+    lon_coarse = lon.reshape((lon.shape[0] // block_size, block_size,
+                              lon.shape[1] // block_size, block_size)).mean(axis=(1, 3))
 
-        da_coarse = xr.DataArray(data_coarse, coords=coords, dims=dims, name=varname)
-    else:
-        raise ValueError("Unknown grid type")
+    coords = {
+        "lat": (["y", "x"], lat_coarse),
+        "lon": (["y", "x"], lon_coarse),
+        varname: (["time", "y", "x"], data_coarse),
+    }
 
-    da_coarse.to_netcdf(outfile)
+    ds_out = xr.Dataset(coords)
+    ds_out["lat"].attrs.update({'units': 'degrees_north', 'standard_name': 'latitude'})
+    ds_out["lon"].attrs.update({'units': 'degrees_east', 'standard_name': 'longitude'})
+
+    if has_time:
+        ds_out["time"] = da["time"]
+
+    ds_out[varname].attrs = da.attrs  
+    ds_out.to_netcdf(outfile)
     return outfile
+
 
 def interpolate_bicubic(coarse_file, target_file, output_file):
     print(f"Running CDO bicubic : {coarse_file} → {output_file}")
