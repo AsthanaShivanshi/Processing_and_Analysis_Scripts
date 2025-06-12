@@ -34,12 +34,10 @@ def conservative_coarsening(infile, varname, block_size, outfile, latname='lat',
     ny_pad = (block_size - ny % block_size) % block_size
     nx_pad = (block_size - nx % block_size) % block_size
 
-    # Pad data and coordinates
     da = da.pad({da.dims[-2]: (0, ny_pad), da.dims[-1]: (0, nx_pad)}, mode='edge')
     lat = np.pad(lat, ((0, ny_pad), (0, nx_pad)), mode='edge')
     lon = np.pad(lon, ((0, ny_pad), (0, nx_pad)), mode='edge')
 
-    # Compute area weighting
     R = 6371000
     dlat = np.deg2rad(np.diff(lat[:, 0]).mean())
     dlon = np.deg2rad(np.diff(lon[0, :]).mean())
@@ -59,13 +57,11 @@ def conservative_coarsening(infile, varname, block_size, outfile, latname='lat',
     total_area = area_blocks.sum(axis=(1, 3))
     data_coarse = weighted / total_area
 
-    # Coarsen lat/lon
     lat_coarse = lat.reshape((lat.shape[0] // block_size, block_size,
                               lat.shape[1] // block_size, block_size)).mean(axis=(1, 3))
     lon_coarse = lon.reshape((lon.shape[0] // block_size, block_size,
                               lon.shape[1] // block_size, block_size)).mean(axis=(1, 3))
 
-    # Prepare the dataset
     coords = {
         "lat": (["y", "x"], lat_coarse),
         "lon": (["y", "x"], lon_coarse)
@@ -79,11 +75,10 @@ def conservative_coarsening(infile, varname, block_size, outfile, latname='lat',
         dims = ("y", "x")
 
     var_da = xr.DataArray(data_coarse, coords=coords, dims=dims, name=varname)
-    var_da.attrs = da.attrs  # preserve variable metadata
+    var_da.attrs = da.attrs  
 
     ds_out = var_da.to_dataset()
 
-    # Set coordinate metadata explicitly
     ds_out["lat"].attrs.update({'units': 'degrees_north', 'standard_name': 'latitude'})
     ds_out["lon"].attrs.update({'units': 'degrees_east', 'standard_name': 'longitude'})
 
@@ -173,24 +168,19 @@ def main():
     coarse_path = OUTPUT_DIR / f"{varname}_coarse.nc"
     interp_path = OUTPUT_DIR / f"{varname}_interp.nc"
 
-    # Coarsen
     conservative_coarsening(infile_path, varname, block_size=11, outfile=coarse_path)
 
-    # Interpolate
     interpolate_bicubic(coarse_path, infile_path, interp_path)
 
-    # Load 
     with xr.open_dataset(infile_path, chunks={"time": 50}) as highres_ds, \
          xr.open_dataset(interp_path, chunks={"time": 50}) as upsampled_ds:
 
         highres = highres_ds[varname]
         upsampled = upsampled_ds[varname]
 
-        #  Split
         x_train, x_val = split(upsampled, SEED, TRAIN_RATIO)
         y_train, y_val = split(highres, SEED, TRAIN_RATIO)
 
-        # Scaling
         stats = get_cdo_stats(infile_path, scale_type)
 
         x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
@@ -198,7 +188,6 @@ def main():
         y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
         y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
 
-        #  Save
         x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled.nc")
         x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
         y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
