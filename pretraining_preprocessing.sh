@@ -1,13 +1,17 @@
 #!/bin/bash
 #SBATCH --job-name=pretraining_preprocessing
-#SBATCH --output=pretraining_preprocessing_%j.out
-#SBATCH --error=proetraining_proeprocessing_%j.err
+#SBATCH --output=logs/pretraining_preprocessing_%j.out
+#SBATCH --error=logs/pretraining_preprocessing_%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+#SBATCH --mem=128G
 #SBATCH --time=3-00:00:00
+
 module load micromamba
+module load cdo
 eval "$(micromamba shell hook --shell=bash)"
 source environment.sh
-python Python_Pipeline_Scripts/regridding_pretraining_dataset.py
+
+cd "$BASE_DIR" || exit 1
+python sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/regridding_pretraining_dataset.py
 

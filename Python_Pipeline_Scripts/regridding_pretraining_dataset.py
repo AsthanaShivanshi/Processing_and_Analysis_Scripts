@@ -3,8 +3,9 @@ import numpy as np
 import os
 from pathlib import Path
 import subprocess
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import json
+import gc
+from dask.distributed import Client, LocalCluster
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
@@ -79,17 +80,10 @@ def conservative_coarsening(infile, varname, block_size, outfile, latname='lat',
     da_coarse.to_netcdf(outfile)
     return outfile
 
-
-
 def interpolate_bicubic(coarse_file, target_file, output_file):
     print(f"Running CDO bicubic interpolation: {coarse_file} → {output_file}")
-    cmd = [
-        "cdo", f"remapbic,{target_file}",
-        str(coarse_file), str(output_file)
-    ]
+    cmd = ["cdo", f"remapbic,{target_file}", str(coarse_file), str(output_file)]
     subprocess.run(cmd, check=True)
-
-
 
 def split(ds, seed, train_ratio):
     np.random.seed(seed)
@@ -98,77 +92,90 @@ def split(ds, seed, train_ratio):
     split_idx = int(train_ratio * len(indices))
     return ds.isel(time=indices[:split_idx]), ds.isel(time=indices[split_idx:])
 
+import subprocess
+
+def get_cdo_stats(file_path, method):
+    stats = {}
+    file_path = str(file_path)
+
+    if method == "standard": #For gaussian scaling
+        result = subprocess.check_output(
+            ["cdo", "output", "-fldmean", "-timmean", file_path]
+        )
+        stats['mean'] = float(result.decode().strip())
+
+        result = subprocess.check_output(
+            ["cdo", "output", "-fldmean", "-timstd", file_path]
+        )
+        stats['std'] = float(result.decode().strip())
+
+    elif method == "minmax":
+        result = subprocess.check_output(
+            ["cdo", "output", "-fldmin", "-timmin", file_path]
+        )
+        stats['min'] = float(result.decode().strip())
+
+        result = subprocess.check_output(
+            ["cdo", "output", "-fldmax", "-timmax", file_path]
+        )
+        stats['max'] = float(result.decode().strip())
+
+    else:
+        raise ValueError(f"Unsupported method: {method}")
+
+    return stats
 
 
-def scale(train, val, method):
-    scaler = MinMaxScaler() if method == 'minmax' else StandardScaler()
-    train_flat = train.values.reshape(-1, 1)
-    val_flat = val.values.reshape(-1, 1)
+def apply_cdo_scaling(ds, stats, method):
+    if method == "standard":
+        return (ds - stats['mean']) / stats['std']
+    elif method == "minmax":
+        return (ds - stats['min']) / (stats['max'] - stats['min'])
+    else:
+        raise ValueError(f"Unknown method: {method}")
 
-    scaler.fit(train_flat)
-    train_scaled = scaler.transform(train_flat).reshape(train.shape)
-    val_scaled = scaler.transform(val_flat).reshape(val.shape)
+def main():
+    datasets = [
+        ("precip_1771_2010.nc", "precip", "minmax"),
+        ("temp_1771_2010.nc", "temp", "standard"),
+        ("tmin_1771_2010.nc", "tmin", "standard"),
+        ("tmax_1771_2010.nc", "tmax", "standard"),
+    ]
+    for infile, varname, scale_type in datasets:
+        infile_path = INPUT_DIR / infile
+        coarse_path = OUTPUT_DIR / f"{varname}_coarse.nc"
+        interp_path = OUTPUT_DIR / f"{varname}_interp.nc"
+        conservative_coarsening(infile_path, varname, block_size=11, outfile=coarse_path)
+        interpolate_bicubic(coarse_path, infile_path, interp_path)
 
-    train_da = xr.DataArray(train_scaled, coords=train.coords, dims=train.dims)
-    val_da = xr.DataArray(val_scaled, coords=val.coords, dims=val.dims)
-    return train_da, val_da, scaler
+        with xr.open_dataset(infile_path, chunks={"time": 50}) as highres_ds, \
+             xr.open_dataset(interp_path, chunks={"time": 50}) as upsampled_ds:
+            highres = highres_ds[varname]
+            upsampled = upsampled_ds[varname]
+            x_train, x_val = split(upsampled, SEED, TRAIN_RATIO)
+            y_train, y_val = split(highres, SEED, TRAIN_RATIO)
 
+            stats = get_cdo_stats(infile_path, varname, scale_type)
 
+            x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
+            x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
+            y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
+            y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
 
-def save_params(scaler, varname, dataset_type, out_dir):
-    params = {}
-    if hasattr(scaler, 'mean_'):
-        params['mean'] = float(scaler.mean_[0])
-    if hasattr(scaler, 'scale_'):
-        params['std'] = float(scaler.scale_[0])
-    if hasattr(scaler, 'data_min_'):
-        params['min'] = float(scaler.data_min_[0])
-    if hasattr(scaler, 'data_max_'):
-        params['max'] = float(scaler.data_max_[0])
-    
-    out_path = out_dir / f"{varname}_{dataset_type}_scaling_params.json"
-    with open(out_path, 'w') as f:
-        json.dump(params, f, indent=2)
+            x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled.nc")
+            x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
+            y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
+            y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled.nc")
 
-datasets = [
-    ("precip_1771_2010.nc", "precip", "minmax"),
-    ("temp_1771_2010.nc", "temp", "standard"),
-    ("tmin_1771_2010.nc", "tmin", "standard"),
-    ("tmax_1771_2010.nc", "tmax", "standard"),
-]
+            with open(OUTPUT_DIR / f"{varname}_scaling_params.json", "w") as f:
+                json.dump(stats, f, indent=2)
 
-for infile, varname, scale_type in datasets:
-    infile_path = INPUT_DIR / infile
-    coarse_path = OUTPUT_DIR / f"{varname}_coarse.nc"
-    interp_path = OUTPUT_DIR / f"{varname}_interp.nc"
+            del x_train, x_val, y_train, y_val, x_train_scaled, x_val_scaled, y_train_scaled, y_val_scaled
+            gc.collect()
+            print(f"Processed {varname} dataset successfully.")
 
-
-    # Coarsening high-res 
-    conservative_coarsening(infile_path, varname, block_size=11, outfile=coarse_path)
-
-    # Interpolating back using bicubic
-    interpolate_bicubic(coarse_path, infile_path, interp_path)
-
-    # Loading
-    highres = xr.open_dataset(infile_path)[varname]
-    upsampled = xr.open_dataset(interp_path)[varname]
-
-    # Splitting 80-20
-    x_train, x_val = split(upsampled, SEED, TRAIN_RATIO)
-    y_train, y_val = split(highres, SEED, TRAIN_RATIO)
-
-    # Scaling
-    x_train_scaled, x_val_scaled, scaler_x = scale(x_train, x_val, scale_type)
-    y_train_scaled, y_val_scaled, scaler_y = scale(y_train, y_val, scale_type)
-
-    # Saving
-    x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled.nc")
-    x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
-    y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
-    y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled.nc")
-
-    #Saving scaling params
-    save_params(scaler_x, varname, "input", OUTPUT_DIR)
-    save_params(scaler_y, varname, "target", OUTPUT_DIR)
-
-print("datasets processed and saved.")
+if __name__ == "__main__":
+    cluster = LocalCluster(n_workers=4, threads_per_worker=1, memory_limit="16GB")
+    client = Client(cluster)
+    print("Dask dashboard:", client.dashboard_link)
+    main()
