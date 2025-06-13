@@ -127,7 +127,6 @@ def interpolate_bicubic_ds(coarse_ds, target_ds, varname):
     interp_ds['lat'].attrs = target_ds['lat'].attrs
     interp_ds['lon'].attrs = target_ds['lon'].attrs
 
-    # Ensure variable name is correct
     if varname not in interp_ds:
         interp_ds[varname] = interp_ds[list(interp_ds.data_vars)[0]]
     interp_ds = interp_ds[[varname, 'lat', 'lon']]
@@ -185,14 +184,14 @@ def main():
     infile, scale_type = dataset_map[varname]
     infile_path = INPUT_DIR / infile
 
-    # Promote lat/lon in-memory
-    highres_ds = promote_latlon(infile_path, varname)
+    # Promoting latlon in memory, using chunking
+    highres_ds = promote_latlon(infile_path, varname).chunk({"time":100})
 
-    # Conservative coarsening in-memory
-    coarse_ds = conservative_coarsening(highres_ds, varname, block_size=11)
+    # Conservative coarsening using chunking
+    coarse_ds = conservative_coarsening(highres_ds, varname, block_size=11).chunk({"time":100})
 
     # Bicubic interpolate coarse to highres grid, in-memory
-    interp_ds = interpolate_bicubic_ds(coarse_ds, highres_ds, varname)
+    interp_ds = interpolate_bicubic_ds(coarse_ds, highres_ds, varname).chunk({"time":100})
 
     highres = highres_ds[varname]
     upsampled = interp_ds[varname]
