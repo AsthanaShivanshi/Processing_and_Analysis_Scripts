@@ -11,6 +11,9 @@ from pyproj import Transformer
 import psutil
 import multiprocessing as mp
 from dask.diagnostics import ProgressBar
+import psutil
+from pyproj import datadir
+os.environ["PROJ_LIB"] = datadir.get_data_dir()
 
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
@@ -21,6 +24,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TRAIN_RATIO = 0.8
 SEED = 42
 
+
 def promote_latlon(infile, varname):
     ds = xr.open_dataset(infile)
 
@@ -29,12 +33,11 @@ def promote_latlon(infile, varname):
 
     E = ds["E"].values
     N = ds["N"].values
-    EE, NN = np.meshgrid(E, N)
+    EE, NN = np.meshgrid(E, N, indexing="xy")
 
-    transformer = Transformer.from_proj(
-        proj_from="+proj=somerc +lat_0=46.95240555555556 +lon_0=7.439583333333333 "
-                  "+k=1 +x_0=2600000 +y_0=1200000 +ellps=bessel +units=m +no_defs",
-        proj_to="+proj=longlat +datum=WGS84 +no_defs",
+    transformer = Transformer.from_crs(
+        crs_from="EPSG:2056",  # CH1903+ / LV95
+        crs_to="EPSG:4326",    # WGS84 
         always_xy=True
     )
 
@@ -45,7 +48,9 @@ def promote_latlon(infile, varname):
         lon=(("N", "E"), lon)
     )
     ds = ds.set_coords(["lat", "lon"])
+
     return ds
+
 
 def conservative_coarsening(ds, varname, block_size, latname='lat', lonname='lon'):
     da = ds[varname]
@@ -57,39 +62,43 @@ def conservative_coarsening(ds, varname, block_size, latname='lat', lonname='lon
     lat = ds[latname]
     lon = ds[lonname]
 
+    # Computing area weights
     R = 6371000
     dlat = np.deg2rad(np.diff(lat[:, 0].values).mean())
     dlon = np.deg2rad(np.diff(lon[0, :].values).mean())
     area_np = (R ** 2) * dlat * dlon * np.cos(np.deg2rad(lat.values))
     area_da = xr.DataArray(area_np, dims=("N", "E"), coords={latname: lat, lonname: lon})
 
-    while len(area_da.dims) < len(da.dims):
-        area_da = area_da.expand_dims({dim: da.sizes[dim] for dim in da.dims if dim not in area_da.dims})
+    for dim in da.dims:
+        if dim not in area_da.dims:
+            area_da = area_da.expand_dims({dim: da.sizes[dim]})
 
-    # Weighted coarsening
     weighted = da * area_da
     coarsen_dims = {da.dims[-2]: block_size, da.dims[-1]: block_size}
     weighted_sum = weighted.coarsen(**coarsen_dims, boundary="pad").sum()
     area_sum = area_da.coarsen(**coarsen_dims, boundary="pad").sum()
     data_coarse = weighted_sum / area_sum
 
-    # 
-    lat_coarse = lat.coarsen({lat.dims[0]: block_size}, boundary="pad").mean()
-    lon_coarse = lon.coarsen({lon.dims[1]: block_size}, boundary="pad").mean()
+    lat_coarse_1d = lat[:, 0].coarsen({lat.dims[0]: block_size}, boundary="pad").mean()
+    lon_coarse_1d = lon[0, :].coarsen({lon.dims[1]: block_size}, boundary="pad").mean()
+    lon_coarse_2d, lat_coarse_2d = np.meshgrid(lon_coarse_1d, lat_coarse_1d)
 
     data_coarse = data_coarse.assign_coords({
-        lat.dims[0]: lat_coarse,
-        lon.dims[1]: lon_coarse
+        'lat': (data_coarse.dims[-2:], lat_coarse_2d),
+        'lon': (data_coarse.dims[-2:], lon_coarse_2d)
     })
+
     data_coarse.name = varname
 
     if not has_time:
         data_coarse = data_coarse.squeeze("time")
 
     ds_out = data_coarse.to_dataset()
-    ds_out[latname].attrs.update({'units': 'degrees_north', 'standard_name': 'latitude'})
-    ds_out[lonname].attrs.update({'units': 'degrees_east', 'standard_name': 'longitude'})
+    ds_out['lat'].attrs.update({'units': 'degrees_north', 'standard_name': 'latitude'})
+    ds_out['lon'].attrs.update({'units': 'degrees_east', 'standard_name': 'longitude'})
+
     return ds_out
+
 
 def interpolate_bicubic_ds(coarse_ds, target_ds, varname):
     import tempfile
@@ -119,6 +128,7 @@ def interpolate_bicubic_ds(coarse_ds, target_ds, varname):
 
     return interp_ds
 
+
 def split(x, y, train_ratio, seed):
     np.random.seed(seed)
     indices = np.arange(x.sizes['time'])
@@ -132,6 +142,7 @@ def split(x, y, train_ratio, seed):
         y.isel(time=train_idx),
         y.isel(time=val_idx)
     )
+
 
 def get_cdo_stats(file_path, method):
     stats = {}
@@ -148,6 +159,7 @@ def get_cdo_stats(file_path, method):
 
     return stats
 
+
 def apply_cdo_scaling(ds, stats, method):
     if method == "standard":
         return (ds - stats['mean']) / stats['std']
@@ -156,67 +168,95 @@ def apply_cdo_scaling(ds, stats, method):
     else:
         raise ValueError(f"Unknown method: {method}")
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--var", type=str, required=True, help="Variable to process (e.g., precip, temp, tmin, tmax)")
     args = parser.parse_args()
-
     varname = args.var
+
     dataset_map = {
         "precip": ("precip_1771_2010.nc", "minmax"),
         "temp": ("temp_1771_2010.nc", "standard"),
         "tmin": ("tmin_1771_2010.nc", "standard"),
         "tmax": ("tmax_1771_2010.nc", "standard"),
     }
-
     if varname not in dataset_map:
-        raise ValueError(f"Variable '{varname}' not recognized. Choose from: {list(dataset_map.keys())}")
+        raise ValueError(f"Variable '{varname}' not recognized.")
 
     infile, scale_type = dataset_map[varname]
     infile_path = INPUT_DIR / infile
+    chunk_dict = {"time": 10, "N": 100, "E": 100}
 
-    highres_ds = promote_latlon(infile_path, varname).chunk({"time": 100})
-    coarse_ds = conservative_coarsening(highres_ds, varname, block_size=11).chunk({"time": 100})
-    coarse_ds = client.persist(coarse_ds)
+    step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
+    if step1_path.exists():
+        highres_ds = xr.open_dataset(step1_path).chunk(chunk_dict)
+    else:
+        print(f"[INFO] Promoting lat/lon for {varname}...")
+        highres_ds = promote_latlon(infile_path, varname).chunk(chunk_dict)
+        highres_ds.to_netcdf(step1_path)
+        del highres_ds
+        gc.collect()
+        highres_ds = xr.open_dataset(step1_path).chunk(chunk_dict)
 
-    interp_ds = interpolate_bicubic_ds(coarse_ds, highres_ds, varname).chunk({"time": 100})
+    step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
+    if step2_path.exists():
+        coarse_ds = xr.open_dataset(step2_path).chunk(chunk_dict)
+    else:
+        print(f"[INFO] Coarsening {varname}...")
+        coarse_ds = conservative_coarsening(highres_ds, varname, block_size=11).chunk(chunk_dict)
+        coarse_ds.to_netcdf(step2_path)
+        del coarse_ds
+        gc.collect()
+        coarse_ds = xr.open_dataset(step2_path).chunk(chunk_dict)
+
+    step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
+    if step3_path.exists():
+        interp_ds = xr.open_dataset(step3_path).chunk(chunk_dict)
+    else:
+        print(f"[INFO] Interpolating {varname}...")
+        interp_ds = interpolate_bicubic_ds(coarse_ds, highres_ds, varname).chunk(chunk_dict)
+        interp_ds.to_netcdf(step3_path)
+        del interp_ds
+        gc.collect()
+        interp_ds = xr.open_dataset(step3_path).chunk(chunk_dict)
+
     highres = highres_ds[varname]
-    upsampled = interp_ds[varname]
-
-    upsampled = upsampled.assign_coords({
+    upsampled = interp_ds[varname].assign_coords({
         'lat': highres_ds['lat'],
         'lon': highres_ds['lon']
     })
     upsampled['lat'].attrs = highres_ds['lat'].attrs
     upsampled['lon'].attrs = highres_ds['lon'].attrs
 
+    print(f"[INFO] Splitting into train/val for {varname}...")
     x_train, x_val, y_train, y_val = split(upsampled, highres, TRAIN_RATIO, SEED)
 
-
+    print(f"[INFO] Scaling {varname}...")
     stats = get_cdo_stats(infile_path, scale_type)
-
     x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
     x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
     y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
     y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
 
+    print(f"[INFO] Saving final output for {varname}...")
     x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled.nc")
     x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
     y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
     y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled.nc")
-
     with open(OUTPUT_DIR / f"{varname}_scaling_params.json", "w") as f:
         json.dump(stats, f, indent=2)
 
-    print(f"Processed '{varname}' successfully.")
-    
+    print(f"[SUCCESS] Finished processing '{varname}'.")
+
 
 if __name__ == "__main__":
     mp.set_start_method("fork", force=True)
 
-    n_workers = 4
-    threads_per_worker = 1
-    mem_per_worker = "32GB"
+    n_workers = 1
+    threads_per_worker = 16
+    mem_per_worker = "240GB"  # leaving buffer for memory
+
 
     print(f"[INFO] Launching Dask cluster: {n_workers} workers x {threads_per_worker} threads, {mem_per_worker} per worker")
 
@@ -234,4 +274,6 @@ if __name__ == "__main__":
         client.close()
         cluster.close()
 
+        gc.collect()
 
+print(f"[INFO] Memory usage at start: {psutil.virtual_memory().used / 1e9:.2f} GB")
