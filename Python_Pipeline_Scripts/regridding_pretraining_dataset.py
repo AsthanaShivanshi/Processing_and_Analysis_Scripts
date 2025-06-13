@@ -12,9 +12,6 @@ import warnings
 import psutil
 import multiprocessing as mp
 
-print("PROJ_LIB =", os.environ.get("PROJ_LIB"))
-print("proj.db exists:", os.path.exists(os.path.join(os.environ["PROJ_LIB"], "proj.db")))
-
 warnings.filterwarnings("ignore", message=".*pyproj unable to set PROJ database path.*")
 warnings.filterwarnings("ignore", message=".*angle from rectified to skew grid parameter lost.*")
 
@@ -32,9 +29,14 @@ def promote_latlon(infile, outfile, varname):
     if 'lat' not in ds or 'lon' not in ds:
         raise ValueError("lat/lon must exist as data variables in the file.")
 
+    for coord in ["lat", "lon"]:
+        if coord in ds.data_vars:
+            ds = ds.drop_vars(coord)
+
+    # Assigning them as coordinates to the target variable
     ds[varname] = ds[varname].assign_coords({
         "lat": (("N", "E"), ds["lat"].values),
-        "lon": (("N", "E"), ds["lon"].values) #They show as NE in the dataset
+        "lon": (("N", "E"), ds["lon"].values)
     })
 
     ds = ds.set_coords(["lat", "lon"])
@@ -45,6 +47,7 @@ def promote_latlon(infile, outfile, varname):
     ds.to_netcdf(outfile)
     print(f"[INFO] Promoted lat/lon to coordinates and saved to {outfile}")
     return outfile
+
 
 def conservative_coarsening(infile, varname, block_size, outfile, latname='lat', lonname='lon'):
     ds = xr.open_dataset(infile)
