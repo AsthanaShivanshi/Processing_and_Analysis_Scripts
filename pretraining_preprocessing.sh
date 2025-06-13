@@ -3,8 +3,8 @@
 #SBATCH --output=logs/pretraining_preprocessing_%j.out
 #SBATCH --error=logs/pretraining_preprocessing_%j.err
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=256G
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=512G
 #SBATCH --time=3-00:00:00
 
 module load micromamba

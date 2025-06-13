@@ -7,14 +7,9 @@ import json
 import gc
 from dask.distributed import Client, LocalCluster
 import argparse
-import pyproj
-import warnings
+from pyproj import Transformer
 import psutil
 import multiprocessing as mp
-from pyproj import Transformer
-
-warnings.filterwarnings("ignore", message=".*pyproj unable to set PROJ database path.*")
-warnings.filterwarnings("ignore", message=".*angle from rectified to skew grid parameter lost.*")
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
@@ -24,40 +19,33 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TRAIN_RATIO = 0.8
 SEED = 42
 
-
-def promote_latlon(infile, outfile, varname):
+def promote_latlon(infile, varname):
     ds = xr.open_dataset(infile)
 
     if not all(coord in ds.coords or coord in ds.dims for coord in ["E", "N"]):
         raise ValueError("Dataset must have 'E' and 'N' dimensions for projected coordinates.")
 
-    # 
     E = ds["E"].values
     N = ds["N"].values
     EE, NN = np.meshgrid(E, N)
 
-    # Transformation LV95 to lat/lon 
-    transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
+    transformer = Transformer.from_proj(
+        proj_from="+proj=somerc +lat_0=46.95240555555556 +lon_0=7.439583333333333 "
+                  "+k=1 +x_0=2600000 +y_0=1200000 +ellps=bessel +units=m +no_defs",
+        proj_to="+proj=longlat +datum=WGS84 +no_defs",
+        always_xy=True
+    )
+
     lon, lat = transformer.transform(EE, NN)
 
-    # Add lat/lon as coordinates , has to be extracted from the meshgrid with N,E coordinates.,
-    ds[varname] = ds[varname].assign_coords({
-        "lat": (("N", "E"), lat),
-        "lon": (("N", "E"), lon)
-    })
-
+    ds = ds.assign_coords(
+        lat=(("N", "E"), lat),
+        lon=(("N", "E"), lon)
+    )
     ds = ds.set_coords(["lat", "lon"])
+    return ds
 
-    ds["lat"].attrs.update({"units": "degrees_north", "standard_name": "latitude"})
-    ds["lon"].attrs.update({"units": "degrees_east", "standard_name": "longitude"})
-
-    ds.to_netcdf(outfile)
-    print(f"[INFO] Converted Swiss coordinates to lat/lon and saved to {outfile}")
-    return outfile
-
-
-def conservative_coarsening(infile, varname, block_size, outfile, latname='lat', lonname='lon'):
-    ds = xr.open_dataset(infile)
+def conservative_coarsening(ds, varname, block_size, latname='lat', lonname='lon'):
     da = ds[varname]
     has_time = 'time' in da.dims
 
@@ -109,19 +97,42 @@ def conservative_coarsening(infile, varname, block_size, outfile, latname='lat',
         dims = ("y", "x")
 
     var_da = xr.DataArray(data_coarse, coords=coords, dims=dims, name=varname)
-    var_da.attrs = da.attrs  
+    var_da.attrs = da.attrs
 
     ds_out = var_da.to_dataset()
     ds_out["lat"].attrs.update({'units': 'degrees_north', 'standard_name': 'latitude'})
     ds_out["lon"].attrs.update({'units': 'degrees_east', 'standard_name': 'longitude'})
-    ds_out.to_netcdf(outfile)
-    return outfile
+    return ds_out
 
-def interpolate_bicubic(coarse_file, target_file, output_file):
-    print(f"Running CDO bicubic : {coarse_file} → {output_file}")
-    cmd = ["cdo", f"remapbic,{target_file}", str(coarse_file), str(output_file)]
-    subprocess.run(cmd, check=True)
+def interpolate_bicubic_ds(coarse_ds, target_ds, varname):
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        coarse_file = Path(tmpdir) / "coarse.nc"
+        target_file = Path(tmpdir) / "target.nc"
+        output_file = Path(tmpdir) / "interp.nc"
 
+        coarse_ds.to_netcdf(coarse_file)
+        target_ds.to_netcdf(target_file)
+
+        cmd = ["cdo", f"remapbic,{target_file}", str(coarse_file), str(output_file)]
+        subprocess.run(cmd, check=True)
+
+        interp_ds = xr.open_dataset(output_file)
+
+    # CDO output loses coords, so re-assign lat/lon from target_ds
+    interp_ds = interp_ds.assign_coords(
+        lat=target_ds['lat'],
+        lon=target_ds['lon']
+    )
+    interp_ds['lat'].attrs = target_ds['lat'].attrs
+    interp_ds['lon'].attrs = target_ds['lon'].attrs
+
+    # Ensure variable name is correct
+    if varname not in interp_ds:
+        interp_ds[varname] = interp_ds[list(interp_ds.data_vars)[0]]
+    interp_ds = interp_ds[[varname, 'lat', 'lon']]
+
+    return interp_ds
 
 def split(ds, seed, train_ratio):
     np.random.seed(seed)
@@ -129,7 +140,6 @@ def split(ds, seed, train_ratio):
     np.random.shuffle(indices)
     split_idx = int(train_ratio * len(indices))
     return ds.isel(time=indices[:split_idx]), ds.isel(time=indices[split_idx:])
-
 
 def get_cdo_stats(file_path, method):
     stats = {}
@@ -174,51 +184,48 @@ def main():
 
     infile, scale_type = dataset_map[varname]
     infile_path = INPUT_DIR / infile
-    reprojected_path = OUTPUT_DIR / f"{varname}_latlon.nc"
-    coarse_path = OUTPUT_DIR / f"{varname}_coarse.nc"
-    interp_path = OUTPUT_DIR / f"{varname}_interp.nc"
 
-    promote_latlon(infile_path, reprojected_path, varname)
-    conservative_coarsening(reprojected_path, varname, block_size=11, outfile=coarse_path)
-    interpolate_bicubic(coarse_path, reprojected_path, interp_path)
+    # Promote lat/lon in-memory
+    highres_ds = promote_latlon(infile_path, varname)
 
-    with xr.open_dataset(reprojected_path, chunks={"time": 100}) as highres_ds, \
-         xr.open_dataset(interp_path, chunks={"time": 100}) as upsampled_ds:
+    # Conservative coarsening in-memory
+    coarse_ds = conservative_coarsening(highres_ds, varname, block_size=11)
 
-        highres = highres_ds[varname]
-        upsampled = upsampled_ds[varname]
+    # Bicubic interpolate coarse to highres grid, in-memory
+    interp_ds = interpolate_bicubic_ds(coarse_ds, highres_ds, varname)
 
-        upsampled = upsampled.assign_coords({
-            'lat': highres_ds['lat'],
-            'lon': highres_ds['lon']
-        })
-        upsampled['lat'].attrs = highres_ds['lat'].attrs
-        upsampled['lon'].attrs = highres_ds['lon'].attrs
+    highres = highres_ds[varname]
+    upsampled = interp_ds[varname]
 
-        assert np.allclose(upsampled['lat'].values, highres_ds['lat'].values)
-        assert np.allclose(upsampled['lon'].values, highres_ds['lon'].values)
+    # Assign coords to upsampled to match highres
+    upsampled = upsampled.assign_coords({
+        'lat': highres_ds['lat'],
+        'lon': highres_ds['lon']
+    })
+    upsampled['lat'].attrs = highres_ds['lat'].attrs
+    upsampled['lon'].attrs = highres_ds['lon'].attrs
 
-        x_train, x_val = split(upsampled, SEED, TRAIN_RATIO)
-        y_train, y_val = split(highres, SEED, TRAIN_RATIO)
+    # Split train/val
+    x_train, x_val = split(upsampled, SEED, TRAIN_RATIO)
+    y_train, y_val = split(highres, SEED, TRAIN_RATIO)
 
-        stats = get_cdo_stats(reprojected_path, scale_type)
+    stats = get_cdo_stats(infile_path, scale_type)
 
-        x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
-        x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
-        y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
-        y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
+    x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
+    x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
+    y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
+    y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
 
-        x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled.nc")
-        x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
-        y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
-        y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled.nc")
+    # Save only final scaled datasets
+    x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled.nc")
+    x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
+    y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
+    y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled.nc")
 
-        with open(OUTPUT_DIR / f"{varname}_scaling_params.json", "w") as f:
-            json.dump(stats, f, indent=2)
+    with open(OUTPUT_DIR / f"{varname}_scaling_params.json", "w") as f:
+        json.dump(stats, f, indent=2)
 
-        del x_train, x_val, y_train, y_val, x_train_scaled, x_val_scaled, y_train_scaled, y_val_scaled
-        gc.collect()
-        print(f"Processed '{varname}' successfully.")
+    print(f"Processed '{varname}' successfully.")
 
 if __name__ == "__main__":
     mp.set_start_method("fork", force=True)
