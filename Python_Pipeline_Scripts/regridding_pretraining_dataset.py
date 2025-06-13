@@ -49,59 +49,44 @@ def conservative_coarsening(ds, varname, block_size, latname='lat', lonname='lon
     da = ds[varname]
     has_time = 'time' in da.dims
 
-    lat = ds[latname].values
-    lon = ds[lonname].values
-
-    ny, nx = lat.shape
-    ny_pad = (block_size - ny % block_size) % block_size
-    nx_pad = (block_size - nx % block_size) % block_size
-
-    da = da.pad({da.dims[-2]: (0, ny_pad), da.dims[-1]: (0, nx_pad)}, mode='edge')
-    lat = np.pad(lat, ((0, ny_pad), (0, nx_pad)), mode='edge')
-    lon = np.pad(lon, ((0, ny_pad), (0, nx_pad)), mode='edge')
-
-    R = 6371000
-    dlat = np.deg2rad(np.diff(lat[:, 0]).mean())
-    dlon = np.deg2rad(np.diff(lon[0, :]).mean())
-    area = (R ** 2) * dlat * dlon * np.cos(np.deg2rad(lat))
-
     if not has_time:
         da = da.expand_dims('time')
 
-    data = da.values
-    area_blocks = area.reshape((area.shape[0] // block_size, block_size,
-                                area.shape[1] // block_size, block_size))
-    var_blocks = data.reshape((data.shape[0],
-                               area.shape[0] // block_size, block_size,
-                               area.shape[1] // block_size, block_size))
+    lat = ds[latname]
+    lon = ds[lonname]
 
-    weighted = (var_blocks * area_blocks).sum(axis=(2, 4))
-    total_area = area_blocks.sum(axis=(1, 3))
-    data_coarse = weighted / total_area
+    R = 6371000
+    dlat = np.deg2rad(np.diff(lat[:, 0].values).mean())
+    dlon = np.deg2rad(np.diff(lon[0, :].values).mean())
+    area_np = (R ** 2) * dlat * dlon * np.cos(np.deg2rad(lat.values))
+    area_da = xr.DataArray(area_np, dims=("N", "E"), coords={latname: lat, lonname: lon})
 
-    lat_coarse = lat.reshape((lat.shape[0] // block_size, block_size,
-                              lat.shape[1] // block_size, block_size)).mean(axis=(1, 3))
-    lon_coarse = lon.reshape((lon.shape[0] // block_size, block_size,
-                              lon.shape[1] // block_size, block_size)).mean(axis=(1, 3))
+    while len(area_da.dims) < len(da.dims):
+        area_da = area_da.expand_dims({dim: da.sizes[dim] for dim in da.dims if dim not in area_da.dims})
 
-    coords = {
-        "lat": (["y", "x"], lat_coarse),
-        "lon": (["y", "x"], lon_coarse)
-    }
+    # Weighted coarsening
+    weighted = da * area_da
+    coarsen_dims = {da.dims[-2]: block_size, da.dims[-1]: block_size}
+    weighted_sum = weighted.coarsen(**coarsen_dims, boundary="pad").sum()
+    area_sum = area_da.coarsen(**coarsen_dims, boundary="pad").sum()
+    data_coarse = weighted_sum / area_sum
 
-    if has_time:
-        coords["time"] = da["time"]
-        dims = ("time", "y", "x")
-    else:
-        data_coarse = data_coarse.squeeze()
-        dims = ("y", "x")
+    # 
+    lat_coarse = lat.coarsen({lat.dims[0]: block_size}, boundary="pad").mean()
+    lon_coarse = lon.coarsen({lon.dims[1]: block_size}, boundary="pad").mean()
 
-    var_da = xr.DataArray(data_coarse, coords=coords, dims=dims, name=varname)
-    var_da.attrs = da.attrs
+    data_coarse = data_coarse.assign_coords({
+        lat.dims[0]: lat_coarse,
+        lon.dims[1]: lon_coarse
+    })
+    data_coarse.name = varname
 
-    ds_out = var_da.to_dataset()
-    ds_out["lat"].attrs.update({'units': 'degrees_north', 'standard_name': 'latitude'})
-    ds_out["lon"].attrs.update({'units': 'degrees_east', 'standard_name': 'longitude'})
+    if not has_time:
+        data_coarse = data_coarse.squeeze("time")
+
+    ds_out = data_coarse.to_dataset()
+    ds_out[latname].attrs.update({'units': 'degrees_north', 'standard_name': 'latitude'})
+    ds_out[lonname].attrs.update({'units': 'degrees_east', 'standard_name': 'longitude'})
     return ds_out
 
 def interpolate_bicubic_ds(coarse_ds, target_ds, varname):
@@ -119,7 +104,6 @@ def interpolate_bicubic_ds(coarse_ds, target_ds, varname):
 
         interp_ds = xr.open_dataset(output_file)
 
-    # CDO output loses coords, so re-assign lat/lon from target_ds
     interp_ds = interp_ds.assign_coords(
         lat=target_ds['lat'],
         lon=target_ds['lon']
@@ -147,11 +131,9 @@ def get_cdo_stats(file_path, method):
     if method == "standard":
         stats['mean'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timmean", file_path]).decode().strip())
         stats['std'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timstd", file_path]).decode().strip())
-
     elif method == "minmax":
         stats['min'] = float(subprocess.check_output(["cdo", "output", "-fldmin", "-timmin", file_path]).decode().strip())
         stats['max'] = float(subprocess.check_output(["cdo", "output", "-fldmax", "-timmax", file_path]).decode().strip())
-
     else:
         raise ValueError(f"Unsupported method: {method}")
 
@@ -184,18 +166,14 @@ def main():
     infile, scale_type = dataset_map[varname]
     infile_path = INPUT_DIR / infile
 
-    
-    highres_ds = promote_latlon(infile_path, varname).chunk({"time":100})
+    highres_ds = promote_latlon(infile_path, varname).chunk({"time": 100})
+    coarse_ds = conservative_coarsening(highres_ds, varname, block_size=11).chunk({"time": 100})
+    coarse_ds = client.persist(coarse_ds)
 
-    coarse_ds = conservative_coarsening(highres_ds, varname, block_size=11).chunk({"time":100})
-
-   
-    interp_ds = interpolate_bicubic_ds(coarse_ds, highres_ds, varname).chunk({"time":100})
-
+    interp_ds = interpolate_bicubic_ds(coarse_ds, highres_ds, varname).chunk({"time": 100})
     highres = highres_ds[varname]
     upsampled = interp_ds[varname]
 
-    # Assign coords to upsampled to match highres from bic interpolation
     upsampled = upsampled.assign_coords({
         'lat': highres_ds['lat'],
         'lon': highres_ds['lon']
@@ -213,7 +191,6 @@ def main():
     y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
     y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
 
-    # Saving scaled outputs and the parameters for denom later
     x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled.nc")
     x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
     y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
@@ -223,6 +200,7 @@ def main():
         json.dump(stats, f, indent=2)
 
     print(f"Processed '{varname}' successfully.")
+    
 
 if __name__ == "__main__":
     mp.set_start_method("fork", force=True)
