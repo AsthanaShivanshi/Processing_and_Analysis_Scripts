@@ -10,6 +10,8 @@ import argparse
 from pyproj import Transformer
 import psutil
 import multiprocessing as mp
+from dask.diagnostics import ProgressBar
+
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
@@ -212,21 +214,24 @@ def main():
 if __name__ == "__main__":
     mp.set_start_method("fork", force=True)
 
-    total_mem_gb = psutil.virtual_memory().total / 1e9
-    total_cores = psutil.cpu_count(logical=False)
+    n_workers = 4
+    threads_per_worker = 1
+    mem_per_worker = "32GB"
 
-    usable_mem_gb = int(total_mem_gb * 0.8)
-    n_workers = max(1, min(16, total_cores // 2))
-    mem_per_worker = f"{usable_mem_gb // n_workers}GB"
-
-    print(f"[INFO] Total memory: {total_mem_gb:.1f} GB | Using {n_workers} workers @ {mem_per_worker} each")
+    print(f"[INFO] Launching Dask cluster: {n_workers} workers x {threads_per_worker} threads, {mem_per_worker} per worker")
 
     cluster = LocalCluster(
         n_workers=n_workers,
-        threads_per_worker=1,
+        threads_per_worker=threads_per_worker,
         memory_limit=mem_per_worker
     )
     client = Client(cluster)
-    print("Dask dashboard:", client.dashboard_link)
+    ProgressBar().register()
 
-    main()
+    try:
+        main()
+    finally:
+        client.close()
+        cluster.close()
+
+
