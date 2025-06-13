@@ -11,6 +11,7 @@ import pyproj
 import warnings
 import psutil
 import multiprocessing as mp
+from pyproj import Transformer
 
 warnings.filterwarnings("ignore", message=".*pyproj unable to set PROJ database path.*")
 warnings.filterwarnings("ignore", message=".*angle from rectified to skew grid parameter lost.*")
@@ -23,20 +24,26 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TRAIN_RATIO = 0.8
 SEED = 42
 
+
 def promote_latlon(infile, outfile, varname):
     ds = xr.open_dataset(infile)
 
-    if 'lat' not in ds or 'lon' not in ds:
-        raise ValueError("lat/lon must exist as data variables in the file.")
+    if not all(coord in ds.coords or coord in ds.dims for coord in ["E", "N"]):
+        raise ValueError("Dataset must have 'E' and 'N' dimensions for projected coordinates.")
 
-    for coord in ["lat", "lon"]:
-        if coord in ds.data_vars:
-            ds = ds.drop_vars(coord)
+    # 
+    E = ds["E"].values
+    N = ds["N"].values
+    EE, NN = np.meshgrid(E, N)
 
-    # Assigning them as coordinates to the target variable
+    # Transformation LV95 to lat/lon 
+    transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
+    lon, lat = transformer.transform(EE, NN)
+
+    # Add lat/lon as coordinates , has to be extracted from the meshgrid with N,E coordinates.,
     ds[varname] = ds[varname].assign_coords({
-        "lat": (("N", "E"), ds["lat"].values),
-        "lon": (("N", "E"), ds["lon"].values)
+        "lat": (("N", "E"), lat),
+        "lon": (("N", "E"), lon)
     })
 
     ds = ds.set_coords(["lat", "lon"])
@@ -45,7 +52,7 @@ def promote_latlon(infile, outfile, varname):
     ds["lon"].attrs.update({"units": "degrees_east", "standard_name": "longitude"})
 
     ds.to_netcdf(outfile)
-    print(f"[INFO] Promoted lat/lon to coordinates and saved to {outfile}")
+    print(f"[INFO] Converted Swiss coordinates to lat/lon and saved to {outfile}")
     return outfile
 
 
