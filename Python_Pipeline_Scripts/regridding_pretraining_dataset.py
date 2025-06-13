@@ -7,9 +7,7 @@ import json
 import gc
 from dask.distributed import Client, LocalCluster
 import argparse
-import rioxarray
 import pyproj
-from pyproj import CRS
 import warnings
 import psutil
 import multiprocessing as mp
@@ -17,7 +15,6 @@ import multiprocessing as mp
 print("PROJ_LIB =", os.environ.get("PROJ_LIB"))
 print("proj.db exists:", os.path.exists(os.path.join(os.environ["PROJ_LIB"], "proj.db")))
 
-#Ignoring warnings from pyproj
 warnings.filterwarnings("ignore", message=".*pyproj unable to set PROJ database path.*")
 warnings.filterwarnings("ignore", message=".*angle from rectified to skew grid parameter lost.*")
 
@@ -29,37 +26,25 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TRAIN_RATIO = 0.8
 SEED = 42
 
-def reprojection_latlon(infile, outfile, varname):
+def promote_latlon(infile, outfile, varname):
     ds = xr.open_dataset(infile)
 
-    if 'time' not in ds.dims:
-        ds = ds.rio.write_crs("EPSG:2056")
-        ds_reproj = ds.rio.reproject("EPSG:4326")
-        ds_reproj = ds_reproj.drop_vars([v for v in ['x', 'y'] if v in ds_reproj.coords])
-        ds_reproj[varname].attrs.update(ds[varname].attrs)
-        ds_reproj.to_netcdf(outfile)
-        return outfile
+    if 'lat' not in ds or 'lon' not in ds:
+        raise ValueError("lat/lon must exist as data variables in the file.")
 
-    reprojected_slices = []
-    for i in range(ds.sizes["time"]):
-        slice_ds = ds.isel(time=i)
-        slice_ds = slice_ds.rio.write_crs("EPSG:2056")
-        slice_reproj = slice_ds.rio.reproject("EPSG:4326")
-        slice_reproj = slice_reproj.drop_vars([v for v in ['x', 'y'] if v in slice_reproj.coords])
+    ds[varname] = ds[varname].assign_coords({
+        "lat": (("N", "E"), ds["lat"].values),
+        "lon": (("N", "E"), ds["lon"].values) #They show as NE in the dataset
+    })
 
-        # Reattaching the correct time value using assign_coords
-        slice_reproj = slice_reproj.expand_dims("time")
-        slice_reproj = slice_reproj.assign_coords(time=[ds["time"].values[i]])
+    ds = ds.set_coords(["lat", "lon"])
 
-        reprojected_slices.append(slice_reproj)
+    ds["lat"].attrs.update({"units": "degrees_north", "standard_name": "latitude"})
+    ds["lon"].attrs.update({"units": "degrees_east", "standard_name": "longitude"})
 
-    ds_reprojected = xr.concat(reprojected_slices, dim="time")
-    ds_reprojected[varname].attrs.update(ds[varname].attrs)
-    ds_reprojected.to_netcdf(outfile)
-    print(f"Reprojected, saved: {outfile}")
+    ds.to_netcdf(outfile)
+    print(f"[INFO] Promoted lat/lon to coordinates and saved to {outfile}")
     return outfile
-
-
 
 def conservative_coarsening(infile, varname, block_size, outfile, latname='lat', lonname='lon'):
     ds = xr.open_dataset(infile)
@@ -127,12 +112,14 @@ def interpolate_bicubic(coarse_file, target_file, output_file):
     cmd = ["cdo", f"remapbic,{target_file}", str(coarse_file), str(output_file)]
     subprocess.run(cmd, check=True)
 
+
 def split(ds, seed, train_ratio):
     np.random.seed(seed)
     indices = np.arange(ds.sizes['time'])
     np.random.shuffle(indices)
     split_idx = int(train_ratio * len(indices))
     return ds.isel(time=indices[:split_idx]), ds.isel(time=indices[split_idx:])
+
 
 def get_cdo_stats(file_path, method):
     stats = {}
@@ -161,12 +148,7 @@ def apply_cdo_scaling(ds, stats, method):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--var",
-        type=str,
-        required=True,
-        help="Variable to process (e.g., precip, temp, tmin, tmax)"
-    )
+    parser.add_argument("--var", type=str, required=True, help="Variable to process (e.g., precip, temp, tmin, tmax)")
     args = parser.parse_args()
 
     varname = args.var
@@ -186,7 +168,7 @@ def main():
     coarse_path = OUTPUT_DIR / f"{varname}_coarse.nc"
     interp_path = OUTPUT_DIR / f"{varname}_interp.nc"
 
-    reprojection_latlon(infile_path, reprojected_path, varname)
+    promote_latlon(infile_path, reprojected_path, varname)
     conservative_coarsening(reprojected_path, varname, block_size=11, outfile=coarse_path)
     interpolate_bicubic(coarse_path, reprojected_path, interp_path)
 
@@ -229,25 +211,17 @@ def main():
         print(f"Processed '{varname}' successfully.")
 
 if __name__ == "__main__":
-    # multiprocessing to 'fork'
     mp.set_start_method("fork", force=True)
 
-    # Detecting total memory and cores
     total_mem_gb = psutil.virtual_memory().total / 1e9
     total_cores = psutil.cpu_count(logical=False)
 
-    # Using 80% of total memory (safety margin)
     usable_mem_gb = int(total_mem_gb * 0.8)
-
-    # number of workers (half of physical cores, max 16)
     n_workers = max(1, min(16, total_cores // 2))
-
-    # Distribute memory equally per worker
     mem_per_worker = f"{usable_mem_gb // n_workers}GB"
 
     print(f"[INFO] Total memory: {total_mem_gb:.1f} GB | Using {n_workers} workers @ {mem_per_worker} each")
 
-    # Starting Dask cluster
     cluster = LocalCluster(
         n_workers=n_workers,
         threads_per_worker=1,
@@ -256,6 +230,4 @@ if __name__ == "__main__":
     client = Client(cluster)
     print("Dask dashboard:", client.dashboard_link)
 
-    # main pipeline now running
     main()
-
