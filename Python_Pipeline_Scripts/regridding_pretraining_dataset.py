@@ -184,19 +184,18 @@ def main():
     infile, scale_type = dataset_map[varname]
     infile_path = INPUT_DIR / infile
 
-    # Promoting latlon in memory, using chunking
+    
     highres_ds = promote_latlon(infile_path, varname).chunk({"time":100})
 
-    # Conservative coarsening using chunking
     coarse_ds = conservative_coarsening(highres_ds, varname, block_size=11).chunk({"time":100})
 
-    # Bicubic interpolate coarse to highres grid, in-memory
+   
     interp_ds = interpolate_bicubic_ds(coarse_ds, highres_ds, varname).chunk({"time":100})
 
     highres = highres_ds[varname]
     upsampled = interp_ds[varname]
 
-    # Assign coords to upsampled to match highres
+    # Assign coords to upsampled to match highres from bic interpolation
     upsampled = upsampled.assign_coords({
         'lat': highres_ds['lat'],
         'lon': highres_ds['lon']
@@ -204,7 +203,6 @@ def main():
     upsampled['lat'].attrs = highres_ds['lat'].attrs
     upsampled['lon'].attrs = highres_ds['lon'].attrs
 
-    # Split train/val
     x_train, x_val = split(upsampled, SEED, TRAIN_RATIO)
     y_train, y_val = split(highres, SEED, TRAIN_RATIO)
 
@@ -215,7 +213,7 @@ def main():
     y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
     y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
 
-    # Save only final scaled datasets
+    # Saving scaled outputs and the parameters for denom later
     x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled.nc")
     x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
     y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
