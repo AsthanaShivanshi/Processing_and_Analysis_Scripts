@@ -117,12 +117,19 @@ def interpolate_bicubic_ds(coarse_ds, target_ds, varname):
 
     return interp_ds
 
-def split(ds, seed, train_ratio):
+def split(x, y, train_ratio, seed):
     np.random.seed(seed)
-    indices = np.arange(ds.sizes['time'])
+    indices = np.arange(x.sizes['time'])
     np.random.shuffle(indices)
     split_idx = int(train_ratio * len(indices))
-    return ds.isel(time=indices[:split_idx]), ds.isel(time=indices[split_idx:])
+    train_idx = indices[:split_idx]
+    val_idx = indices[split_idx:]
+    return (
+        x.isel(time=train_idx),
+        x.isel(time=val_idx),
+        y.isel(time=train_idx),
+        y.isel(time=val_idx)
+    )
 
 def get_cdo_stats(file_path, method):
     stats = {}
@@ -181,8 +188,8 @@ def main():
     upsampled['lat'].attrs = highres_ds['lat'].attrs
     upsampled['lon'].attrs = highres_ds['lon'].attrs
 
-    x_train, x_val = split(upsampled, SEED, TRAIN_RATIO)
-    y_train, y_val = split(highres, SEED, TRAIN_RATIO)
+    x_train, x_val, y_train, y_val = split(upsampled, highres, TRAIN_RATIO, SEED)
+
 
     stats = get_cdo_stats(infile_path, scale_type)
 
