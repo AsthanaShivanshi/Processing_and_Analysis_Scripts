@@ -10,7 +10,9 @@
 #SBATCH --array=0-3%1          
 
 source sasthana/Downscaling/Processing_and_Analysis_Scripts/environment.sh 
+
 export PROJ_LIB="$ENVIRONMENT/share/proj"
+export HDF5_USE_FILE_LOCKING=FALSE 
 
 cd "$BASE_DIR" || { echo "[ERROR] Failed to cd into BASE_DIR"; exit 1; }
 
@@ -26,6 +28,9 @@ fi
 
 echo "[INFO] Starting job for variable: $VAR"
 
+export OMP_NUM_THREADS=1 
+
 python "$SCRIPT_PATH" --var "$VAR"
 
 echo "[INFO] Finished job for variable: $VAR"
+
