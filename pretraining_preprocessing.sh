@@ -24,8 +24,8 @@ if [ ! -f "$SCRIPT_PATH" ]; then
   exit 1
 fi
 
-echo "[INFO] Starting job for variable: $VAR at $(date)"
+echo "[INFO] Starting job for variable: $VAR"
 
 python "$SCRIPT_PATH" --var "$VAR"
 
-echo "[INFO] Finished job for variable: $VAR at $(date)"
+echo "[INFO] Finished job for variable: $VAR"

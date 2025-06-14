@@ -17,6 +17,7 @@ from dask.diagnostics import ProgressBar
 
 print(f"[DEBUG] PROJ_LIB set to: {proj_path}")
 
+CHUNK_DICT = {"time": 50, "N": 100, "E": 100} #For consistent chunking I use it as a dict
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
 OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Pretraining_Dataset"
@@ -26,33 +27,38 @@ TRAIN_RATIO = 0.8
 SEED = 42
 
 
-def promote_latlon(infile, varname, chunks={"N": 50, "E": 50}):
+def promote_latlon(infile, varname, chunks=CHUNK_DICT):
+
     ds = xr.open_dataset(infile, chunks=chunks)
 
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
 
+    def transform_coords(e, n):
+        lon, lat = transformer.transform(e, n)
+        return np.stack([lat, lon], axis=0)
+
+    # Create meshgrid lazily
     E = ds["E"]
     N = ds["N"]
-    E_dask = da.from_array(E.values, chunks=E.shape)
-    N_dask = da.from_array(N.values, chunks=N.shape)
+    EE, NN = xr.broadcast(E, N)
 
-    EE, NN = da.meshgrid(E_dask, N_dask, indexing="xy")
-
-    def transform_block(e_block, n_block):
-        lon, lat = transformer.transform(e_block, n_block)
-        stacked = np.stack([lat, lon], axis=0)
-        return stacked
-
-    stacked = da.map_blocks(
-        transform_block,
-        EE,
-        NN,
-        dtype=np.float64,
-        chunks=(2,) + EE.chunks
+    # Use xarray's apply_ufunc to apply transformation lazily using Dask
+    transformed = xr.apply_ufunc(
+        transform_coords,
+        EE, NN,
+        input_core_dims=[[], []],
+        output_core_dims=[["coord_type", "N", "E"]],
+        vectorize=True,
+        dask="parallelized",
+        output_dtypes=[np.float64],
     )
 
-    lat = xr.DataArray(stacked[0], dims=("N", "E"), coords={"N": N, "E": E}, name="lat")
-    lon = xr.DataArray(stacked[1], dims=("N", "E"), coords={"N": N, "E": E}, name="lon")
+    # Split output back into lat/lon
+    lat = transformed.sel(coord_type=0).drop_vars("coord_type")
+    lon = transformed.sel(coord_type=1).drop_vars("coord_type")
+
+    lat.name = "lat"
+    lon.name = "lon"
 
     ds = ds.assign_coords(lat=lat, lon=lon)
     ds = ds.set_coords(["lat", "lon"])
@@ -197,13 +203,13 @@ def main():
 
     infile, scale_type = dataset_map[varname]
     infile_path = INPUT_DIR / infile
-    chunk_dict = {"time": 10, "N": 100, "E": 100}
+    chunk_dict = {"time": 50, "N": 100, "E": 100}
 
     # Promoting to standard coords latlon
     step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
     if not step1_path.exists():
         print(f"[INFO] Step 1: Promoting lat/lon for {varname}...")
-        ds = promote_latlon(infile_path, varname).chunk(chunk_dict)
+        ds = promote_latlon(infile_path, varname)
         ds.to_netcdf(step1_path)
         del ds; gc.collect()
     else:
