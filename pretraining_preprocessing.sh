@@ -10,7 +10,7 @@
 #SBATCH --array=0-3%1          
 
 source sasthana/Downscaling/Processing_and_Analysis_Scripts/environment.sh 
-
+module load cdo
 export PROJ_LIB="$ENVIRONMENT/share/proj"
 export HDF5_USE_FILE_LOCKING=FALSE 
 
