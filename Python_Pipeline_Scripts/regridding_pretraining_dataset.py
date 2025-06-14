@@ -12,9 +12,8 @@ import gc
 import argparse
 from pyproj import Transformer  
 import multiprocessing as mp
+from dask.distributed import Client, LocalCluster
 from dask.diagnostics import ProgressBar
-from dask_jobqueue import SLURMCluster
-from dask.distributed import Client
 
 print(f"[DEBUG] PROJ_LIB set to: {proj_path}")
 
@@ -25,7 +24,6 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 TRAIN_RATIO = 0.8
 SEED = 42
-
 
 
 def promote_latlon(infile, varname, chunks={"N": 50, "E": 50}):
@@ -274,31 +272,18 @@ def main():
 
 
 
+
 if __name__ == "__main__":
     import multiprocessing as mp
     mp.set_start_method("fork", force=True)
 
-    print("[INFO] Launching Dask SLURMCluster...")
+    print("[INFO] Launching LocalCluster...")
 
-    cluster = SLURMCluster(
-        queue="cpu",
-        cores=16,
-        processes=1,
-        memory="240GB",
-        walltime="03:00:00",
-        job_extra=[
-            "--nodes=1",
-            "--ntasks=1",
-            "--cpus-per-task=16",
-            "--mem=256G"
-        ],
-        env_extra=[
-            "export DASK_WORKER_MEMORY_LIMIT='230GB'"
-        ]
+    cluster = LocalCluster(
+        n_workers=4,             
+        threads_per_worker=1,   
+        memory_limit='60GB'     
     )
-
-    cluster.scale(jobs=4)
-
     client = Client(cluster)
     ProgressBar().register()
 
@@ -309,5 +294,3 @@ if __name__ == "__main__":
     finally:
         client.close()
         cluster.close()
-        gc.collect()
-
