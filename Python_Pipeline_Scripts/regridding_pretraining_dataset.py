@@ -46,7 +46,7 @@ def promote_latlon(infile, varname, chunks=CHUNK_DICT):
     transformed = xr.apply_ufunc(
         transform_coords,
         EE, NN,
-        input_core_dims=[[], []],
+        input_core_dims=[["N", "E"], ["N", "E"]],
         output_core_dims=[["coord_type", "N", "E"]],
         vectorize=True,
         dask="parallelized",
@@ -54,11 +54,14 @@ def promote_latlon(infile, varname, chunks=CHUNK_DICT):
     )
 
     # Split output back into lat/lon
-    lat = transformed.sel(coord_type=0).drop_vars("coord_type")
-    lon = transformed.sel(coord_type=1).drop_vars("coord_type")
+    lat = transformed.sel(coord_type=0)
+    lon = transformed.sel(coord_type=1)
 
     lat.name = "lat"
     lon.name = "lon"
+
+    del transformed,EE,NN
+    gc.collect()
 
     ds = ds.assign_coords(lat=lat, lon=lon)
     ds = ds.set_coords(["lat", "lon"])
