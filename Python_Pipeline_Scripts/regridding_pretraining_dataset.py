@@ -59,8 +59,8 @@ def promote_latlon(infile, varname):
     ds = ds.assign_coords(lat=lat, lon=lon)
     ds = ds.set_coords(["lat", "lon"])
 
-    ds.close()
     return ds
+
 
 
 def conservative_coarsening(ds, varname, block_size, latname='lat', lonname='lon'):
@@ -230,8 +230,11 @@ def main():
 
     x_train, x_val, y_train, y_val = split(upsampled, highres, TRAIN_RATIO, SEED)
 
-    print(f"[INFO] Step 4: Computing scaling stats...")
-    stats = get_cdo_stats(infile_path, scale_type)
+    print(f"[INFO] Step 4: Computing scaling stats from training set...")
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
+        x_train.to_netcdf(tmpfile.name)
+        stats = get_cdo_stats(tmpfile.name, scale_type)
 
     x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
     x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
@@ -246,8 +249,6 @@ def main():
 
     with open(OUTPUT_DIR / f"{varname}_scaling_params.json", "w") as f:
         json.dump(stats, f, indent=2)
-
-    print(f"[SUCCESS] Finished processing '{varname}'.")
 
 
 if __name__ == "__main__":
