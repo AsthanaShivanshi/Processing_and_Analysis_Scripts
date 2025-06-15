@@ -1,5 +1,4 @@
 import os
-import gc
 import json
 import argparse
 from pathlib import Path
@@ -7,14 +6,16 @@ import numpy as np
 import xarray as xr
 import subprocess
 from pyproj import Transformer, datadir
-import dask.array as da
 from dask.distributed import Client
 from dask.diagnostics import ProgressBar
+import tempfile
+
+#A note on coordinates and projections
+#Dimensions: E, N (like pixel coordinates in meters)...Coords: lat(N,E), lon(N,E) derived from the E, N grid via a projection transform
 
 proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/share/proj"
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
-print(f"[DEBUG] PROJ_LIB set to: {proj_path}")
 
 CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
 CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
@@ -27,23 +28,21 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TRAIN_RATIO = 0.8
 SEED = 42
 
-def promote_latlon(infile, varname):
-    ds = xr.open_dataset(infile)
-    ds = ds.chunk({"time": 50, "N": 100, "E": 100})
 
+
+def promote_latlon(infile, varname):
+    ds = xr.open_dataset(infile).chunk({"time": 50, "N": 100, "E": 100})
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
 
     def transform_coords(e, n):
         lon, lat = transformer.transform(e, n)
         return np.stack([lon, lat], axis=0)
 
-    E = ds["E"]
-    N = ds["N"]
+    E, N = ds["E"], ds["N"]
     EE, NN = xr.broadcast(E, N)
 
     transformed = xr.apply_ufunc(
-        transform_coords,
-        EE, NN,
+        transform_coords, EE, NN,
         input_core_dims=[["N", "E"], ["N", "E"]],
         output_core_dims=[["coord_type", "N", "E"]],
         vectorize=True,
@@ -51,35 +50,27 @@ def promote_latlon(infile, varname):
         output_dtypes=[np.float64],
     )
 
-    lon = transformed.sel(coord_type=0)
-    lat = transformed.sel(coord_type=1)
+    lon, lat = transformed.sel(coord_type=0), transformed.sel(coord_type=1)
+    lon.name, lat.name = "lon", "lat"
 
-    lon.name = "lon"
-    lat.name = "lat"
-
-    ds = ds.assign_coords(lat=lat, lon=lon)
-    ds = ds.set_coords(["lat", "lon"])
-
+    ds = ds.assign_coords(lat=lat, lon=lon).set_coords(["lat", "lon"])
     return ds
+
+
 
 def conservative_coarsening(ds, varname, block_size):
     da = ds[varname]
-    has_time = 'time' in da.dims
-    if not has_time:
+    if 'time' not in da.dims:
         da = da.expand_dims('time')
 
-    lat = ds['lat']
-    lon = ds['lon']
-
+    lat, lon = ds['lat'], ds['lon']
     R = 6371000
     lat_rad = np.deg2rad(lat)
     dlat = np.deg2rad(np.diff(lat.mean('E')).mean().item())
     dlon = np.deg2rad(np.diff(lon.mean('N')).mean().item())
     area = (R**2) * dlat * dlon * np.cos(lat_rad)
 
-    area = area.broadcast_like(da.isel(time=0))
-    area = area.expand_dims(time=da.sizes['time'])
-
+    area = area.broadcast_like(da.isel(time=0)).expand_dims(time=da.sizes['time'])
     weighted = da.fillna(0) * area
     valid_area = area * da.notnull()
 
@@ -94,44 +85,31 @@ def conservative_coarsening(ds, varname, block_size):
 
     data_coarse = data_coarse.assign_coords(lat=lat2d, lon=lon2d)
     data_coarse.name = varname
-
-    ds_out = data_coarse.to_dataset()
-    ds_out = ds_out.set_coords(["lat", "lon"])
+    ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
     return ds_out
 
-def interpolate_bicubic_ds(coarse_ds, target_ds, varname):
+
+
+def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
     import tempfile
-    def to_latlon_dims(ds, varname):
-        da = ds[varname]
-        da_latlon = da.rename({"Y": "lat", "X": "lon"})
-
-        lat = ds["lat"].rename({"Y": "lat", "X": "lon"})
-        lon = ds["lon"].rename({"Y": "lat", "X": "lon"})
-
-        return da_latlon.to_dataset(name=varname).assign_coords(lat=lat, lon=lon)
-
     with tempfile.TemporaryDirectory() as tmpdir:
         coarse_file = Path(tmpdir) / "coarse.nc"
         target_file = Path(tmpdir) / "target.nc"
         output_file = Path(tmpdir) / "interp.nc"
 
-        coarse_for_cdo = to_latlon_dims(coarse_ds, varname)
-        target_for_cdo = to_latlon_dims(target_ds, varname)
+        # Save files
+        coarse_ds[[varname]].transpose("time", "N", "E").to_netcdf(coarse_file)
+        target_ds[[varname]].transpose("time", "N", "E").to_netcdf(target_file)
 
-        coarse_for_cdo.to_netcdf(coarse_file)
-        target_for_cdo.to_netcdf(target_file)
+        script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
 
-        subprocess.run(["cdo", f"remapbic,{target_file}", str(coarse_file), str(output_file)], check=True)
-        interp_ds = xr.open_dataset(output_file)
+        subprocess.run([
+            str(script_path), str(coarse_file), str(target_file), str(output_file)
+        ], check=True)
 
-    interp_da = interp_ds[varname].rename({"lat": "Y", "lon": "X"})
+        return xr.open_dataset(output_file)[[varname]]
 
-    lat = target_ds["lat"]
-    lon = target_ds["lon"]
-    interp_da = interp_da.assign_coords(lat=lat, lon=lon)
-    interp_da.name = varname
 
-    return interp_da.to_dataset()
 
 def split(x, y, train_ratio, seed):
     np.random.seed(seed)
@@ -145,18 +123,23 @@ def split(x, y, train_ratio, seed):
         y.isel(time=indices[split_idx:])
     )
 
+
+
 def get_cdo_stats(file_path, method):
     stats = {}
-    file_path = str(file_path)
     if method == "standard":
-        stats['mean'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timmean", file_path]).decode().strip())
-        stats['std'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timstd", file_path]).decode().strip())
+        stats['mean'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timmean", str(file_path)]).decode().strip())
+        stats['std'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timstd", str(file_path)]).decode().strip())
+
+
     elif method == "minmax":
-        stats['min'] = float(subprocess.check_output(["cdo", "output", "-fldmin", "-timmin", file_path]).decode().strip())
-        stats['max'] = float(subprocess.check_output(["cdo", "output", "-fldmax", "-timmax", file_path]).decode().strip())
+        stats['min'] = float(subprocess.check_output(["cdo", "output", "-fldmin", "-timmin", str(file_path)]).decode().strip())
+        stats['max'] = float(subprocess.check_output(["cdo", "output", "-fldmax", "-timmax", str(file_path)]).decode().strip())
     else:
         raise ValueError(f"Unsupported method: {method}")
     return stats
+
+
 
 def apply_cdo_scaling(ds, stats, method):
     if method == "standard":
@@ -165,6 +148,8 @@ def apply_cdo_scaling(ds, stats, method):
         return (ds - stats['min']) / (stats['max'] - stats['min'])
     else:
         raise ValueError(f"Unknown method: {method}")
+    
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -188,71 +173,39 @@ def main():
         raise FileNotFoundError(f"[ERROR] Input file does not exist: {infile_path}")
 
     step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
-    needs_recompute = False
 
-    if not step1_path.exists():
-        needs_recompute = True
-    else:
-        with xr.open_dataset(step1_path) as ds_check:
-            if 'lat' not in ds_check.coords or 'lon' not in ds_check.coords:
-                print(f"[WARN] step1_path exists but is invalid. Recomputing...")
-                needs_recompute = True
-
-    if needs_recompute:
+    if not step1_path.exists() or not {'lat', 'lon'}.issubset(xr.open_dataset(step1_path).coords):
         print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
         ds = xr.open_dataset(infile_path).chunk(CHUNK_DICT_RAW)
-
         if 'lat' in ds.coords and 'lon' in ds.coords:
-            print(f"[INFO] lat/lon already set as coordinates. Proceeding.")
+            pass
         elif 'lat' in ds.data_vars and 'lon' in ds.data_vars:
-            print(f"[INFO] Promoting existing lat/lon variables to coordinates...")
             ds = ds.set_coords(['lat', 'lon'])
         else:
-            print(f"[INFO] lat/lon not found or invalid. Performing coordinate transformation from E/N...")
             ds.close()
             ds = promote_latlon(infile_path, varname_in_file)
-
         ds.to_netcdf(step1_path)
         ds.close()
-    else:
-        print(f"[INFO] Step 1: Skipping (already exists and valid)")
 
-    print(f"[INFO] Step 2: Opening high-resolution dataset...")
     highres_ds = xr.open_dataset(step1_path).chunk(CHUNK_DICT_RAW)
 
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
-        print(f"[INFO] Step 3: Coarsening dataset for '{varname}'...")
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
         coarse_ds.to_netcdf(step2_path)
         coarse_ds.close()
-        del coarse_ds
-    else:
-        print(f"[INFO] Step 3: Skipping (already exists)")
 
-    print(f"[INFO] Step 3: Opening coarsened dataset...")
-    coarse_ds = xr.open_dataset(step2_path).chunk(CHUNK_DICT_LATLON)
+    coarse_ds = xr.open_dataset(step2_path).chunk(CHUNK_DICT_RAW)
 
     step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
     if not step3_path.exists():
-        print(f"[INFO] Step 4: Interpolating using bicubic remapping...")
-        interp_ds = interpolate_bicubic_ds(coarse_ds, highres_ds, varname_in_file)
-        interp_ds = interp_ds.rename_dims({"Y": "lat", "X": "lon"})
-        interp_ds = interp_ds.rename_vars({"Y": "lat", "X": "lon"})
+        interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
         interp_ds = interp_ds.chunk(CHUNK_DICT_LATLON)
         interp_ds.to_netcdf(step3_path)
         interp_ds.close()
-        del interp_ds
-    else:
-        print(f"[INFO] Step 4: Skipping (already exists)")
 
-    print(f"[INFO] Step 4: Opening interpolated dataset...")
-    interp_ds = xr.open_dataset(step3_path)
-    if "Y" in interp_ds.dims or "X" in interp_ds.dims:
-        interp_ds = interp_ds.rename_dims({"Y": "lat", "X": "lon"})
-    interp_ds = interp_ds.chunk(CHUNK_DICT_LATLON)
+    interp_ds = xr.open_dataset(step3_path).chunk(CHUNK_DICT_LATLON)
 
-    print(f"[INFO] Step 5: Splitting and scaling dataset...")
     highres = highres_ds[varname_in_file]
     upsampled = interp_ds[varname_in_file].assign_coords(lat=highres_ds['lat'], lon=highres_ds['lon'])
     upsampled['lat'].attrs = highres_ds['lat'].attrs
@@ -260,8 +213,6 @@ def main():
 
     x_train, x_val, y_train, y_val = split(upsampled, highres, TRAIN_RATIO, SEED)
 
-    print(f"[INFO] Step 6: Computing scaling statistics using CDO...")
-    import tempfile
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
         x_train.to_netcdf(tmpfile.name)
         stats = get_cdo_stats(tmpfile.name, scale_type)
@@ -271,7 +222,6 @@ def main():
     y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
     y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
 
-    print(f"[INFO] Step 7: Saving scaled datasets...")
     x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled.nc")
     x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
     y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
@@ -280,23 +230,16 @@ def main():
     with open(OUTPUT_DIR / f"{varname}_scaling_params.json", "w") as f:
         json.dump(stats, f, indent=2)
 
-    print(f"[INFO] Step 8: Cleaning up intermediate files...")
     for step_path in [step1_path, step2_path, step3_path]:
         try:
             os.remove(step_path)
-            print(f"[INFO] Deleted {step_path}")
         except FileNotFoundError:
-            print(f"[WARN] Could not find {step_path} to delete.")
-        except Exception as e:
-            print(f"[ERROR] Failed to delete {step_path}: {e}")
+            pass
 
-    print(f"[INFO] Completed for variable: {varname}")
 
 if __name__ == "__main__":
-    print("[INFO] Starting Dask client...")
     client = Client(processes=False)
     ProgressBar().register()
-
     try:
         main()
     finally:
