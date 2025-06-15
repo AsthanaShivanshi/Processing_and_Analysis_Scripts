@@ -10,16 +10,15 @@ from dask.distributed import Client
 from dask.diagnostics import ProgressBar
 import tempfile
 
-#A note on coordinates and projections
-#Dimensions: E, N (like pixel coordinates in meters)...Coords: lat(N,E), lon(N,E) derived from the E, N grid via a projection transform
-
+# Set projection path
 proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/share/proj"
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
+# Chunk configs to account for N/E or lat/lon retaned in the coarsened datasets
 CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
 CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
-
+ 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
 OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Pretraining_Dataset"
@@ -28,7 +27,16 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TRAIN_RATIO = 0.8
 SEED = 42
 
-
+#Chunking based on configuration of the file
+def get_chunk_dict(ds):
+    dims = set(ds.dims)
+    if {"lat", "lon"}.issubset(dims):
+        return CHUNK_DICT_LATLON
+    elif {"E", "N"}.issubset(dims):
+        return CHUNK_DICT_RAW
+    else:
+        raise ValueError(f"Dataset has unknown dimensions: {ds.dims}")
+    
 
 def promote_latlon(infile, varname):
     ds = xr.open_dataset(infile).chunk({"time": 50, "N": 100, "E": 100})
@@ -55,8 +63,6 @@ def promote_latlon(infile, varname):
 
     ds = ds.assign_coords(lat=lat, lon=lon).set_coords(["lat", "lon"])
     return ds
-
-
 
 def conservative_coarsening(ds, varname, block_size):
     da = ds[varname]
@@ -88,16 +94,12 @@ def conservative_coarsening(ds, varname, block_size):
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
     return ds_out
 
-
-
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
-    import tempfile
     with tempfile.TemporaryDirectory() as tmpdir:
         coarse_file = Path(tmpdir) / "coarse.nc"
         target_file = Path(tmpdir) / "target.nc"
         output_file = Path(tmpdir) / "interp.nc"
 
-        # Save files
         coarse_ds[[varname]].transpose("time", "N", "E").to_netcdf(coarse_file)
         target_ds[[varname]].transpose("time", "N", "E").to_netcdf(target_file)
 
@@ -109,37 +111,40 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
 
         return xr.open_dataset(output_file)[[varname]]
 
+def split_by_decade(x, y, val_ratio=0.2, seed=42):
+    years = x['time'].dt.year.values
+    decades = (years // 10) * 10
+    unique_decades = np.sort(np.unique(decades))
 
+    n_val_decades = max(1, int(val_ratio * len(unique_decades)))
+    quarter = len(unique_decades) // 4
+    mid_decades = unique_decades[quarter:-quarter]
 
-def split(x, y, train_ratio, seed):
     np.random.seed(seed)
-    indices = np.arange(x.sizes['time'])
-    np.random.shuffle(indices)
-    split_idx = int(train_ratio * len(indices))
+    val_decades = np.random.choice(mid_decades, size=n_val_decades, replace=False)
+
+    val_mask = np.isin(decades, val_decades)
+    train_mask = ~val_mask
+
     return (
-        x.isel(time=indices[:split_idx]),
-        x.isel(time=indices[split_idx:]),
-        y.isel(time=indices[:split_idx]),
-        y.isel(time=indices[split_idx:])
+        x.isel(time=train_mask),
+        x.isel(time=val_mask),
+        y.isel(time=train_mask),
+        y.isel(time=val_mask),
+        sorted(val_decades.tolist())
     )
-
-
 
 def get_cdo_stats(file_path, method):
     stats = {}
     if method == "standard":
         stats['mean'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timmean", str(file_path)]).decode().strip())
         stats['std'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timstd", str(file_path)]).decode().strip())
-
-
     elif method == "minmax":
         stats['min'] = float(subprocess.check_output(["cdo", "output", "-fldmin", "-timmin", str(file_path)]).decode().strip())
         stats['max'] = float(subprocess.check_output(["cdo", "output", "-fldmax", "-timmax", str(file_path)]).decode().strip())
     else:
         raise ValueError(f"Unsupported method: {method}")
     return stats
-
-
 
 def apply_cdo_scaling(ds, stats, method):
     if method == "standard":
@@ -148,8 +153,6 @@ def apply_cdo_scaling(ds, stats, method):
         return (ds - stats['min']) / (stats['max'] - stats['min'])
     else:
         raise ValueError(f"Unknown method: {method}")
-    
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -176,7 +179,8 @@ def main():
 
     if not step1_path.exists() or not {'lat', 'lon'}.issubset(xr.open_dataset(step1_path).coords):
         print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
-        ds = xr.open_dataset(infile_path).chunk(CHUNK_DICT_RAW)
+        ds = xr.open_dataset(infile_path)
+        ds = ds.chunk(get_chunk_dict(ds))
         if 'lat' in ds.coords and 'lon' in ds.coords:
             pass
         elif 'lat' in ds.data_vars and 'lon' in ds.data_vars:
@@ -187,7 +191,7 @@ def main():
         ds.to_netcdf(step1_path)
         ds.close()
 
-    highres_ds = xr.open_dataset(step1_path).chunk(CHUNK_DICT_RAW)
+    highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
 
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
@@ -195,23 +199,32 @@ def main():
         coarse_ds.to_netcdf(step2_path)
         coarse_ds.close()
 
-    coarse_ds = xr.open_dataset(step2_path).chunk(CHUNK_DICT_RAW)
+    coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
 
     step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
     if not step3_path.exists():
         interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
-        interp_ds = interp_ds.chunk(CHUNK_DICT_LATLON)
+        interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
         interp_ds.to_netcdf(step3_path)
         interp_ds.close()
 
-    interp_ds = xr.open_dataset(step3_path).chunk(CHUNK_DICT_LATLON)
+    interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
 
     highres = highres_ds[varname_in_file]
-    upsampled = interp_ds[varname_in_file].assign_coords(lat=highres_ds['lat'], lon=highres_ds['lon'])
+    upsampled = interp_ds[varname_in_file]
+
+    for coord in ['lat', 'lon']:
+        if coord not in upsampled.coords:
+            upsampled = upsampled.assign_coords({coord: highres_ds[coord]})
     upsampled['lat'].attrs = highres_ds['lat'].attrs
     upsampled['lon'].attrs = highres_ds['lon'].attrs
 
-    x_train, x_val, y_train, y_val = split(upsampled, highres, TRAIN_RATIO, SEED)
+    x_train, x_val, y_train, y_val, val_decades = split_by_decade(
+        upsampled, highres, val_ratio=0.2, seed=SEED
+    )
+
+    with open(OUTPUT_DIR / f"{varname}_val_decades.json", "w") as f:
+        json.dump({"val_decades": val_decades}, f, indent=2)
 
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
         x_train.to_netcdf(tmpfile.name)
@@ -235,7 +248,6 @@ def main():
             os.remove(step_path)
         except FileNotFoundError:
             pass
-
 
 if __name__ == "__main__":
     client = Client(processes=False)
