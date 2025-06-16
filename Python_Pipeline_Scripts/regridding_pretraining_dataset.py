@@ -10,12 +10,12 @@ from dask.distributed import Client
 from dask.diagnostics import ProgressBar
 import tempfile
 
-# Set projection path
+#For ensuring pyproj database directory is set corretly
 proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/share/proj"
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
-# Chunk configs to account for N/E or lat/lon retaned in the coarsened datasets
+# Chunk configs to account for N/E or lat/lon retained in the coarsened datasets, handling both cases flexibly
 CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
 CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
  
@@ -27,7 +27,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TRAIN_RATIO = 0.8
 SEED = 42
 
-#Chunking based on configuration of the file
+#Chunking based on configuration
 def get_chunk_dict(ds):
     dims = set(ds.dims)
     if {"lat", "lon"}.issubset(dims):
@@ -64,6 +64,7 @@ def promote_latlon(infile, varname):
     ds = ds.assign_coords(lat=lat, lon=lon).set_coords(["lat", "lon"])
     return ds
 
+
 def conservative_coarsening(ds, varname, block_size):
     da = ds[varname]
     if 'time' not in da.dims:
@@ -94,6 +95,8 @@ def conservative_coarsening(ds, varname, block_size):
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
     return ds_out
 
+
+
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
     with tempfile.TemporaryDirectory() as tmpdir:
         coarse_file = Path(tmpdir) / "coarse.nc"
@@ -110,6 +113,8 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
         ], check=True)
 
         return xr.open_dataset(output_file)[[varname]]
+    
+
 
 def split_by_decade(x, y, val_ratio=0.2, seed=42):
     years = x['time'].dt.year.values
@@ -134,6 +139,8 @@ def split_by_decade(x, y, val_ratio=0.2, seed=42):
         sorted(val_decades.tolist())
     )
 
+
+
 def get_cdo_stats(file_path, method):
     stats = {}
     if method == "standard":
@@ -146,6 +153,8 @@ def get_cdo_stats(file_path, method):
         raise ValueError(f"Unsupported method: {method}")
     return stats
 
+
+
 def apply_cdo_scaling(ds, stats, method):
     if method == "standard":
         return (ds - stats['mean']) / stats['std']
@@ -153,6 +162,8 @@ def apply_cdo_scaling(ds, stats, method):
         return (ds - stats['min']) / (stats['max'] - stats['min'])
     else:
         raise ValueError(f"Unknown method: {method}")
+    
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -227,8 +238,8 @@ def main():
         json.dump({"val_decades": val_decades}, f, indent=2)
 
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
-        x_train.to_netcdf(tmpfile.name)
-        stats = get_cdo_stats(tmpfile.name, scale_type)
+        y_train.to_netcdf(tmpfile.name)
+        stats = get_cdo_stats(tmpfile.name, scale_type) #Computing parameters for scaling from the training component of HR data
 
     x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
     x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
@@ -248,6 +259,8 @@ def main():
             os.remove(step_path)
         except FileNotFoundError:
             pass
+
+        
 
 if __name__ == "__main__":
     client = Client(processes=False)
