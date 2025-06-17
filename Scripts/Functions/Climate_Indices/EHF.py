@@ -11,11 +11,11 @@ def ehf_days_gridded(tabsd, analysis_period=('2019-01-01', '2023-12-31'),
     tabsd_analysis = tabsd.sel(time=slice(*analysis_period))
     tabsd_clim = tabsd.sel(time=slice(*clim_period))
 
-    # Rolling averages
+    # Rolling avgs
     tabsd_3day = tabsd_analysis.rolling(time=3, center=True).mean()
     tabsd_30day = tabsd_analysis.rolling(time=30, center=False).mean().shift(time=-3)
 
-    # Climatology 3-day rolling mean
+    # Climatology 3-day rolling 
     tabsd_clim_3day = tabsd_clim.rolling(time=3, center=True).mean()
     doy_clim = tabsd_clim_3day['time'].dt.dayofyear
 
@@ -37,7 +37,7 @@ def ehf_days_gridded(tabsd, analysis_period=('2019-01-01', '2023-12-31'),
         coords={"dayofyear": np.arange(1, 366), "lat": tabsd.lat, "lon": tabsd.lon}
     )
 
-    # Matchingh day-of-year from analysis period
+    # Matchingh doy from analysis period
     doy = tabsd_3day['time'].dt.dayofyear
     t95p_matched = t95p.sel(dayofyear=doy)
     t95p_matched['time'] = tabsd_3day['time']

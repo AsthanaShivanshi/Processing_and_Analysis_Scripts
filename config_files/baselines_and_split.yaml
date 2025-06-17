@@ -1,9 +1,9 @@
 wet_mask_variable: RhiresD
-wet_mask_threshold: 0.1
+wet_mask_threshold: 0.1 #Threshold for wet masking, in mm/day
 use_wet_mask: true
 generate_bicubic_baseline: true
 
-coarse_precip_file: data/Coarsened_files_full/RhiresD_011deg_coarsened.nc
+coarse_precip_file: data_1971_2023/Coarsened_files_full/RhiresD_011deg_coarsened.nc
 
 coarse_vars:
   RhiresD: data/Coarsened_files_full/RhiresD_011deg_coarsened.nc
@@ -21,7 +21,7 @@ highres_template: data/HR_files_full/RhiresD_1971_2023.nc
 
 train_period: [1971, 2007] #37 years
 val_period:   [2008, 2018] #11 years
-test_period:  [2019, 2023] #5 years
+test_period:  [2011, 2023] #12 years
 
 
 output_dir: data/processed_standardised_split_data
