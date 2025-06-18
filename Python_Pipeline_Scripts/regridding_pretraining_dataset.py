@@ -163,6 +163,7 @@ def split_by_decade(x, y, val_ratio=0.2, seed=42):
         sorted(val_decades.tolist())
     )
 
+#We can use other splitting strategies as well. But above two for now. 
 
 def get_cdo_stats(file_path, method):
     stats = {}
@@ -261,7 +262,7 @@ def main():
 
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
         y_train.to_netcdf(tmpfile.name)
-        stats = get_cdo_stats(tmpfile.name, scale_type) #Computing parameters for scaling from the training component of HR data
+        stats = get_cdo_stats(tmpfile.name, scale_type) #Computing parameters for scaling from the training set of the HR data
 
     x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
     x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
