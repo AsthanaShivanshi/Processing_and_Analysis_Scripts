@@ -7,7 +7,6 @@ import xarray as xr
 import subprocess
 from pyproj import Transformer, datadir
 from dask.distributed import Client
-from dask.diagnostics import ProgressBar
 import tempfile
 
 #For ensuring pyproj database directory is set corretly
@@ -264,7 +263,6 @@ def main():
     
 if __name__ == "__main__":
     client = Client(processes=False)
-    ProgressBar().register()
     try:
         main()
     finally:
