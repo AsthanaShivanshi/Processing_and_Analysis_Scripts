@@ -21,7 +21,7 @@ highres_template: data/HR_files_full/RhiresD_1971_2023.nc
 
 train_period: [1971, 2007] #37 years
 val_period:   [2008, 2018] #11 years
-test_period:  [2011, 2023] #12 years
+test_period:  [2011, 2020] #12 years
 
 
 output_dir: data/processed_standardised_split_data
