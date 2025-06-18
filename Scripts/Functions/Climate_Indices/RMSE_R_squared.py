@@ -74,6 +74,8 @@ def gridded_RMSE(pred_path, truth_path, var1, var2, chunk_size={'time': 100}):
     
     return rmse
 
+
+
 def pooled_RMSE(pred_path, truth_path, var1, var2, chunk_size={'time': 100}):
     ds_pred = xr.open_dataset(pred_path, chunks=chunk_size)
     ds_true = xr.open_dataset(truth_path, chunks=chunk_size)

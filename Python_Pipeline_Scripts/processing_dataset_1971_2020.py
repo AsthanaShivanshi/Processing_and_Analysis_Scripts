@@ -19,12 +19,9 @@ CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
 CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
  
 BASE_DIR = Path(os.environ["BASE_DIR"])
-INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
-OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Pretraining_Dataset"
+INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/"Processing_and_Analysis_Scripts" / "data_1971_2023"/"HR_files_full"
+OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Dataset"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-TRAIN_RATIO = 0.8
-SEED = 42
 
 #Chunking based on configuration
 def get_chunk_dict(ds):
@@ -163,7 +160,7 @@ def split_by_decade(x, y, val_ratio=0.2, seed=42):
         sorted(val_decades.tolist())
     )
 
-#We can use other splitting strategies as well. But above two for now. 
+#We can use other splitting strategies as well. But above two for now. For starters I have chosen to go with the first and last year of each decade as validation set.
 
 def get_cdo_stats(file_path, method):
     stats = {}
@@ -188,7 +185,6 @@ def apply_cdo_scaling(ds, stats, method):
         raise ValueError(f"Unknown method: {method}")
     
 
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--var", type=str, required=True)
@@ -196,10 +192,10 @@ def main():
     varname = args.var
 
     dataset_map = {
-        "precip": ("precip_1771_2010.nc", "minmax", "precip"),
-        "temp":   ("temp_1771_2010.nc", "standard", "temp"),
-        "tmin":   ("tmin_1771_2010.nc", "standard", "tmin"),
-        "tmax":   ("tmax_1771_2010.nc", "standard", "tmax"),
+        "RhiresD": ("RhiresD_1971_2023.nc", "minmax", "RhiresD"),
+        "TabsD":   ("TabsD_1971_2023.nc", "standard", "TabsD"),
+        "TminD":   ("TminD_1971_2023.nc", "standard", "TminD"),
+        "TmaxD":   ("TmaxD_1971_2023.nc", "standard", "TmaxD"),
     }
 
     if varname not in dataset_map:
