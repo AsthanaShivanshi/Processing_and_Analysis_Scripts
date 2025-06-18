@@ -8,6 +8,9 @@ import subprocess
 from pyproj import Transformer, datadir
 from dask.distributed import Client
 import tempfile
+import numpy as np
+
+np.random.seed(42)
 
 #For ensuring pyproj database directory is set correctly
 proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/share/proj"
@@ -244,8 +247,8 @@ def main():
 
 
 #Limiting the dataset to 2010 because the testing set has to be from 2011-2020 for comparability
-    highres = highres_ds[varname_in_file].sel(time=slice("1971-01-01", "2020-12-31"))
-    upsampled = interp_ds[varname_in_file].sel(time=slice("1971-01-01", "2020-12-31"))
+    highres = highres_ds[varname_in_file].sel(time=slice("1971-01-01", "2010-12-31"))
+    upsampled = interp_ds[varname_in_file].sel(time=slice("1971-01-01", "2010-12-31"))
 
     for coord in ['lat', 'lon']:
         if coord not in upsampled.coords:

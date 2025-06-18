@@ -9,6 +9,8 @@ from pyproj import Transformer, datadir
 from dask.distributed import Client
 import tempfile
 
+np.random.seed(42)
+
 #For ensuring pyproj database directory is set correctly
 proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/share/proj"
 os.environ["PROJ_LIB"] = proj_path
@@ -22,9 +24,6 @@ BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
 OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Pretraining_Dataset"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-TRAIN_RATIO = 0.8
-SEED = 42
 
 #Chunking based on configuration
 def get_chunk_dict(ds):
@@ -163,7 +162,7 @@ def split_by_decade(x, y, val_ratio=0.2, seed=42):
         sorted(val_decades.tolist())
     )
 
-#We can use other splitting strategies as well. But above two for now. 
+#We can use other splitting strategies as well. But above two for now. For starters I have chosen to go with the first and last year of each decade as validation set.
 
 def get_cdo_stats(file_path, method):
     stats = {}
@@ -187,7 +186,7 @@ def apply_cdo_scaling(ds, stats, method):
     else:
         raise ValueError(f"Unknown method: {method}")
     
-
+   
 
 def main():
     parser = argparse.ArgumentParser()
@@ -196,10 +195,10 @@ def main():
     varname = args.var
 
     dataset_map = {
-        "precip": ("precip_1771_2010.nc", "minmax", "precip"),
-        "temp":   ("temp_1771_2010.nc", "standard", "temp"),
-        "tmin":   ("tmin_1771_2010.nc", "standard", "tmin"),
-        "tmax":   ("tmax_1771_2010.nc", "standard", "tmax"),
+        "precip": ("precip_1771_2020.nc", "minmax", "precip"),
+        "temp":   ("temp_1771_2020.nc", "standard", "temp"),
+        "tmin":   ("tmin_1771_2020.nc", "standard", "tmin"),
+        "tmax":   ("tmax_1771_2020.nc", "standard", "tmax"),
     }
 
     if varname not in dataset_map:
@@ -245,8 +244,10 @@ def main():
 
     interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
 
-    highres = highres_ds[varname_in_file]
-    upsampled = interp_ds[varname_in_file]
+
+#Limiting the dataset to 2010 because the testing set has to be from 2011-2020 for comparability
+    highres = highres_ds[varname_in_file].sel(time=slice("1771-01-01", "2010-12-31"))
+    upsampled = interp_ds[varname_in_file].sel(time=slice("1771-01-01", "2010-12-31"))
 
     for coord in ['lat', 'lon']:
         if coord not in upsampled.coords:
@@ -254,11 +255,15 @@ def main():
     upsampled['lat'].attrs = highres_ds['lat'].attrs
     upsampled['lon'].attrs = highres_ds['lon'].attrs
 
+#Train val split : first and last year of each decade similar as the longer time series
     x_train, x_val, y_train, y_val, val_years = split_first_last_year_of_decade(
         upsampled, highres)
 
     with open(OUTPUT_DIR / f"{varname}_val_years.json", "w") as f:
         json.dump({"val_years": val_years}, f, indent=2)
+
+
+        #Scaling parameters from the training set y_train
 
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
         y_train.to_netcdf(tmpfile.name)
@@ -273,6 +278,23 @@ def main():
     x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
     y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
     y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled.nc")
+
+
+    #Preparing and scaling the test set (2011-2020)
+    highres_test= highres_ds[varname_in_file].sel(time=slice("2011-01-01", "2020-12-31"))
+    upsampled_test = interp_ds[varname_in_file].sel(time=slice("2011-01-01", "2020-12-31"))
+
+    for coord in ["lat","lon"]:
+        if coord not in upsampled_test.coords:
+            upsampled_test = upsampled_test.assign_coords({coord: highres_ds[coord]})
+    upsampled_test['lat'].attrs = highres_ds['lat'].attrs
+    upsampled_test['lon'].attrs = highres_ds['lon'].attrs
+
+    x_test_scaled = apply_cdo_scaling(upsampled_test, stats, scale_type)
+    y_test_scaled = apply_cdo_scaling(highres_test, stats, scale_type)
+    x_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_test_scaled.nc")
+    y_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_test_scaled.nc")
+    
 
     with open(OUTPUT_DIR / f"{varname}_scaling_params.json", "w") as f:
         json.dump(stats, f, indent=2)
