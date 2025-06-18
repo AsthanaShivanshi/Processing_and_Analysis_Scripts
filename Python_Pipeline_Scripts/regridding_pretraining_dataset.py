@@ -113,7 +113,32 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
 
         return xr.open_dataset(output_file)[[varname]]
     
+#Writing some example splits that can be used for validation
 
+#EXAMPLE 1 : taking the first and last year of each decade as validation set
+
+def split_first_last_year_of_decade(x, y):
+    years = x['time'].dt.year.values
+    decades = (years // 10) * 10
+    val_mask = np.zeros_like(years, dtype=bool)
+    unique_decades = np.unique(decades)
+    for dec in unique_decades:
+        decade_years = years[decades == dec]
+        if len(decade_years) == 0:
+            continue
+        first = decade_years.min()
+        last = decade_years.max()
+        val_mask |= (years == first) | (years == last)
+    train_mask = ~val_mask
+    return (
+        x.isel(time=train_mask),
+        x.isel(time=val_mask),
+        y.isel(time=train_mask),
+        y.isel(time=val_mask),
+        sorted(set(years[val_mask].tolist()))
+    )
+
+#EXAMPLE 2 : taking a random yet reproducible split of middle selection of decades as validation set
 
 def split_by_decade(x, y, val_ratio=0.2, seed=42):
     years = x['time'].dt.year.values
@@ -137,7 +162,6 @@ def split_by_decade(x, y, val_ratio=0.2, seed=42):
         y.isel(time=val_mask),
         sorted(val_decades.tolist())
     )
-
 
 
 def get_cdo_stats(file_path, method):
@@ -229,16 +253,14 @@ def main():
     upsampled['lat'].attrs = highres_ds['lat'].attrs
     upsampled['lon'].attrs = highres_ds['lon'].attrs
 
-    x_train, x_val, y_train, y_val, val_decades = split_by_decade(
-        upsampled, highres, val_ratio=0.2, seed=SEED
-    )
+    x_train, x_val, y_train, y_val, val_years = split_first_last_year_of_decade(
+        upsampled, highres)
 
-    with open(OUTPUT_DIR / f"{varname}_val_decades.json", "w") as f:
-        json.dump({"val_decades": val_decades}, f, indent=2)
+    with open(OUTPUT_DIR / f"{varname}_val_years.json", "w") as f:
+        json.dump({"val_years": val_years}, f, indent=2)
 
-    y_train_period= y_train.sel(time=slice("1971-01-01","2010-12-31")) #Selecting the overlapping period for normalisation params (1971-2010)
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
-        y_train_period.to_netcdf(tmpfile.name)
+        y_train.to_netcdf(tmpfile.name)
         stats = get_cdo_stats(tmpfile.name, scale_type) #Computing parameters for scaling from the training component of HR data
 
     x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
