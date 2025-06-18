@@ -163,6 +163,28 @@ def split_by_decade(x, y, val_ratio=0.2, seed=42):
         sorted(val_decades.tolist())
     )
 
+
+#Example 3 : Every fourth decade as val set
+
+def split_every_fourth_decade(x, y):
+    years = x['time'].dt.year.values
+    decades = (years // 10) * 10
+    unique_decades = np.sort(np.unique(decades))
+
+    val_decade_indices = np.arange(0, len(unique_decades), 4)
+    val_decades = unique_decades[val_decade_indices]
+
+    val_mask = np.isin(decades, val_decades)
+    train_mask = ~val_mask
+
+    return (
+        x.isel(time=train_mask),
+        x.isel(time=val_mask),
+        y.isel(time=train_mask),
+        y.isel(time=val_mask),
+        sorted(val_decades.tolist())
+    )
+
 #We can use other splitting strategies as well. But above two for now. For starters I have chosen to go with the first and last year of each decade as validation set.
 
 def get_cdo_stats(file_path, method):
@@ -256,13 +278,12 @@ def main():
     upsampled['lat'].attrs = highres_ds['lat'].attrs
     upsampled['lon'].attrs = highres_ds['lon'].attrs
 
-#Train val split : first and last year of each decade similar as the longer time series
-    x_train, x_val, y_train, y_val, val_years = split_first_last_year_of_decade(
+
+    x_train, x_val, y_train, y_val, val_decades = split_every_fourth_decade(
         upsampled, highres)
 
-    with open(OUTPUT_DIR / f"{varname}_val_years.json", "w") as f:
-        json.dump({"val_years": val_years}, f, indent=2)
-
+    with open(OUTPUT_DIR / f"{varname}_val_decades.json", "w") as f:
+        json.dump({"val_decades": val_decades}, f, indent=2)
 
         #Scaling parameters from the training set ytrain
 

@@ -21,7 +21,7 @@ CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
 CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
  
 BASE_DIR = Path(os.environ["BASE_DIR"])
-INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1771_2020"
+INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
 OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Pretraining_Dataset"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -162,6 +162,28 @@ def split_by_decade(x, y, val_ratio=0.2, seed=42):
         sorted(val_decades.tolist())
     )
 
+#Example 3: Every fourth decade as validation set
+
+def split_every_fourth_decade(x, y):
+    years = x['time'].dt.year.values
+    decades = (years // 10) * 10
+    unique_decades = np.sort(np.unique(decades))
+
+    val_decade_indices = np.arange(0, len(unique_decades), 4)
+    val_decades = unique_decades[val_decade_indices]
+
+    val_mask = np.isin(decades, val_decades)
+    train_mask = ~val_mask
+
+    return (
+        x.isel(time=train_mask),
+        x.isel(time=val_mask),
+        y.isel(time=train_mask),
+        y.isel(time=val_mask),
+        sorted(val_decades.tolist())
+    )
+
+
 #We can use other splitting strategies as well. But above two for now. For starters I have chosen to go with the first and last year of each decade as validation set.
 
 def get_cdo_stats(file_path, method):
@@ -195,10 +217,10 @@ def main():
     varname = args.var
 
     dataset_map = {
-        "precip": ("precip_1771_2020.nc", "minmax", "precip"),
-        "temp":   ("temp_1771_2020.nc", "standard", "temp"),
-        "tmin":   ("tmin_1771_2020.nc", "standard", "tmin"),
-        "tmax":   ("tmax_1771_2020.nc", "standard", "tmax"),
+        "precip": ("precip_1763_2020.nc", "minmax", "precip"),
+        "temp":   ("temp_1763_2020.nc", "standard", "temp"),
+        "tmin":   ("tmin_1763_2020.nc", "standard", "tmin"),
+        "tmax":   ("tmax_1763_2020.nc", "standard", "tmax"),
     }
 
     if varname not in dataset_map:
@@ -256,11 +278,12 @@ def main():
     upsampled['lon'].attrs = highres_ds['lon'].attrs
 
 #Train val split : first and last year of each decade similar as the longer time series
-    x_train, x_val, y_train, y_val, val_years = split_first_last_year_of_decade(
+
+    x_train, x_val, y_train, y_val, val_decades = split_every_fourth_decade(
         upsampled, highres)
 
-    with open(OUTPUT_DIR / f"{varname}_val_years.json", "w") as f:
-        json.dump({"val_years": val_years}, f, indent=2)
+    with open(OUTPUT_DIR / f"{varname}_val_decades.json", "w") as f:
+        json.dump({"val_decades": val_decades}, f, indent=2)
 
 
         #Scaling parameters from the training set y_train
