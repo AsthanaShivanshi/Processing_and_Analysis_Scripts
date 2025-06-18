@@ -16,7 +16,7 @@ export HDF5_USE_FILE_LOCKING=FALSE
 
 cd "$BASE_DIR" || { echo "[ERROR] Failed to cd into BASE_DIR"; exit 1; }
 
-VARS=(precip temp tmin tmax)
+VARS=(RhiresD TabsD TminD TmaxD)
 VAR=${VARS[$SLURM_ARRAY_TASK_ID]}
 
 SCRIPT_PATH="sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/processing_dataset_1971_2020.py"
