@@ -166,21 +166,18 @@ def split_by_decade(x, y, val_ratio=0.2, seed=42):
 
 def split_every_fourth_decade(x, y):
     years = x['time'].dt.year.values
-    decades = (years // 10) * 10
-    unique_decades = np.sort(np.unique(decades))
-
-    val_decade_indices = np.arange(0, len(unique_decades), 4)
-    val_decades = unique_decades[val_decade_indices]
-
-    val_mask = np.isin(decades, val_decades)
+    first_year = years.min()
+    decade_indices = (years - first_year) // 10 # Decades starting from 1771, not 1770
+    val_decade_idx = 3 
+    val_mask = (decade_indices == val_decade_idx)
     train_mask = ~val_mask
-
+    val_years = years[val_mask]
     return (
         x.isel(time=train_mask),
         x.isel(time=val_mask),
         y.isel(time=train_mask),
         y.isel(time=val_mask),
-        sorted(val_decades.tolist())
+        val_years.tolist()
     )
 
 
