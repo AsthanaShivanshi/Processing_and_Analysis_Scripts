@@ -237,7 +237,7 @@ def main():
     with open(OUTPUT_DIR / f"{varname}_val_decades.json", "w") as f:
         json.dump({"val_decades": val_decades}, f, indent=2)
 
-    y_train_period= y_train.sel(time=slice("1971-01-01","2010-12-31")) #Selecting the overlapping period for normalisation params (1971-2010)
+    y_train_period= y_train.sel(time=slice("1981-01-01","2010-12-31")) #Selecting the overlapping period for normalisation params (1981-2010)
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
         y_train_period.to_netcdf(tmpfile.name)
         stats = get_cdo_stats(tmpfile.name, scale_type) #Computing parameters for scaling from the training component of HR data
