@@ -21,7 +21,7 @@ CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
 CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
  
 BASE_DIR = Path(os.environ["BASE_DIR"])
-INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
+INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1771_2020"
 OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Pretraining_Dataset"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
