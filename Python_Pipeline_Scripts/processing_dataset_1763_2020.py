@@ -168,16 +168,17 @@ def split_every_fourth_decade(x, y):
     years = x['time'].dt.year.values
     first_year = years.min()
     decade_indices = (years - first_year) // 10 # Decades starting from 1771, not 1770
-    val_decade_idx = 3 
-    val_mask = (decade_indices == val_decade_idx)
+    val_decade_idx = 3
+    val_mask = (decade_indices % 4 == val_decade_idx)
     train_mask = ~val_mask
     val_years = years[val_mask]
+    val_decades = np.unique(years[val_mask] // 10) * 10  # Get the decade of the validation years
     return (
         x.isel(time=train_mask),
         x.isel(time=val_mask),
         y.isel(time=train_mask),
         y.isel(time=val_mask),
-        val_years.tolist()
+        val_decades.tolist()
     )
 
 
