@@ -58,9 +58,11 @@ def dtr_percentiles_gridded(
         ax.set_title(title)
 
     cbar = fig.colorbar(im, ax=axs, orientation='vertical', shrink=0.7, label='DTR (°C)')
-
+    plt.tight_layout()
+    
     if save and output_file:
         plt.savefig(output_file, bbox_inches='tight')
         print(f"Figure saved to {output_file}")
 
+  
     plt.show()

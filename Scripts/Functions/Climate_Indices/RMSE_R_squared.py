@@ -2,9 +2,7 @@ import xarray as xr
 import numpy as np
 
 def gridded_R_squared(pred_path, truth_path, var1, var2, chunk_size={'time': 50}):
-    """
-    Calculate grid-wise coefficient of determination (R^2) between two gridded variables, ignoring NaNs.
-    """
+ 
     ds_pred = xr.open_dataset(pred_path, chunks=chunk_size)
     ds_true = xr.open_dataset(truth_path, chunks=chunk_size)
     
@@ -25,9 +23,10 @@ def gridded_R_squared(pred_path, truth_path, var1, var2, chunk_size={'time': 50}
 
 
 def pooled_R_squared(pred_path, truth_path, var1, var2, chunk_size={'time': 100}):
+
     ds_pred = xr.open_dataset(pred_path, chunks=chunk_size)
     ds_true = xr.open_dataset(truth_path, chunks=chunk_size)
-    print(f"🔍 Variable: {var1} vs {var2}")
+    print(f" {var1} vs {var2}")
 
     var1_data, var2_data = xr.align(ds_pred[var1], ds_true[var2], join='inner')
     var1_data = var1_data.load()
@@ -52,15 +51,14 @@ def pooled_R_squared(pred_path, truth_path, var1, var2, chunk_size={'time': 100}
 
 
 def gridded_RMSE(pred_path, truth_path, var1, var2, chunk_size={'time': 100}):
-    """
-    Calculate grid-wise RMSE between two gridded variables, ignoring NaNs.
-    Loads data with manual chunking and outputs float32 dtype.
-    """
+  
     ds_pred = xr.open_dataset(pred_path, chunks=chunk_size)
     ds_true = xr.open_dataset(truth_path, chunks=chunk_size)
     
     var1_data, var2_data = xr.align(ds_pred[var1], ds_true[var2])
-    
+    var1_data = var1_data.load()
+    var2_data = var2_data.load()
+
     valid_mask = (~np.isnan(var1_data)) & (~np.isnan(var2_data))
     
     diff_squared = (var1_data - var2_data) ** 2
@@ -77,10 +75,11 @@ def gridded_RMSE(pred_path, truth_path, var1, var2, chunk_size={'time': 100}):
 
 
 def pooled_RMSE(pred_path, truth_path, var1, var2, chunk_size={'time': 100}):
+    
     ds_pred = xr.open_dataset(pred_path, chunks=chunk_size)
     ds_true = xr.open_dataset(truth_path, chunks=chunk_size)
 
-    print(f"🔍 Variable: {var1} vs {var2}")
+    print(f"{var1} vs {var2}")
 
     var1_data, var2_data = xr.align(ds_pred[var1], ds_true[var2], join='inner')
     var1_data = var1_data.load()

@@ -71,6 +71,7 @@ def ehf_days_gridded(tabsd, analysis_period=('2011-01-01', '2020-12-31'),
         plt.savefig(save_path)
         print(f"Plot saved to {save_path}")
 
+    
     plt.show()
 
     return heatwave_days_total

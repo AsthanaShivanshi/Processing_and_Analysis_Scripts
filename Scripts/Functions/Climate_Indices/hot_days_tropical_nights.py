@@ -32,6 +32,8 @@ def hot_days_gridded(ds, threshold=30.0, title='Hot Days per Grid Cell',save=Fal
     cbar.set_ticks(np.arange(0, 101, 10))
 
     plt.title(title)
+    plt.tight_layout()
+    
     if save:
         plt.savefig(save_path, bbox_inches='tight')
 
@@ -65,6 +67,8 @@ def tropical_nights_gridded(ds, threshold=20.0, title='Tropical Nights per Grid 
     cbar = plt.colorbar(im, ax=ax, label=f'Number of Tropical Nights (Tmin > {threshold}°C)')
     cbar.set_ticks(np.arange(0, 101, 10))
     plt.title(title)
+    plt.tight_layout()
+
     if save:
         plt.savefig(save_path, bbox_inches='tight')
     plt.show()
