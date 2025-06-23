@@ -5,6 +5,9 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from matplotlib.colors import TwoSlopeNorm
 
+#has to be calculated as Mean Annual
+
+
 def dtr_percentiles_gridded(
     tmax,
     tmin, 

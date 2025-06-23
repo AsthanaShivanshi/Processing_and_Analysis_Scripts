@@ -5,6 +5,8 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from scipy.stats import scoreatpercentile
 
+#has to be calculated as Mean Annual
+
 def ehf_days_gridded(tabsd, analysis_period=('2011-01-01', '2020-12-31'),
                      clim_period=('1981-01-01', '2010-12-31'), save_path=None):
 

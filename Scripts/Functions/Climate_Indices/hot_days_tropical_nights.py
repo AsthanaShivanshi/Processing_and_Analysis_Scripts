@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
+#has to be calculated as Mean Annual
+
 
 def hot_days_gridded(ds, threshold=30.0, title='Hot Days per Grid Cell',save=False,save_path='../../Outputs/hot_days_map.png'):
     if 'latitude' in ds:

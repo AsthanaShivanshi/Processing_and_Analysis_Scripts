@@ -2,6 +2,9 @@ import xarray as xr
 import pandas as pd
 import numpy as np
 
+#has to be calculated as Mean Annual
+
+
 def TXin90(tmax, base_period=("1981-01-01", "2010-12-31"), window=5):
 
     "Calculating 90th pctl of tmax centered on a 5 day window for each calendar day, over the climatological period"

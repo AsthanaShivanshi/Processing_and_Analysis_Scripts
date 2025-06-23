@@ -14,7 +14,8 @@ def spii_gridded(precip, threshold=1.0, time_dim='time'):
     spii = wet_sum / wet_count
     return spii
 
-#Has to be seasonwise
+#Has to be seasonwise, #has to be calculated as Mean Annual
+
 
 def plot_spii_seasons(precip, threshold=1.0, time_dim="time", extent=[5.8,10.6,45.8,47.9], save_path=None):
 
