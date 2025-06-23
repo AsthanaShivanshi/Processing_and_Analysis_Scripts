@@ -58,7 +58,7 @@ for i, case in enumerate(cases):
         all_obs.append(d)
     data_obs = np.concatenate(all_obs)
 
-    # Reconstructed 1971–2010
+    # Recon 1971–2010
     all_rec_1971_2010 = []
     for year in years_range_1:
         d = ds2[case["rec_var"]].sel(time=slice(f'{year}-01-01', f'{year}-12-31')).values.flatten()
