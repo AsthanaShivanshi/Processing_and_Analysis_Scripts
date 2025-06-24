@@ -83,5 +83,5 @@ for i, case in enumerate(cases):
     axs[i].legend()
 
 plt.tight_layout()
-plt.savefig(OUTDIR / "normalised_distribution_comparison.png", dpi=300)
+plt.savefig(OUTDIR / "Outputs/normalised_distribution_comparison.png", dpi=300)
 plt.close()
