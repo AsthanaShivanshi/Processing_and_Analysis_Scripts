@@ -22,7 +22,7 @@ CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
  
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
-OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Pretraining_Dataset"
+OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Pretraining_Chronological_Split"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 #Chunking based on configuration
@@ -114,7 +114,26 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
     
 #Writing some example splits that can be used for validation
 
-#EXAMPLE 1 : taking the first and last year of each decade as validation set
+#EXAMPLE 1: Chronological Split 
+def chronological_split_decade(x, y, train_ratio=0.8):
+    years = x["time"].dt.year.values
+    decades = (years // 10) * 10
+    unique_decades = np.sort(np.unique(decades))
+    n_train = int(len(unique_decades) * train_ratio)
+    train_decades = unique_decades[:n_train]
+    val_decades = unique_decades[n_train:]
+    train_mask = np.isin(decades, train_decades)
+    val_mask = np.isin(decades, val_decades)
+    return (
+        x.isel(time=train_mask),
+        x.isel(time=val_mask),
+        y.isel(time=train_mask),
+        y.isel(time=val_mask),
+        sorted(val_decades.tolist())
+    )
+
+
+#EXAMPLE 2 : taking the first and last year of each decade as validation set
 
 def split_first_last_year_of_decade(x, y):
     years = x['time'].dt.year.values
@@ -137,7 +156,7 @@ def split_first_last_year_of_decade(x, y):
         sorted(set(years[val_mask].tolist()))
     )
 
-#EXAMPLE 2 : taking a random yet reproducible split of middle selection of decades as validation set
+#EXAMPLE 3: taking a random yet reproducible split of middle selection of decades as validation set
 
 def split_by_decade(x, y, val_ratio=0.2, seed=42):
     years = x['time'].dt.year.values
@@ -162,7 +181,7 @@ def split_by_decade(x, y, val_ratio=0.2, seed=42):
         sorted(val_decades.tolist())
     )
 
-#Example 3: Every fourth decade as validation set
+#Example 4: Every fourth decade as validation set
 
 def split_every_fourth_decade(x, y):
     years = x['time'].dt.year.values
@@ -277,10 +296,9 @@ def main():
 
 #Train val split : first and last year of each decade similar as the longer time series
 
-    x_train, x_val, y_train, y_val, val_decades = split_every_fourth_decade(
-        upsampled, highres)
+    x_train, x_val, y_train, y_val, val_decades = chronological_split_decade(upsampled, highres, train_ratio=0.8)
 
-    with open(OUTPUT_DIR / f"{varname}_val_decades.json", "w") as f:
+    with open(OUTPUT_DIR / f"{varname}_val_decades_chronological_split_decade.json", "w") as f:
         json.dump({"val_decades": val_decades}, f, indent=2)
 
 
@@ -295,10 +313,10 @@ def main():
     y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
     y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
 
-    x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled.nc")
-    x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
-    y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
-    y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled.nc")
+    x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled_chronological_split_decade.nc")
+    x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled_chronological_split_decade.nc")
+    y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled_chronological_split_decade.nc")
+    y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled_chronological_split_decade.nc")
 
 
     #Preparing and scaling the test set (2011-2020)
@@ -313,11 +331,11 @@ def main():
 
     x_test_scaled = apply_cdo_scaling(upsampled_test, stats, scale_type)
     y_test_scaled = apply_cdo_scaling(highres_test, stats, scale_type)
-    x_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_test_scaled.nc")
-    y_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_test_scaled.nc")
-    
+    x_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_test_scaled_chronological_split_decade.nc")
+    y_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_test_scaled_chronological_split_decade.nc")
 
-    with open(OUTPUT_DIR / f"{varname}_scaling_params.json", "w") as f:
+
+    with open(OUTPUT_DIR / f"{varname}_scaling_params_chronological_split_decade.json", "w") as f:
         json.dump(stats, f, indent=2)
 
     for step_path in [step1_path, step2_path, step3_path]:
@@ -326,10 +344,9 @@ def main():
         except FileNotFoundError:
             pass
 
-    
-if __name__ == "__main__":
-    client = Client(processes=False)
-    try:
-        main()
-    finally:
-        client.close()
+    if __name__ == "__main__":
+        client = Client(processes=False)
+        try:
+            main()
+        finally:
+            client.close()
