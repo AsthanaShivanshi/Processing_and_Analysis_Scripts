@@ -8,7 +8,6 @@ import subprocess
 from pyproj import Transformer, datadir
 from dask.distributed import Client
 import tempfile
-import numpy as np
 
 np.random.seed(42)
 
@@ -22,8 +21,8 @@ CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
 CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
  
 BASE_DIR = Path(os.environ["BASE_DIR"])
-INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/"Processing_and_Analysis_Scripts" / "data_1971_2023"/"HR_files_full"
-OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Dataset"
+INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
+OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Pretraining_Chronological_Split"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 #Chunking based on configuration
@@ -115,46 +114,16 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
     
 #Writing some example splits that can be used for validation
 
-#EXAMPLE 1 : taking the first and last year of each decade as validation set
-
-def split_first_last_year_of_decade(x, y):
-    years = x['time'].dt.year.values
-    decades = (years // 10) * 10
-    val_mask = np.zeros_like(years, dtype=bool)
-    unique_decades = np.unique(decades)
-    for dec in unique_decades:
-        decade_years = years[decades == dec]
-        if len(decade_years) == 0:
-            continue
-        first = decade_years.min()
-        last = decade_years.max()
-        val_mask |= (years == first) | (years == last)
-    train_mask = ~val_mask
-    return (
-        x.isel(time=train_mask),
-        x.isel(time=val_mask),
-        y.isel(time=train_mask),
-        y.isel(time=val_mask),
-        sorted(set(years[val_mask].tolist()))
-    )
-
-#EXAMPLE 2 : taking a random yet reproducible split of middle selection of decades as validation set
-
-def split_by_decade(x, y, val_ratio=0.2, seed=42):
-    years = x['time'].dt.year.values
+#EXAMPLE 1: Chronological Split 
+def chronological_split_decade(x, y, train_ratio=0.8):
+    years = x["time"].dt.year.values
     decades = (years // 10) * 10
     unique_decades = np.sort(np.unique(decades))
-
-    n_val_decades = max(1, int(val_ratio * len(unique_decades)))
-    quarter = len(unique_decades) // 4
-    mid_decades = unique_decades[quarter:-quarter]
-
-    np.random.seed(seed)
-    val_decades = np.random.choice(mid_decades, size=n_val_decades, replace=False)
-
+    n_train = int(len(unique_decades) * train_ratio)
+    train_decades = unique_decades[:n_train]
+    val_decades = unique_decades[n_train:]
+    train_mask = np.isin(decades, train_decades)
     val_mask = np.isin(decades, val_decades)
-    train_mask = ~val_mask
-
     return (
         x.isel(time=train_mask),
         x.isel(time=val_mask),
@@ -162,26 +131,8 @@ def split_by_decade(x, y, val_ratio=0.2, seed=42):
         y.isel(time=val_mask),
         sorted(val_decades.tolist())
     )
-
-
-#Example 3 : Every fourth decade as val set
-
-def split_every_fourth_decade(x, y):
-    years = x['time'].dt.year.values
-    first_year = years.min()
-    decade_indices = (years - first_year) // 10 # Decades starting from 1771, not 1770
-    val_decade_idx = 3
-    val_mask = (decade_indices % 4 == val_decade_idx)
-    train_mask = ~val_mask
-    val_years = years[val_mask]
-    val_decades = np.unique(years[val_mask] // 10) * 10  # Get the decade of the validation years
-    return (
-        x.isel(time=train_mask),
-        x.isel(time=val_mask),
-        y.isel(time=train_mask),
-        y.isel(time=val_mask),
-        val_decades.tolist()
-    )
+#Decades will be saved in json file for reference.
+#Sensitivity to decades on recent data will be tested in subsequent experiments.
 
 #We can use other splitting strategies as well. But above two for now. For starters I have chosen to go with the first and last year of each decade as validation set.
 
@@ -216,10 +167,10 @@ def main():
     varname = args.var
 
     dataset_map = {
-        "RhiresD": ("RhiresD_1971_2023.nc", "minmax", "RhiresD"),
-        "TabsD":   ("TabsD_1971_2023.nc", "standard", "TabsD"),
-        "TminD":   ("TminD_1971_2023.nc", "standard", "TminD"),
-        "TmaxD":   ("TmaxD_1971_2023.nc", "standard", "TmaxD"),
+        "precip": ("precip_1763_2020.nc", "minmax", "precip"),
+        "temp":   ("temp_1763_2020.nc", "standard", "temp"),
+        "tmin":   ("tmin_1763_2020.nc", "standard", "tmin"),
+        "tmax":   ("tmax_1763_2020.nc", "standard", "tmax"),
     }
 
     if varname not in dataset_map:
@@ -267,8 +218,8 @@ def main():
 
 
 #Limiting the dataset to 2010 because the testing set has to be from 2011-2020 for comparability
-    highres = highres_ds[varname_in_file].sel(time=slice("1971-01-01", "2010-12-31"))
-    upsampled = interp_ds[varname_in_file].sel(time=slice("1971-01-01", "2010-12-31"))
+    highres = highres_ds[varname_in_file].sel(time=slice("1771-01-01", "2010-12-31"))
+    upsampled = interp_ds[varname_in_file].sel(time=slice("1771-01-01", "2010-12-31"))
 
     for coord in ['lat', 'lon']:
         if coord not in upsampled.coords:
@@ -276,14 +227,15 @@ def main():
     upsampled['lat'].attrs = highres_ds['lat'].attrs
     upsampled['lon'].attrs = highres_ds['lon'].attrs
 
+#Train val split : first and last year of each decade similar as the longer time series
 
-    x_train, x_val, y_train, y_val, val_decades = split_every_fourth_decade(
-        upsampled, highres)
+    x_train, x_val, y_train, y_val, val_decades = chronological_split_decade(upsampled, highres, train_ratio=0.8)
 
-    with open(OUTPUT_DIR / f"{varname}_val_decades.json", "w") as f:
+    with open(OUTPUT_DIR / f"{varname}_val_decades_chronological_split_decade.json", "w") as f:
         json.dump({"val_decades": val_decades}, f, indent=2)
 
-        #Scaling parameters from the training set ytrain
+
+        #Scaling parameters from the training set y_train
 
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
         y_train.to_netcdf(tmpfile.name)
@@ -294,10 +246,10 @@ def main():
     y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
     y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
 
-    x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled.nc")
-    x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled.nc")
-    y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled.nc")
-    y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled.nc")
+    x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled_chronological_split.nc")
+    x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled_chronological_split.nc")
+    y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled_chronological_split.nc")
+    y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled_chronological_split.nc")
 
 
     #Preparing and scaling the test set (2011-2020)
@@ -312,11 +264,11 @@ def main():
 
     x_test_scaled = apply_cdo_scaling(upsampled_test, stats, scale_type)
     y_test_scaled = apply_cdo_scaling(highres_test, stats, scale_type)
-    x_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_test_scaled.nc")
-    y_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_test_scaled.nc")
-    
+    x_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_test_scaled_chronological_split.nc")
+    y_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_test_scaled_chronological_split.nc")
 
-    with open(OUTPUT_DIR / f"{varname}_scaling_params.json", "w") as f:
+
+    with open(OUTPUT_DIR / f"{varname}_scaling_params_chronological_split.json", "w") as f:
         json.dump(stats, f, indent=2)
 
     for step_path in [step1_path, step2_path, step3_path]:
@@ -325,10 +277,9 @@ def main():
         except FileNotFoundError:
             pass
 
-    
-if __name__ == "__main__":
-    client = Client(processes=False)
-    try:
-        main()
-    finally:
-        client.close()
+    if __name__ == "__main__":
+        client = Client(processes=False)
+        try:
+            main()
+        finally:
+            client.close()

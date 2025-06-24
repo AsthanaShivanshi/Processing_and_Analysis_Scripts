@@ -10,9 +10,9 @@ from dask.distributed import Client
 import tempfile
 
 np.random.seed(42)
-
+BASE_DIR = Path(os.environ["BASE_DIR"])
 #For ensuring pyproj database directory is set correctly
-proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/share/proj"
+proj_path = os.environ.get("PROJ_LIB") or BASE_DIR / "sasthana" / "MyPythonEnvNew" / "share" / "proj"
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
@@ -20,7 +20,6 @@ datadir.set_data_dir(proj_path)
 CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
 CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
  
-BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
 OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Pretraining_Chronological_Split"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -114,7 +113,9 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
     
 #Writing some example splits that can be used for validation
 
-#EXAMPLE 1: Chronological Split 
+#EXAMPLE 1: Chronological Split  : Used for the final model, most straightforward and ensures temporal consistency
+#sensitivity testing will be done later
+
 def chronological_split_decade(x, y, train_ratio=0.8):
     years = x["time"].dt.year.values
     decades = (years // 10) * 10
@@ -133,7 +134,7 @@ def chronological_split_decade(x, y, train_ratio=0.8):
     )
 
 
-#EXAMPLE 2 : taking the first and last year of each decade as validation set
+#EXAMPLE 2 : taking the first and last year of each decade as validation set : Cannot do decadal analysis 
 
 def split_first_last_year_of_decade(x, y):
     years = x['time'].dt.year.values
@@ -156,7 +157,7 @@ def split_first_last_year_of_decade(x, y):
         sorted(set(years[val_mask].tolist()))
     )
 
-#EXAMPLE 3: taking a random yet reproducible split of middle selection of decades as validation set
+#EXAMPLE 3: taking a random yet reproducible split of middle selection of decades as validation set : didnt use, moght not generalise to future
 
 def split_by_decade(x, y, val_ratio=0.2, seed=42):
     years = x['time'].dt.year.values
@@ -181,7 +182,7 @@ def split_by_decade(x, y, val_ratio=0.2, seed=42):
         sorted(val_decades.tolist())
     )
 
-#Example 4: Every fourth decade as validation set
+#Example 4: Every fourth decade as validation set : SUFFERED FROM OVERFITTING IN THE PAST, BUT INCLUDED FOR COMPLETENESS
 
 def split_every_fourth_decade(x, y):
     years = x['time'].dt.year.values
@@ -298,7 +299,7 @@ def main():
 
     x_train, x_val, y_train, y_val, val_decades = chronological_split_decade(upsampled, highres, train_ratio=0.8)
 
-    with open(OUTPUT_DIR / f"{varname}_val_decades_chronological_split_decade.json", "w") as f:
+    with open(OUTPUT_DIR / f"{varname}_val_decades_chronological_split.json", "w") as f:
         json.dump({"val_decades": val_decades}, f, indent=2)
 
 
@@ -313,10 +314,10 @@ def main():
     y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
     y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
 
-    x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled_chronological_split_decade.nc")
-    x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled_chronological_split_decade.nc")
-    y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled_chronological_split_decade.nc")
-    y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled_chronological_split_decade.nc")
+    x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_scaled_chronological_split.nc")
+    x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_scaled_chronological_split.nc")
+    y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_scaled_chronological_split.nc")
+    y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_scaled_chronological_split.nc")
 
 
     #Preparing and scaling the test set (2011-2020)
@@ -331,11 +332,11 @@ def main():
 
     x_test_scaled = apply_cdo_scaling(upsampled_test, stats, scale_type)
     y_test_scaled = apply_cdo_scaling(highres_test, stats, scale_type)
-    x_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_test_scaled_chronological_split_decade.nc")
-    y_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_test_scaled_chronological_split_decade.nc")
+    x_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_test_scaled_chronological_split.nc")
+    y_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_test_scaled_chronological_split.nc")
 
 
-    with open(OUTPUT_DIR / f"{varname}_scaling_params_chronological_split_decade.json", "w") as f:
+    with open(OUTPUT_DIR / f"{varname}_scaling_params_chronological_split.json", "w") as f:
         json.dump(stats, f, indent=2)
 
     for step_path in [step1_path, step2_path, step3_path]:
@@ -344,9 +345,9 @@ def main():
         except FileNotFoundError:
             pass
 
-    if __name__ == "__main__":
-        client = Client(processes=False)
-        try:
-            main()
-        finally:
-            client.close()
+if __name__ == "__main__":
+    client = Client(processes=False)
+    try:
+        main()
+    finally:
+        client.close()

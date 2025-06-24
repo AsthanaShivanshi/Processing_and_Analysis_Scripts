@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=preprocess_pretrain_dask
+#SBATCH --job-name=preprocess_pretrain_dask_chronological_split
 #SBATCH --chdir=/work/FAC/FGSE/IDYST/tbeucler/downscaling
-#SBATCH --output=sasthana/Downscaling/Processing_and_Analysis_Scripts/logs/pretraining_%A_%a.log
-#SBATCH --error=sasthana/Downscaling/Processing_and_Analysis_Scripts/logs/pretraining_%A_%a.log
+#SBATCH --output=sasthana/Downscaling/Processing_and_Analysis_Scripts/logs/chron_split_%A_%a.log
+#SBATCH --error=sasthana/Downscaling/Processing_and_Analysis_Scripts/logs/chron_split_%A_%a.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4       
 #SBATCH --mem=256G
