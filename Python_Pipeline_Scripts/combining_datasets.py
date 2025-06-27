@@ -2,6 +2,7 @@ import xarray as xr
 from pathlib import Path
 import os
 import sys
+import numpy as np
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 
@@ -32,13 +33,19 @@ file_1971 = out_1971 / f"{orig_1971}_1971_2023.nc"
 ds_1763 = xr.open_dataset(file_1763).rename({orig_1763: std_var})
 ds_1971 = xr.open_dataset(file_1971).rename({orig_1971: std_var})
 
-print(f"{std_var} 1763 dims: {ds_1763.dims}")
-print(f"{std_var} 1971 dims: {ds_1971.dims}")
+# Restricting to common E and N extent
+common_E = np.intersect1d(ds_1763['E'], ds_1971['E'])
+common_N = np.intersect1d(ds_1763['N'], ds_1971['N'])
+
+ds_1763 = ds_1763.sel(E=common_E, N=common_N)
+ds_1971 = ds_1971.sel(E=common_E, N=common_N)
 
 # 'source' dim
 ds_1763 = ds_1763.expand_dims(source=["pretrain"])
 ds_1971 = ds_1971.expand_dims(source=["train"])
 
+print(f"{std_var} 1763 dims: {ds_1763.dims}")
+print(f"{std_var} 1971 dims: {ds_1971.dims}")
 
 #For handling E/N and lat/lon problem
 for coord in ["lat", "lon"]:
