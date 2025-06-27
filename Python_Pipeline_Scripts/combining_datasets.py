@@ -41,11 +41,8 @@ ds_1763 = ds_1763.sel(E=common_E, N=common_N)
 ds_1971 = ds_1971.sel(E=common_E, N=common_N)
 
 # 'source' dim
-ds_1763 = ds_1763.expand_dims(source=["pretrain"])
-ds_1971 = ds_1971.expand_dims(source=["train"])
-
-print(f"{std_var} 1763 dims: {ds_1763.dims}")
-print(f"{std_var} 1971 dims: {ds_1971.dims}")
+ds_1763 = ds_1763.expand_dims(source=[0]) # 0 for pretrain (1763) (for explainability)
+ds_1971 = ds_1971.expand_dims(source=[1]) # 1 for train (1971)
 
 #For handling E/N and lat/lon problem
 for coord in ["lat", "lon"]:
@@ -59,6 +56,7 @@ print(f"{std_var} 1971 dims: {ds_1971.dims}")
 
     # Concatenating along source due to overlapping time coords after 1971
 ds_combined = xr.concat([ds_1763, ds_1971], dim="source")
+ds_combined['source'].attrs['meaning'] = '0=pretrain (1763), 1=train (1971)' #Adding attr to explain in file
 print(f"Combined ds created for {std_var}")
 print(f"{std_var} combined dimensions: {ds_combined.dims}")
 
