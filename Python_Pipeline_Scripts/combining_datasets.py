@@ -29,37 +29,27 @@ orig_1971 = [k for k, v in var_map_1971.items() if v == std_var][0]
 file_1763 = out_1763 / f"{orig_1763}_1763_2020.nc"
 file_1971 = out_1971 / f"{orig_1971}_1971_2023.nc"
 
-    # Rename
 ds_1763 = xr.open_dataset(file_1763).rename({orig_1763: std_var})
 ds_1971 = xr.open_dataset(file_1971).rename({orig_1971: std_var})
 
-# Restricting to common E and N extent
-common_E = np.intersect1d(ds_1763['E'], ds_1971['E'])
-common_N = np.intersect1d(ds_1763['N'], ds_1971['N'])
+# Interpolate 1971 dataset to the 1763 grid (E=265,N=370)
+ds_1971_interp = ds_1971.interp(E=ds_1763['E'], N=ds_1763['N'], method="linear")
 
-ds_1763 = ds_1763.sel(E=common_E, N=common_N)
-ds_1971 = ds_1971.sel(E=common_E, N=common_N)
-
-# 'source' dim
-ds_1763 = ds_1763.expand_dims(source=[0]) # 0 for pretrain (1763) (for explainability)
-ds_1971 = ds_1971.expand_dims(source=[1]) # 1 for train (1971)
-
-#For handling E/N and lat/lon problem
+# Drop lat/lon ::: facing mismatch issues, depending on ds
 for coord in ["lat", "lon"]:
     if coord in ds_1763.coords:
         ds_1763 = ds_1763.drop_vars(coord)
-    if coord in ds_1971.coords:
-        ds_1971 = ds_1971.drop_vars(coord)
+    if coord in ds_1971_interp.coords:
+        ds_1971_interp = ds_1971_interp.drop_vars(coord)
 
 print(f"{std_var} 1763 dims: {ds_1763.dims}")
-print(f"{std_var} 1971 dims: {ds_1971.dims}")
+print(f"{std_var} 1971 dims: {ds_1971_interp.dims}")
 
-    # Concatenating along source due to overlapping time coords after 1971
-ds_combined = xr.concat([ds_1763, ds_1971], dim="source")
-ds_combined['source'].attrs['meaning'] = '0=pretrain (1763), 1=train (1971)' #Adding attr to explain in file
-print(f"Combined ds created for {std_var}")
-print(f"{std_var} combined dimensions: {ds_combined.dims}")
+# Concatenating along time (duplicate imesteps allowed)
+ds_merged = xr.concat([ds_1763, ds_1971_interp], dim="time")
+print(f"Concatenated ds created for {std_var}")
+print(f"{std_var} merged dimensions: {ds_merged.dims}")
 
-ds_combined.to_netcdf(combined_out / f"{std_var}_combined.nc")
+ds_merged.to_netcdf(combined_out / f"{std_var}_merged.nc")
 
-print("Combined files with source dimension saved.")
+print("Merged file (with duplicate times in overlap) saved.")
