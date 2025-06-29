@@ -62,6 +62,10 @@ def conservative_coarsening(ds, varname, block_size):
     if 'time' not in da.dims:
         da = da.expand_dims('time')
     lat, lon = ds['lat'], ds['lon']
+    if 'time' in lat.dims:
+        lat = lat.isel(time=0)
+    if 'time' in lon.dims:
+        lon = lon.isel(time=0)
     R = 6371000
     lat_rad = np.deg2rad(lat)
     dlat = np.deg2rad(np.diff(lat.mean('E')).mean().item())
@@ -74,7 +78,6 @@ def conservative_coarsening(ds, varname, block_size):
     weighted_sum = weighted.coarsen(**coarsen_dims, boundary='trim').sum()
     area_sum = valid_area.coarsen(**coarsen_dims, boundary='trim').sum()
     data_coarse = (weighted_sum / area_sum).where(area_sum != 0)
-
 
     lat_coarse = lat.mean('E').coarsen(N=block_size, boundary='trim').mean()
     lon_coarse = lon.mean('N').coarsen(E=block_size, boundary='trim').mean()
