@@ -32,7 +32,7 @@ file_1971 = out_1971 / f"{orig_1971}_1971_2023.nc"
 ds_1763 = xr.open_dataset(file_1763).rename({orig_1763: std_var})
 ds_1971 = xr.open_dataset(file_1971).rename({orig_1971: std_var})
 
-# Interpolate 1971 dataset to the 1763 grid (E=265,N=370)
+# Interpolating 1971 to the 1763 grid (E=265,N=370)
 ds_1971_interp = ds_1971.interp(E=ds_1763['E'], N=ds_1763['N'], method="linear")
 
 # Drop lat/lon ::: facing mismatch issues, depending on ds
@@ -45,7 +45,7 @@ for coord in ["lat", "lon"]:
 print(f"{std_var} 1763 dims: {ds_1763.dims}")
 print(f"{std_var} 1971 dims: {ds_1971_interp.dims}")
 
-# Concatenating along time (duplicate imesteps allowed)
+# Duplicate timesteps allowed
 ds_merged = xr.concat([ds_1763, ds_1971_interp], dim="time")
 print(f"Concatenated ds created for {std_var}")
 print(f"{std_var} merged dimensions: {ds_merged.dims}")

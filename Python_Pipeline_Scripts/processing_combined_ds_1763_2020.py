@@ -175,6 +175,7 @@ def main():
     upsampled = interp_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
     years = upsampled['time.year'].values
 
+#Simple chronological splits
     train_mask = (years >= 1771) & (years <= 1980)
     val_mask   = (years >= 1981) & (years <= 2010)
     test_mask  = (years >= 2011) & (years <= 2020)
