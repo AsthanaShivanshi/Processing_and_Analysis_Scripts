@@ -67,19 +67,21 @@ def conservative_coarsening(ds, varname, block_size):
     dlat = np.deg2rad(np.diff(lat.mean('E')).mean().item())
     dlon = np.deg2rad(np.diff(lon.mean('N')).mean().item())
     area = (R**2) * dlat * dlon * np.cos(lat_rad)
-    area = area.broadcast_like(da.isel(time=0)).expand_dims(time=da.sizes['time'])
+    area = area.broadcast_like(da)
     weighted = da.fillna(0) * area
     valid_area = area * da.notnull()
     coarsen_dims = {dim: block_size for dim in ['N', 'E'] if dim in da.dims}
     weighted_sum = weighted.coarsen(**coarsen_dims, boundary='trim').sum()
     area_sum = valid_area.coarsen(**coarsen_dims, boundary='trim').sum()
     data_coarse = (weighted_sum / area_sum).where(area_sum != 0)
-    lat_coarse = lat.coarsen(N=block_size, boundary='trim').mean()
-    lon_coarse = lon.coarsen(E=block_size, boundary='trim').mean()
+
+
+    lat_coarse = lat.mean('E').coarsen(N=block_size, boundary='trim').mean()
+    lon_coarse = lon.mean('N').coarsen(E=block_size, boundary='trim').mean()
     lon2d, lat2d = xr.broadcast(lon_coarse, lat_coarse)
-    data_coarse = data_coarse.assign_coords(lat=lat2d, lon=lon2d)
+    data_coarse = data_coarse.assign_coords(lat=lat2d, lon=lon2d, lat1d=lat_coarse, lon1d=lon_coarse)
     data_coarse.name = varname
-    ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
+    ds_out = data_coarse.to_dataset().set_coords(["lat", "lon", "lat1d", "lon1d"])
     return ds_out
 
 
@@ -173,7 +175,9 @@ def main():
 
     highres = highres_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
     upsampled = interp_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
-    years = upsampled['time.year'].values
+    years = highres["time"].dt.year
+    if not np.array_equal(highres["time"].values, upsampled["time"].values):
+        raise ValueError ("Time correspondence mismatch between highres and upsampled datasets.")
 
 #Simple chronological splits
     train_mask = (years >= 1771) & (years <= 1980)
