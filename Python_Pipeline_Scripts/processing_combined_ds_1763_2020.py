@@ -12,7 +12,7 @@ import subprocess
 
 np.random.seed(42)
 
-# For ensuring pyproj database directory is correctly set
+# For ensuring pyproj database directory is correct
 proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/share/proj"
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
@@ -21,7 +21,8 @@ CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
 CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
  
 BASE_DIR = Path(os.environ["BASE_DIR"])
-INPUT_DIR = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
+INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/ "Downscaling_Models" / "Combined_Chronological_Dataset"
+INPUT_DIR.mkdir(parents=True,exist_ok=True)
 OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Pretraining_Chronological_Dataset"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -124,10 +125,10 @@ def main():
     varname = args.var
 
     dataset_map = {
-        "precip": ("precip_1763_2020.nc", "minmax", "precip"),
-        "temp":   ("temp_1763_2020.nc", "standard", "temp"),
-        "tmin":   ("tmin_1763_2020.nc", "standard", "tmin"),
-        "tmax":   ("tmax_1763_2020.nc", "standard", "tmax"),
+        "pr": ("pr_merged.nc", "minmax", "pr"),
+        "tas":   ("tas_merged.nc", "standard", "tas"),
+        "tasmin":   ("tasmin_merged.nc", "standard", "tasmin"),
+        "tasmax":   ("tasmax_merged.nc", "standard", "tasmax"),
     }
 
     if varname not in dataset_map:
@@ -197,14 +198,14 @@ def main():
     x_test_scaled = apply_cdo_scaling(x_test, stats, scale_type)
     y_test_scaled = apply_cdo_scaling(y_test, stats, scale_type)
 
-    x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_train_chronological_scaled.nc")
-    y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_train_chronological_scaled.nc")
-    x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_val_chronological_scaled.nc")
-    y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_val_chronological_scaled.nc")
-    x_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_input_test_chronological_scaled.nc")
-    y_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_target_test_chronological_scaled.nc")
+    x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_input_train_chronological_scaled.nc")
+    y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_target_train_chronological_scaled.nc")
+    x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_input_val_chronological_scaled.nc")
+    y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_target_val_chronological_scaled.nc")
+    x_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_input_test_chronological_scaled.nc")
+    y_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_target_test_chronological_scaled.nc")
 
-    with open(OUTPUT_DIR / f"{varname}_scaling_params_chronological.json", "w") as f:
+    with open(OUTPUT_DIR / f"{varname}_scaling_params_combined_chronological.json", "w") as f:
         json.dump(stats, f, indent=2)
 
     # Cleaning up intermed files,uncomment
