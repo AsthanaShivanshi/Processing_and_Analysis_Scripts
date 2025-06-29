@@ -21,9 +21,9 @@ CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
 CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
  
 BASE_DIR = Path(os.environ["BASE_DIR"])
-INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/ "Downscaling_Models" / "Combined_Chronological_Dataset"
+INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/ "Processing_and_Analysis_Scripts" / "Combined_Dataset"
 INPUT_DIR.mkdir(parents=True,exist_ok=True)
-OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Pretraining_Chronological_Dataset"
+OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Combined_Chronological_Dataset"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 def get_chunk_dict(ds):

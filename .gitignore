@@ -10,3 +10,8 @@ logs/
 *.h5
 *.pth
 *.pt
+*.pkl
+*.log
+*.pyc
+__pycache__/
+Outputs/
