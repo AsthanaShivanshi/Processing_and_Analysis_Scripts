@@ -48,18 +48,18 @@ def swiss_lv95_grid_to_wgs84(E_grid, N_grid):
     lat = np.array([float(ll[1]) for ll in lon_lat]).reshape(E_grid.shape)
     return lon, lat
 
-def plot_city_pdf(city_coords, obs, unet, recon, varname, city_name="City"):
+def plot_city_pdf(city_coords, obs, unet, bicubic, varname, city_name="City"):
     obs_N, obs_E, obs_N_dim, obs_E_dim = get_lat_lon(obs)
     unet_lat, unet_lon, unet_lat_dim, unet_lon_dim = get_lat_lon(unet)
-    recon_N, recon_E, recon_N_dim, recon_E_dim = get_lat_lon(recon)
+    bicubic_N, bicubic_E, bicubic_N_dim, bicubic_E_dim = get_lat_lon(bicubic)
 
     # Transform obs grid (E, N) to (lon, lat) 
     obs_E_grid, obs_N_grid = np.meshgrid(obs_E, obs_N)
     obs_lon_grid, obs_lat_grid = swiss_lv95_grid_to_wgs84(obs_E_grid, obs_N_grid)
 
-    # Transform recon grid (E, N) to (lon, lat)
-    recon_E_grid, recon_N_grid = np.meshgrid(recon_E, recon_N)
-    recon_lon_grid, recon_lat_grid = swiss_lv95_grid_to_wgs84(recon_E_grid, recon_N_grid)
+    # Transform bicubic grid (E, N) to (lon, lat)
+    bicubic_E_grid, bicubic_N_grid = np.meshgrid(bicubic_E, bicubic_N)
+    bicubic_lon_grid, bicubic_lat_grid = swiss_lv95_grid_to_wgs84(bicubic_E_grid, bicubic_N_grid)
 
     city_lat, city_lon = city_coords
 
@@ -75,23 +75,23 @@ def plot_city_pdf(city_coords, obs, unet, recon, varname, city_name="City"):
     unet_series = unet.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
     print(f"[DEBUG] unet_series: shape={unet_series.shape}, min={np.nanmin(unet_series)}, max={np.nanmax(unet_series)}, nans={np.isnan(unet_series).sum()}")
 
-    dist_recon = np.sqrt((recon_lat_grid - city_lat)**2 + (recon_lon_grid - city_lon)**2)
-    lat_idx_recon, lon_idx_recon = np.unravel_index(np.argmin(dist_recon), dist_recon.shape)
-    recon_series = recon.isel({recon_N_dim: lat_idx_recon, recon_E_dim: lon_idx_recon}).values.flatten()
-    print(f"[DEBUG] recon_series: shape={recon_series.shape}, min={np.nanmin(recon_series)}, max={np.nanmax(recon_series)}, nans={np.isnan(recon_series).sum()}")
+    dist_bicubic = np.sqrt((bicubic_lat_grid - city_lat)**2 + (bicubic_lon_grid - city_lon)**2)
+    lat_idx_bicubic, lon_idx_bicubic = np.unravel_index(np.argmin(dist_bicubic), dist_bicubic.shape)
+    bicubic_series = bicubic.isel({bicubic_N_dim: lat_idx_bicubic, bicubic_E_dim: lon_idx_bicubic}).values.flatten()
+    print(f"[DEBUG] bicubic_series: shape={bicubic_series.shape}, min={np.nanmin(bicubic_series)}, max={np.nanmax(bicubic_series)}, nans={np.isnan(bicubic_series).sum()}")
 
     obs_series = obs_series[~np.isnan(obs_series)]
     unet_series = unet_series[~np.isnan(unet_series)]
-    recon_series = recon_series[~np.isnan(recon_series)]
+    bicubic_series = bicubic_series[~np.isnan(bicubic_series)]
 
     print(f"obs_series length: {len(obs_series)}")
     print(f"unet_series length: {len(unet_series)}")
-    print(f"recon_series length: {len(recon_series)}")
+    print(f"bicubic_series length: {len(bicubic_series)}")
 
     plt.figure(figsize=(8,6))
     plt.hist(obs_series, bins=50, density=True, histtype="step", linewidth=2, color="green", label="Observations from test set 2011-2020")
     plt.hist(unet_series, bins=50, density=True, histtype="step", linewidth=2, color="blue", label="UNet predictions: 2011-2020")
-    plt.hist(recon_series, bins=50, density=True, histtype="step", linewidth=2, color="orange", label="Reconstructed 2011-2020")
+    plt.hist(bicubic_series, bins=50, density=True, histtype="step", linewidth=2, color="orange", label="Bicubic baseline: 2011-2020")
     plt.title(f"{varname} PDF at {city_name} (lat={city_lat:.4f}, lon={city_lon:.4f})")
     plt.xlabel(varname)
     plt.ylabel("Density")
@@ -102,7 +102,7 @@ def plot_city_pdf(city_coords, obs, unet, recon, varname, city_name="City"):
 
 if __name__ == "__main__":
     idx = int(os.environ.get("SLURM_ARRAY_TASK_ID", 0))
-    city_coords = (46.2044, 6.1432)  # Geneva
+    city_coords = (46.2044, 6.1432)
     city_name = "Geneva"
 
     varnames = [
@@ -120,18 +120,25 @@ if __name__ == "__main__":
     unet_ds = xr.open_dataset(
         str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Training_Dataset" / "downscaled_predictions_2011_2020_ds.nc"),
         chunks={"time": 100})
-    recon_ds = xr.open_dataset(
-        str(BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020" / f"{recon_var}_1763_2020.nc"),
-        chunks={"time": 100}).sel(time=slice("2011-01-01", "2020-12-31"))
+
+    # Bicubic baseline path mapping
+    bicubic_paths = {
+        "RhiresD": BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Chronological_Dataset" / "RhiresD_step3_interp.nc",
+        "TabsD":   BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Chronological_Dataset" / "TabsD_step3_interp.nc",
+        "TminD":   BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Chronological_Dataset" / "TminD_step3_interp.nc",
+        "TmaxD":   BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Chronological_Dataset" / "TmaxD_step3_interp.nc",
+    }
+    bicubic_path = bicubic_paths[obs_var]
+    bicubic_ds = xr.open_dataset(str(bicubic_path), chunks={"time": 100}).sel(time=slice("2011-01-01", "2020-12-31"))
 
     print(obs_ds)
     print(unet_ds)
-    print(recon_ds)
+    print(bicubic_ds)
     plot_city_pdf(
         city_coords,
         obs_ds[obs_var],
         unet_ds[obs_var],
-        recon_ds[recon_var],
+        bicubic_ds[obs_var],
         varname=obs_var,
         city_name=city_name
     )
