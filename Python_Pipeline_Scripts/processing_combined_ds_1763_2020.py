@@ -81,7 +81,16 @@ def conservative_coarsening(ds, varname, block_size):
 
     lat_coarse = lat.mean('E').coarsen(N=block_size, boundary='trim').mean()
     lon_coarse = lon.mean('N').coarsen(E=block_size, boundary='trim').mean()
+    
+    # FIX 1: Remove any time dimension from coarsened coordinates
+    if 'time' in lat_coarse.dims:
+        lat_coarse = lat_coarse.isel(time=0)
+    if 'time' in lon_coarse.dims:
+        lon_coarse = lon_coarse.isel(time=0)
+    
+    # FIX 2: Correct broadcast - should be lon_coarse and lat_coarse
     lon2d, lat2d = xr.broadcast(lon_coarse, lat_coarse)
+    
     data_coarse = data_coarse.assign_coords(lat=lat2d, lon=lon2d, lat1d=lat_coarse, lon1d=lon_coarse)
     data_coarse.name = varname
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon", "lat1d", "lon1d"])
