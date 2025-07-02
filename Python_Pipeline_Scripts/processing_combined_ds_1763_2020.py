@@ -165,6 +165,9 @@ def main():
         else:
             ds.close()
             ds = promote_latlon(infile_path, varname_in_file)
+        # Cleaning for pr : handling negative vals for dirty data
+        if varname == "pr":
+            ds[varname_in_file] = xr.where(ds[varname_in_file] < 0, 0, ds[varname_in_file])
         ds.to_netcdf(step1_path)
         ds.close()
 

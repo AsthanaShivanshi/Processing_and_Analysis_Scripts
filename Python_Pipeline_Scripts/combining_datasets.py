@@ -29,8 +29,17 @@ orig_1971 = [k for k, v in var_map_1971.items() if v == std_var][0]
 file_1763 = out_1763 / f"{orig_1763}_1763_2020.nc"
 file_1971 = out_1971 / f"{orig_1971}_1971_2023.nc"
 
-ds_1763 = xr.open_dataset(file_1763).rename({orig_1763: std_var})
-ds_1971 = xr.open_dataset(file_1971).rename({orig_1971: std_var})
+ds_1763 = xr.open_dataset(file_1763)
+if orig_1763 == "precip":
+    arr = ds_1763["precip"]
+    ds_1763["precip"] = xr.where(arr < 0, 0, arr)
+ds_1763 = ds_1763.rename({orig_1763: std_var})
+
+ds_1971 = xr.open_dataset(file_1971)
+if orig_1971 == "RhiresD":
+    arr = ds_1971["RhiresD"]
+    ds_1971["RhiresD"] = xr.where(arr < 0, 0, arr)
+ds_1971 = ds_1971.rename({orig_1971: std_var})
 
 # Interpolating 1971 to the 1763 grid (E=265,N=370)
 ds_1971_interp = ds_1971.interp(E=ds_1763['E'], N=ds_1763['N'], method="linear")
@@ -44,6 +53,11 @@ for coord in ["lat", "lon"]:
 
 print(f"{std_var} 1763 dims: {ds_1763.dims}")
 print(f"{std_var} 1971 dims: {ds_1971_interp.dims}")
+
+if "time" in ds_1763.indexes:
+    ds_1763 = ds_1763.reset_coords("time", drop=True)
+if "time" in ds_1971_interp.indexes:
+    ds_1971_interp = ds_1971_interp.reset_coords("time", drop=True)
 
 # Duplicate timesteps allowed
 ds_merged = xr.concat([ds_1763, ds_1971_interp], dim="time")
