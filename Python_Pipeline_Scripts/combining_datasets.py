@@ -54,11 +54,6 @@ for coord in ["lat", "lon"]:
 print(f"{std_var} 1763 dims: {ds_1763.dims}")
 print(f"{std_var} 1971 dims: {ds_1971_interp.dims}")
 
-if "time" in ds_1763.indexes:
-    ds_1763 = ds_1763.reset_coords("time", drop=True)
-if "time" in ds_1971_interp.indexes:
-    ds_1971_interp = ds_1971_interp.reset_coords("time", drop=True)
-
 # Duplicate timesteps allowed
 ds_merged = xr.concat([ds_1763, ds_1971_interp], dim="time")
 print(f"Concatenated ds created for {std_var}")
