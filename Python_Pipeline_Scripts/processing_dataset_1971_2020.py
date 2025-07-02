@@ -56,6 +56,7 @@ def promote_latlon(infile, varname):
     return ds
 
 
+
 def conservative_coarsening(ds, varname, block_size):
     da = ds[varname]
     if 'time' not in da.dims:
@@ -153,6 +154,10 @@ def main():
         else:
             ds.close()
             ds = promote_latlon(infile_path, varname_in_file)
+        # --- Data cleaning step for RhiresD ---
+        if varname == "RhiresD":
+            ds[varname_in_file] = ds[varname_in_file].where(ds[varname_in_file] >= 0, 0)
+        # --- End data cleaning step ---
         ds.to_netcdf(step1_path)
         ds.close()
 
