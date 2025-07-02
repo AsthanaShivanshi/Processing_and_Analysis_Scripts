@@ -7,9 +7,9 @@
 #SBATCH --cpus-per-task=4       
 #SBATCH --mem=500G
 #SBATCH --time=3-00:00:00
-#SBATCH --array 0
+#SBATCH --array 0-3
 
 source sasthana/Downscaling/Processing_and_Analysis_Scripts/environment.sh
 export PROJ_LIB="$ENVIRONMENT/share/proj"
 
-python /work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/combining_datasets.py $SLURM_ARRAY_TASK_ID 
+python sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/combining_datasets.py $SLURM_ARRAY_TASK_ID 
