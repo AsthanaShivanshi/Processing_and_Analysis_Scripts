@@ -48,7 +48,7 @@ def swiss_lv95_grid_to_wgs84(E_grid, N_grid):
     lat = np.array([float(ll[1]) for ll in lon_lat]).reshape(E_grid.shape)
     return lon, lat
 
-def plot_city_pdf(city_coords, obs, unet, bicubic, varname, city_name="City"):
+def plot_city_cdf(city_coords, obs, unet, bicubic, varname, city_name="City"):
     obs_N, obs_E, obs_N_dim, obs_E_dim = get_lat_lon(obs)
     unet_lat, unet_lon, unet_lat_dim, unet_lon_dim = get_lat_lon(unet)
     bicubic_N, bicubic_E, bicubic_N_dim, bicubic_E_dim = get_lat_lon(bicubic)
@@ -89,20 +89,20 @@ def plot_city_pdf(city_coords, obs, unet, bicubic, varname, city_name="City"):
     print(f"bicubic_series length: {len(bicubic_series)}")
 
     plt.figure(figsize=(8,6))
-    plt.hist(obs_series, bins=50, density=True, histtype="step", linewidth=2, color="green", label="Observations from test set 2011-2020")
-    plt.hist(unet_series, bins=50, density=True, histtype="step", linewidth=2, color="blue", label="UNet predictions: 2011-2020")
-    plt.hist(bicubic_series, bins=50, density=True, histtype="step", linewidth=2, color="orange", label="Bicubic baseline: 2011-2020")
-    plt.title(f"{varname} PDF at {city_name} (lat={city_lat:.4f}, lon={city_lon:.4f})")
+    plt.hist(obs_series, bins=50, density=True, cumulative=True, histtype="step", linewidth=2, color="green", label="Observations from test set 2011-2020")
+    plt.hist(unet_series, bins=50, density=True, cumulative=True, histtype="step", linewidth=2, color="blue", label="UNet predictions: 2011-2020")
+    plt.hist(bicubic_series, bins=50, density=True, cumulative=True, histtype="step", linewidth=2, color="orange", label="Bicubic baseline: 2011-2020")
+    plt.title(f"{varname} CDF at {city_name} (lat={city_lat:.4f}, lon={city_lon:.4f})")
     plt.xlabel(varname)
-    plt.ylabel("Density")
+    plt.ylabel("CDF")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f"../Outputs/pdf_{varname}_{city_name}_latlon_distance_UNet_pred.png")
+    plt.savefig(f"../Outputs/CDF_{varname}_{city_name}_latlon_distance_UNet_pred.png")
     plt.close()
 
 if __name__ == "__main__":
     idx = int(os.environ.get("SLURM_ARRAY_TASK_ID", 0))
-    city_coords = (46.2044, 6.1432)
+    city_coords = (46.2044, 6.1432) #To be changed depending on the city 
     city_name = "Geneva"
 
     varnames = [
@@ -134,7 +134,7 @@ if __name__ == "__main__":
     print(obs_ds)
     print(unet_ds)
     print(bicubic_ds)
-    plot_city_pdf(
+    plot_city_cdf(
         city_coords,
         obs_ds[obs_var],
         unet_ds[obs_var],

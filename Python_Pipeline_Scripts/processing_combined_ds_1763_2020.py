@@ -171,9 +171,14 @@ def main():
         ds.to_netcdf(step1_path)
         ds.close()
 
+
     highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
 
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
+    if 'lat' not in highres_ds.coords or 'lon' not in highres_ds.coords:
+        print("[INFO] Promoting lat/lon coordinates...")
+        highres_ds = promote_latlon(str(step1_path), varname_in_file)
+        highres_ds.to_netcdf(step1_path)  
     if not step2_path.exists():
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
         coarse_ds.to_netcdf(step2_path)
