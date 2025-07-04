@@ -6,9 +6,7 @@ import numpy as np
 import xarray as xr
 import subprocess
 from pyproj import Transformer, datadir
-from dask.distributed import Client
 import tempfile
-import subprocess
 
 np.random.seed(42)
 
@@ -18,7 +16,7 @@ datadir.set_data_dir(proj_path)
 
 CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
 CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
- 
+
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/ "Processing_and_Analysis_Scripts" / "Combined_Dataset"
 INPUT_DIR.mkdir(parents=True,exist_ok=True)
@@ -56,7 +54,6 @@ def promote_latlon(infile, varname):
     return ds
 
 def squeeze_latlon(ds):
-    # Take the first time slice for lat/lon, drop time dimension
     lat2d = ds['lat']
     lon2d = ds['lon']
     if 'time' in lat2d.dims:
@@ -71,10 +68,8 @@ def squeeze_latlon(ds):
     ds = ds.assign_coords(lat=lat2d, lon=lon2d)
     return ds
 
-
 def conservative_coarsening(ds, varname, block_size):
     da = ds[varname]
-    # Time dim removed
     if 'time' not in da.dims and 'time' in ds.dims:
         da = da.expand_dims('time')
     lat, lon = ds['lat'], ds['lon']
@@ -97,48 +92,39 @@ def conservative_coarsening(ds, varname, block_size):
     data_coarse = (weighted_sum / area_sum).where(area_sum != 0)
     lat_coarse = lat.mean('E').coarsen(N=block_size, boundary='trim').mean()
     lon_coarse = lon.mean('N').coarsen(E=block_size, boundary='trim').mean()
-    # Remove any 'time' dimension or coordinate from coarse lat/lon
     for arr_name in ['lat_coarse', 'lon_coarse']:
         arr = locals()[arr_name]
         if 'time' in arr.dims:
             arr = arr.isel(time=0)
         if 'time' in arr.coords:
             arr = arr.drop_vars('time')
-        # Variable assignment for loop scope
         if arr_name == 'lat_coarse':
             lat_coarse = arr
         else:
             lon_coarse = arr
-
-    lon2d, lat2d = xr.broadcast(lon_coarse, lat_coarse)
-
-    for arr_name in ['lat2d', 'lon2d']:
-        arr = locals()[arr_name]
-        if 'time' in arr.dims:
-            arr = arr.isel(time=0)
-        if 'time' in arr.coords:
-            arr = arr.drop_vars('time')
-        if arr_name == 'lat2d':
-            lat2d = arr
-        else:
-            lon2d = arr
-    data_coarse = data_coarse.assign_coords(lat=lat2d, lon=lon2d, lat1d=lat_coarse, lon1d=lon_coarse)
+    # Broadcasting to 2D
+    lat2d, lon2d = xr.broadcast(lat_coarse, lon_coarse)
+    lat2d = lat2d.transpose('N', 'E')
+    lon2d = lon2d.transpose('N', 'E')
+    # Assign only lat/lon as coordinates for CDO
+    data_coarse = data_coarse.assign_coords(lat=lat2d, lon=lon2d)
     data_coarse.name = varname
-    ds_out = data_coarse.to_dataset().set_coords(["lat", "lon", "lat1d", "lon1d"])
+    ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
+    for v in list(ds_out.data_vars) + list(ds_out.coords):
+        if hasattr(ds_out[v], "attrs") and "grid_mapping" in ds_out[v].attrs:
+            del ds_out[v].attrs["grid_mapping"]
+    if "grid_mapping" in ds_out.attrs:
+        del ds_out.attrs["grid_mapping"]
     return ds_out
 
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
     with tempfile.TemporaryDirectory() as tmpdir:
-        # For CDO compatibility, messy code 
         for name, ds in zip(['coarse', 'target'], [coarse_ds, target_ds]):
             ds = squeeze_latlon(ds)
-            for v in ['lat1d', 'lon1d']:
-                if v in ds:
+            for v in list(ds.coords):
+                if v not in ['lat', 'lon', 'time']:
                     ds = ds.drop_vars(v)
-            if 'lat' in ds.data_vars:
-                ds = ds.set_coords('lat')
-            if 'lon' in ds.data_vars:
-                ds = ds.set_coords('lon')
+            # Removing grid_mapping from everywhere
             for vv in list(ds.data_vars) + list(ds.coords):
                 if hasattr(ds[vv], "attrs") and "grid_mapping" in ds[vv].attrs:
                     del ds[vv].attrs["grid_mapping"]
@@ -147,7 +133,11 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
             assert ds['lat'].dims == ('N', 'E'), "lat must be 2D with dims ('N', 'E')"
             assert ds['lon'].dims == ('N', 'E'), "lon must be 2D with dims ('N', 'E')"
             file_path = Path(tmpdir) / f"{name}.nc"
-            ds[[varname]].transpose("time", "N", "E").to_netcdf(file_path)
+            # Keeping only var and lat/lon/time
+            keep_vars = [varname]
+            if 'time' in ds.coords:
+                keep_vars.append('time')
+            ds[keep_vars].transpose("time", "N", "E").to_netcdf(file_path)
 
         output_file = Path(tmpdir) / "interp.nc"
         script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
@@ -155,7 +145,6 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
             str(script_path), str(Path(tmpdir) / "coarse.nc"), str(Path(tmpdir) / "target.nc"), str(output_file)
         ], check=True)
         return xr.open_dataset(output_file)[[varname]]
-
 
 def get_cdo_stats(file_path, method):
     stats = {}
@@ -176,9 +165,6 @@ def apply_cdo_scaling(ds, stats, method):
         return (ds - stats['min']) / (stats['max'] - stats['min'])
     else:
         raise ValueError(f"Unknown method: {method}")
-    
-
-#xxxxxxxxxxxxxxxxMAIN function for proecessing all the steps of the dataset###############
 
 def main():
     parser = argparse.ArgumentParser()
@@ -200,25 +186,6 @@ def main():
     infile_path = INPUT_DIR / infile
     if not infile_path.exists():
         raise FileNotFoundError(f"[ERROR] File does not exist: {infile_path}")
-
-
-    # if not step1_path.exists() or not {'lat', 'lon'}.issubset(xr.open_dataset(step1_path).coords):
-#     print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
-#     ds = xr.open_dataset(infile_path)
-#     ds = ds.chunk(get_chunk_dict(ds))
-#     if 'lat' in ds.coords and 'lon' in ds.coords:
-#         pass
-#     elif 'lat' in ds.data_vars and 'lon' in ds.data_vars:
-#         ds = ds.set_coords(['lat', 'lon'])
-#     else:
-#         ds.close()
-#         ds = promote_latlon(infile_path, varname_in_file)
-#     # Cleaning for pr : handling negative vals for dirty data
-#     if varname == "pr":
-#         ds[varname_in_file] = xr.where(ds[varname_in_file] < 0, 0, ds[varname_in_file])
-#     ds.to_netcdf(step1_path)
-#     ds.close()
-
 
     step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
     highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
@@ -250,14 +217,10 @@ def main():
 
     if not step2_path.exists():
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
-        coarse_ds = squeeze_latlon(coarse_ds)
-        for v in ['lat1d', 'lon1d']:
-            if v in coarse_ds:
+        # only lat/lon as cords
+        for v in list(coarse_ds.coords):
+            if v not in ['lat', 'lon', 'time']:
                 coarse_ds = coarse_ds.drop_vars(v)
-        if 'lat' in coarse_ds.data_vars:
-            coarse_ds = coarse_ds.set_coords('lat')
-        if 'lon' in coarse_ds.data_vars:
-            coarse_ds = coarse_ds.set_coords('lon')
         for v in list(coarse_ds.data_vars) + list(coarse_ds.coords):
             if hasattr(coarse_ds[v], "attrs") and "grid_mapping" in coarse_ds[v].attrs:
                 del coarse_ds[v].attrs["grid_mapping"]
@@ -268,14 +231,10 @@ def main():
         coarse_ds.to_netcdf(step2_path)
 
     coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
-    coarse_ds = squeeze_latlon(coarse_ds)
-    for v in ['lat1d', 'lon1d']:
-        if v in coarse_ds:
+    # lat/lon/time as coords
+    for v in list(coarse_ds.coords):
+        if v not in ['lat', 'lon', 'time']:
             coarse_ds = coarse_ds.drop_vars(v)
-    if 'lat' in coarse_ds.data_vars:
-        coarse_ds = coarse_ds.set_coords('lat')
-    if 'lon' in coarse_ds.data_vars:
-        coarse_ds = coarse_ds.set_coords('lon')
     for v in list(coarse_ds.data_vars) + list(coarse_ds.coords):
         if hasattr(coarse_ds[v], "attrs") and "grid_mapping" in coarse_ds[v].attrs:
             del coarse_ds[v].attrs["grid_mapping"]
@@ -289,13 +248,9 @@ def main():
         interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
         interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
         interp_ds = squeeze_latlon(interp_ds)
-        for v in ['lat1d', 'lon1d']:
-            if v in interp_ds:
+        for v in list(interp_ds.coords):
+            if v not in ['lat', 'lon', 'time']:
                 interp_ds = interp_ds.drop_vars(v)
-        if 'lat' in interp_ds.data_vars:
-            interp_ds = interp_ds.set_coords('lat')
-        if 'lon' in interp_ds.data_vars:
-            interp_ds = interp_ds.set_coords('lon')
         for v in list(interp_ds.data_vars) + list(interp_ds.coords):
             if hasattr(interp_ds[v], "attrs") and "grid_mapping" in interp_ds[v].attrs:
                 del interp_ds[v].attrs["grid_mapping"]
@@ -345,12 +300,5 @@ def main():
     with open(OUTPUT_DIR / f"{varname}_scaling_params_combined_chronological.json", "w") as f:
         json.dump(stats, f, indent=2)
 
-
-    # Cleaning up intermed files,
-    #for step_path in [step1_path, step2_path, step3_path]:
-    #    try:
-    #        os.remove(step_path)
-    #    except FileNotFoundError:
-    #        pass
-
-    
+if __name__ == "__main__":
+    main()
