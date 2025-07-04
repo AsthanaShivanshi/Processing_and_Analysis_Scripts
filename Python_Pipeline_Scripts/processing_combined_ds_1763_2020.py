@@ -12,7 +12,6 @@ import subprocess
 
 np.random.seed(42)
 
-# For ensuring pyproj database directory is correct
 proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/share/proj"
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
@@ -59,13 +58,15 @@ def promote_latlon(infile, varname):
 
 def conservative_coarsening(ds, varname, block_size):
     da = ds[varname]
-    if 'time' not in da.dims:
+    # Time dim removed
+    if 'time' not in da.dims and 'time' in ds.dims:
         da = da.expand_dims('time')
     lat, lon = ds['lat'], ds['lon']
     if 'time' in lat.dims:
         lat = lat.isel(time=0)
     if 'time' in lon.dims:
         lon = lon.isel(time=0)
+    # Area calculation
     R = 6371000
     lat_rad = np.deg2rad(lat)
     dlat = np.deg2rad(np.diff(lat.mean('E')).mean().item())
@@ -78,24 +79,37 @@ def conservative_coarsening(ds, varname, block_size):
     weighted_sum = weighted.coarsen(**coarsen_dims, boundary='trim').sum()
     area_sum = valid_area.coarsen(**coarsen_dims, boundary='trim').sum()
     data_coarse = (weighted_sum / area_sum).where(area_sum != 0)
-
     lat_coarse = lat.mean('E').coarsen(N=block_size, boundary='trim').mean()
     lon_coarse = lon.mean('N').coarsen(E=block_size, boundary='trim').mean()
-    
-    # FIX 1: Remove any time dimension from coarsened coordinates
-    if 'time' in lat_coarse.dims:
-        lat_coarse = lat_coarse.isel(time=0)
-    if 'time' in lon_coarse.dims:
-        lon_coarse = lon_coarse.isel(time=0)
-    
-    # FIX 2: Correct broadcast - should be lon_coarse and lat_coarse
+    # Remove any 'time' dimension or coordinate from coarse lat/lon
+    for arr_name in ['lat_coarse', 'lon_coarse']:
+        arr = locals()[arr_name]
+        if 'time' in arr.dims:
+            arr = arr.isel(time=0)
+        if 'time' in arr.coords:
+            arr = arr.drop_vars('time')
+        # Variable assignment for loop scope
+        if arr_name == 'lat_coarse':
+            lat_coarse = arr
+        else:
+            lon_coarse = arr
+
     lon2d, lat2d = xr.broadcast(lon_coarse, lat_coarse)
-    
+
+    for arr_name in ['lat2d', 'lon2d']:
+        arr = locals()[arr_name]
+        if 'time' in arr.dims:
+            arr = arr.isel(time=0)
+        if 'time' in arr.coords:
+            arr = arr.drop_vars('time')
+        if arr_name == 'lat2d':
+            lat2d = arr
+        else:
+            lon2d = arr
     data_coarse = data_coarse.assign_coords(lat=lat2d, lon=lon2d, lat1d=lat_coarse, lon1d=lon_coarse)
     data_coarse.name = varname
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon", "lat1d", "lon1d"])
     return ds_out
-
 
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -153,23 +167,24 @@ def main():
     if not infile_path.exists():
         raise FileNotFoundError(f"[ERROR] Input file does not exist: {infile_path}")
 
+#Commenting out the step 1 for now, as the files are already prepped, it is the second step that showed error. DEBUGGING....
     step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
-    if not step1_path.exists() or not {'lat', 'lon'}.issubset(xr.open_dataset(step1_path).coords):
-        print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
-        ds = xr.open_dataset(infile_path)
-        ds = ds.chunk(get_chunk_dict(ds))
-        if 'lat' in ds.coords and 'lon' in ds.coords:
-            pass
-        elif 'lat' in ds.data_vars and 'lon' in ds.data_vars:
-            ds = ds.set_coords(['lat', 'lon'])
-        else:
-            ds.close()
-            ds = promote_latlon(infile_path, varname_in_file)
+    #if not step1_path.exists() or not {'lat', 'lon'}.issubset(xr.open_dataset(step1_path).coords):
+        #print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
+        #ds = xr.open_dataset(infile_path)
+        ##ds = ds.chunk(get_chunk_dict(ds))
+        #if 'lat' in ds.coords and 'lon' in ds.coords:
+            #pass
+        #elif 'lat' in ds.data_vars and 'lon' in ds.data_vars:
+            #ds = ds.set_coords(['lat', 'lon'])
+        #else:
+            #ds.close()
+            #ds = promote_latlon(infile_path, varname_in_file)
         # Cleaning for pr : handling negative vals for dirty data
-        if varname == "pr":
-            ds[varname_in_file] = xr.where(ds[varname_in_file] < 0, 0, ds[varname_in_file])
-        ds.to_netcdf(step1_path)
-        ds.close()
+        #if varname == "pr":
+            #ds[varname_in_file] = xr.where(ds[varname_in_file] < 0, 0, ds[varname_in_file])
+        #ds.to_netcdf(step1_path)
+        #ds.close()
 
 
     highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
