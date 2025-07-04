@@ -105,10 +105,11 @@ def conservative_coarsening(ds, varname, block_size):
     lat2d, lon2d = xr.broadcast(lat_coarse, lon_coarse)
     lat2d = lat2d.transpose('N', 'E')
     lon2d = lon2d.transpose('N', 'E')
-    # Assign only lat/lon as coordinates for CDO
+    # Assign lat/lon as coordinates for CDO (keep N/E as dims)
     data_coarse = data_coarse.assign_coords(lat=lat2d, lon=lon2d)
     data_coarse.name = varname
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
+    # Remove grid_mapping attributes
     for v in list(ds_out.data_vars) + list(ds_out.coords):
         if hasattr(ds_out[v], "attrs") and "grid_mapping" in ds_out[v].attrs:
             del ds_out[v].attrs["grid_mapping"]
@@ -116,34 +117,47 @@ def conservative_coarsening(ds, varname, block_size):
         del ds_out.attrs["grid_mapping"]
     return ds_out
 
+
+def cdo_clean(ds, varname):
+    # Squeeze lat/lon to 2D if they have a time dimension
+    for coord in ['lat', 'lon']:
+        if coord in ds:
+            arr = ds[coord]
+            if 'time' in arr.dims:
+                arr = arr.isel(time=0)
+            ds = ds.drop_vars(coord)
+            ds = ds.assign_coords({coord: arr})
+
+    # Only keep lat/lon/time as coordinates
+    for v in list(ds.coords):
+        if v not in ['lat', 'lon', 'time']:
+            ds = ds.drop_vars(v)
+
+    # Remove grid_mapping attributes
+    for v in list(ds.data_vars) + list(ds.coords):
+        if hasattr(ds[v], "attrs") and "grid_mapping" in ds[v].attrs:
+            del ds[v].attrs["grid_mapping"]
+    if "grid_mapping" in ds.attrs:
+        del ds.attrs["grid_mapping"]
+
+    return ds
+
+
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
     with tempfile.TemporaryDirectory() as tmpdir:
         for name, ds in zip(['coarse', 'target'], [coarse_ds, target_ds]):
             ds = squeeze_latlon(ds)
-            for v in list(ds.coords):
-                if v not in ['lat', 'lon', 'time']:
-                    ds = ds.drop_vars(v)
-            # Removing grid_mapping from everywhere
-            for vv in list(ds.data_vars) + list(ds.coords):
-                if hasattr(ds[vv], "attrs") and "grid_mapping" in ds[vv].attrs:
-                    del ds[vv].attrs["grid_mapping"]
-            if "grid_mapping" in ds.attrs:
-                del ds.attrs["grid_mapping"]
-            assert ds['lat'].dims == ('N', 'E'), "lat must be 2D with dims ('N', 'E')"
-            assert ds['lon'].dims == ('N', 'E'), "lon must be 2D with dims ('N', 'E')"
+            ds = cdo_clean(ds, varname)  # <--- ADD THIS LINE
             file_path = Path(tmpdir) / f"{name}.nc"
-            # Keeping only var and lat/lon/time
-            keep_vars = [varname]
-            if 'time' in ds.coords:
-                keep_vars.append('time')
-            ds[keep_vars].transpose("time", "N", "E").to_netcdf(file_path)
-
+            ds[[varname, 'lat', 'lon', 'time']].to_netcdf(file_path)
         output_file = Path(tmpdir) / "interp.nc"
         script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
         subprocess.run([
             str(script_path), str(Path(tmpdir) / "coarse.nc"), str(Path(tmpdir) / "target.nc"), str(output_file)
         ], check=True)
         return xr.open_dataset(output_file)[[varname]]
+
+        
 
 def get_cdo_stats(file_path, method):
     stats = {}
@@ -186,9 +200,11 @@ def main():
     if not infile_path.exists():
         raise FileNotFoundError(f"[ERROR] File does not exist: {infile_path}")
 
-
+#promoting latlon
     step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
-    if not step1_path.exists():
+    if step1_path.exists():
+        highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
+    else:
         print(f"[INFO] Creating {step1_path} from {infile_path}")
         ds = xr.open_dataset(infile_path)
         ds = ds.chunk(get_chunk_dict(ds))
@@ -203,9 +219,8 @@ def main():
             ds[varname_in_file] = xr.where(ds[varname_in_file] < 0, 0, ds[varname_in_file])
         ds.to_netcdf(step1_path)
         ds.close()
+        highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
 
-    highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
-    
     if highres_ds['lat'].ndim == 3:
         highres_ds = squeeze_latlon(highres_ds)
     for v in ['lat1d', 'lon1d']:
@@ -221,20 +236,21 @@ def main():
     if "grid_mapping" in highres_ds.attrs:
         del highres_ds.attrs["grid_mapping"]
 
+    # conservative coarsening
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
-    if 'lat' not in highres_ds.coords or 'lon' not in highres_ds.coords:
-        highres_ds = squeeze_latlon(highres_ds)
-        highres_ds = promote_latlon(str(step1_path), varname_in_file)
-        for v in list(highres_ds.data_vars) + list(highres_ds.coords):
-            if hasattr(highres_ds[v], "attrs") and "grid_mapping" in highres_ds[v].attrs:
-                del highres_ds[v].attrs["grid_mapping"]
-        if "grid_mapping" in highres_ds.attrs:
-            del highres_ds.attrs["grid_mapping"]
-        highres_ds.to_netcdf(step1_path)
-
-    if not step2_path.exists():
+    if step2_path.exists():
+        coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
+    else:
+        if 'lat' not in highres_ds.coords or 'lon' not in highres_ds.coords:
+            highres_ds = squeeze_latlon(highres_ds)
+            highres_ds = promote_latlon(str(step1_path), varname_in_file)
+            for v in list(highres_ds.data_vars) + list(highres_ds.coords):
+                if hasattr(highres_ds[v], "attrs") and "grid_mapping" in highres_ds[v].attrs:
+                    del highres_ds[v].attrs["grid_mapping"]
+            if "grid_mapping" in highres_ds.attrs:
+                del highres_ds.attrs["grid_mapping"]
+            highres_ds.to_netcdf(step1_path)
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
-        # only lat/lon as cords
         for v in list(coarse_ds.coords):
             if v not in ['lat', 'lon', 'time']:
                 coarse_ds = coarse_ds.drop_vars(v)
@@ -246,22 +262,13 @@ def main():
         assert coarse_ds['lat'].dims == ('N', 'E')
         assert coarse_ds['lon'].dims == ('N', 'E')
         coarse_ds.to_netcdf(step2_path)
+        coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
 
-    coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
-    # lat/lon/time as coords
-    for v in list(coarse_ds.coords):
-        if v not in ['lat', 'lon', 'time']:
-            coarse_ds = coarse_ds.drop_vars(v)
-    for v in list(coarse_ds.data_vars) + list(coarse_ds.coords):
-        if hasattr(coarse_ds[v], "attrs") and "grid_mapping" in coarse_ds[v].attrs:
-            del coarse_ds[v].attrs["grid_mapping"]
-    if "grid_mapping" in coarse_ds.attrs:
-        del coarse_ds.attrs["grid_mapping"]
-    assert coarse_ds['lat'].dims == ('N', 'E')
-    assert coarse_ds['lon'].dims == ('N', 'E')
-
+    # bicubic baseline interpolation
     step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
-    if not step3_path.exists():
+    if step3_path.exists():
+        interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
+    else:
         interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
         interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
         interp_ds = squeeze_latlon(interp_ds)
@@ -277,7 +284,7 @@ def main():
         assert interp_ds['lon'].dims == ('N', 'E')
         interp_ds.to_netcdf(step3_path)
         interp_ds.close()
-    interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
+        interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
 
     highres = highres_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
     upsampled = interp_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
