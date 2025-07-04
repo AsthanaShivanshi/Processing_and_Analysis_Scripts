@@ -55,6 +55,22 @@ def promote_latlon(infile, varname):
     ds = ds.assign_coords(lat=lat, lon=lon).set_coords(["lat", "lon"])
     return ds
 
+def squeeze_latlon(ds):
+    # Take the first time slice for lat/lon, drop time dimension
+    lat2d = ds['lat']
+    lon2d = ds['lon']
+    if 'time' in lat2d.dims:
+        lat2d = lat2d.isel(time=0)
+    if 'time' in lon2d.dims:
+        lon2d = lon2d.isel(time=0)
+    if 'time' in lat2d.coords:
+        lat2d = lat2d.drop_vars('time')
+    if 'time' in lon2d.coords:
+        lon2d = lon2d.drop_vars('time')
+    ds = ds.drop_vars(['lat', 'lon'])
+    ds = ds.assign_coords(lat=lat2d, lon=lon2d)
+    return ds
+
 
 def conservative_coarsening(ds, varname, block_size):
     da = ds[varname]
@@ -188,19 +204,36 @@ def main():
 
 
     highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
+    if highres_ds['lat'].ndim == 3:
+        print("[INFO] Squeezing lat/lon from 3D to 2D...")
+        highres_ds = squeeze_latlon(highres_ds)
+    
+    for v in ['lat1d', 'lon1d']:
+        if v in highres_ds:
+            highres_ds = highres_ds.drop_vars(v)
 
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
     if 'lat' not in highres_ds.coords or 'lon' not in highres_ds.coords:
         print("[INFO] Promoting lat/lon coordinates...")
+        highres_ds = squeeze_latlon(highres_ds)
         highres_ds = promote_latlon(str(step1_path), varname_in_file)
         highres_ds.to_netcdf(step1_path)  
     if not step2_path.exists():
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
+        coarse_ds = squeeze_latlon(coarse_ds)
+        for v in ['lat1d', 'lon1d']:
+            if v in coarse_ds:
+                coarse_ds = coarse_ds.drop_vars(v)
         coarse_ds.to_netcdf(step2_path)
         coarse_ds.close()
     coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
-
+    coarse_ds = squeeze_latlon(coarse_ds)
+    for v in ['lat1d', 'lon1d']:
+        if v in coarse_ds:
+            coarse_ds = coarse_ds.drop_vars(v)
     step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
+
+
     if not step3_path.exists():
         interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
         interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
