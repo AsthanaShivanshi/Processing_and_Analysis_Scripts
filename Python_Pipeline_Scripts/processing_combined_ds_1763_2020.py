@@ -8,7 +8,6 @@ import subprocess
 from pyproj import Transformer, datadir
 import tempfile
 
-np.random.seed(42)
 
 proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/share/proj"
 os.environ["PROJ_LIB"] = proj_path
@@ -186,6 +185,22 @@ def main():
     infile_path = INPUT_DIR / infile
     if not infile_path.exists():
         raise FileNotFoundError(f"[ERROR] File does not exist: {infile_path}")
+
+    if not step1_path.exists():
+        print(f"[INFO] Creating {step1_path} from {infile_path}")
+        ds = xr.open_dataset(infile_path)
+        ds = ds.chunk(get_chunk_dict(ds))
+        if 'lat' in ds.coords and 'lon' in ds.coords:
+            pass
+        elif 'lat' in ds.data_vars and 'lon' in ds.data_vars:
+            ds = ds.set_coords(['lat', 'lon'])
+        else:
+            ds.close()
+            ds = promote_latlon(infile_path, varname_in_file)
+        if varname == "pr":
+            ds[varname_in_file] = xr.where(ds[varname_in_file] < 0, 0, ds[varname_in_file])
+        ds.to_netcdf(step1_path)
+        ds.close()
 
     step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
     highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
