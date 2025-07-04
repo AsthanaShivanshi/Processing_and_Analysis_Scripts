@@ -186,6 +186,8 @@ def main():
     if not infile_path.exists():
         raise FileNotFoundError(f"[ERROR] File does not exist: {infile_path}")
 
+
+    step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
     if not step1_path.exists():
         print(f"[INFO] Creating {step1_path} from {infile_path}")
         ds = xr.open_dataset(infile_path)
@@ -202,8 +204,8 @@ def main():
         ds.to_netcdf(step1_path)
         ds.close()
 
-    step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
     highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
+    
     if highres_ds['lat'].ndim == 3:
         highres_ds = squeeze_latlon(highres_ds)
     for v in ['lat1d', 'lon1d']:
@@ -314,6 +316,22 @@ def main():
 
     with open(OUTPUT_DIR / f"{varname}_scaling_params_combined_chronological.json", "w") as f:
         json.dump(stats, f, indent=2)
+
+
+#Deleting intermed files
+# Uncomment if required
+
+# for f in [
+#     OUTPUT_DIR / f"{varname}_step1_latlon.nc",
+#     OUTPUT_DIR / f"{varname}_step2_coarse.nc",
+#     OUTPUT_DIR / f"{varname}_step3_interp.nc",
+# ]:
+#     try:
+#         if f.exists():
+#             f.unlink()
+#             print(f"Deleted {f}")
+#     except Exception as e:
+#         print(f"Error deleting {f}: {e}")
 
 if __name__ == "__main__":
     main()
