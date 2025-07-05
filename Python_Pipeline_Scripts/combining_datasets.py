@@ -69,6 +69,7 @@ if "grid_mapping" in ds_merged.attrs:
 if "swiss_lv95_coordinates" in ds_merged:
     ds_merged = ds_merged.drop_vars("swiss_lv95_coordinates")
 
+ds_merged[std_var].attrs["coordinates"] = "lat lon"
 print(f"{std_var} merged dimensions: {ds_merged.dims}")
 ds_merged.to_netcdf(combined_out / f"{std_var}_merged.nc")
 print("Merged file (with duplicate times in overlap) saved.")

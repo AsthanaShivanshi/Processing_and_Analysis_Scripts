@@ -41,6 +41,14 @@ def conservative_coarsening(ds, varname, block_size):
 def cdo_clean(ds, varname):
     keep_vars = [varname, 'lat', 'lon', 'time']
     ds = ds[[v for v in keep_vars if v in ds]]
+
+    for coord in ['lat', 'lon']:
+        if coord in ds and coord not in ds.coords:
+            ds = ds.set_coords(coord)
+
+    if "coordinates" not in ds[varname].attrs or ds[varname].attrs["coordinates"] != "lat lon":
+        ds[varname].attrs["coordinates"] = "lat lon"
+
     return ds
 
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
