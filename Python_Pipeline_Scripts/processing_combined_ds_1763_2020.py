@@ -8,7 +8,6 @@ import subprocess
 from pyproj import Transformer, datadir
 import tempfile
 
-
 proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/share/proj"
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
@@ -29,7 +28,7 @@ def get_chunk_dict(ds):
     elif {"E", "N"}.issubset(dims):
         return CHUNK_DICT_RAW
     else:
-        raise ValueError(f"Dataset has unknown dimensions: {ds.dims}")
+        raise ValueError(f"Unknown dimensions: {ds.dims}")
 
 def promote_latlon(infile, varname):
     ds = xr.open_dataset(infile).chunk({"time": 50, "N": 100, "E": 100})
@@ -49,6 +48,14 @@ def promote_latlon(infile, varname):
     )
     lon, lat = transformed.sel(coord_type=0), transformed.sel(coord_type=1)
     lon.name, lat.name = "lon", "lat"
+    if 'time' in lat.dims:
+        lat = lat.isel(time=0)
+    if 'time' in lon.dims:
+        lon = lon.isel(time=0)
+    if 'time' in lat.coords:
+        lat = lat.drop_vars('time')
+    if 'time' in lon.coords:
+        lon = lon.drop_vars('time')
     ds = ds.assign_coords(lat=lat, lon=lon).set_coords(["lat", "lon"])
     return ds
 
@@ -76,7 +83,6 @@ def conservative_coarsening(ds, varname, block_size):
         lat = lat.isel(time=0)
     if 'time' in lon.dims:
         lon = lon.isel(time=0)
-    # Area calculation
     R = 6371000
     lat_rad = np.deg2rad(lat)
     dlat = np.deg2rad(np.diff(lat.mean('E')).mean().item())
@@ -101,22 +107,20 @@ def conservative_coarsening(ds, varname, block_size):
             lat_coarse = arr
         else:
             lon_coarse = arr
-    # Broadcasting to 2D
     lat2d, lon2d = xr.broadcast(lat_coarse, lon_coarse)
     lat2d = lat2d.transpose('N', 'E')
     lon2d = lon2d.transpose('N', 'E')
-    # Assign lat/lon as coordinates for CDO (keep N/E as dims)
     data_coarse = data_coarse.assign_coords(lat=lat2d, lon=lon2d)
     data_coarse.name = varname
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
-    # Remove grid_mapping attributes
+    # Removing grid_mapping and coordinates attrbs
     for v in list(ds_out.data_vars) + list(ds_out.coords):
-        if hasattr(ds_out[v], "attrs") and "grid_mapping" in ds_out[v].attrs:
-            del ds_out[v].attrs["grid_mapping"]
+        if hasattr(ds_out[v], "attrs"):
+            ds_out[v].attrs.pop("grid_mapping", None)
+            ds_out[v].attrs.pop("coordinates", None)
     if "grid_mapping" in ds_out.attrs:
         del ds_out.attrs["grid_mapping"]
     return ds_out
-
 
 def cdo_clean(ds, varname):
     # Squeeze lat/lon to 2D if they have a time dimension
@@ -127,37 +131,37 @@ def cdo_clean(ds, varname):
                 arr = arr.isel(time=0)
             ds = ds.drop_vars(coord)
             ds = ds.assign_coords({coord: arr})
-
     # Only keep lat/lon/time as coordinates
     for v in list(ds.coords):
         if v not in ['lat', 'lon', 'time']:
             ds = ds.drop_vars(v)
-
-    # Remove grid_mapping attributes
+    # Remove grid_mapping and coordinates attributes
     for v in list(ds.data_vars) + list(ds.coords):
-        if hasattr(ds[v], "attrs") and "grid_mapping" in ds[v].attrs:
-            del ds[v].attrs["grid_mapping"]
+        if hasattr(ds[v], "attrs"):
+            ds[v].attrs.pop("grid_mapping", None)
+            ds[v].attrs.pop("coordinates", None)
     if "grid_mapping" in ds.attrs:
         del ds.attrs["grid_mapping"]
-
+    # Only keep required variables
+    keep_vars = [varname, 'lat', 'lon', 'time']
+    ds = ds[[v for v in keep_vars if v in ds]]
     return ds
-
 
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
     with tempfile.TemporaryDirectory() as tmpdir:
         for name, ds in zip(['coarse', 'target'], [coarse_ds, target_ds]):
             ds = squeeze_latlon(ds)
-            ds = cdo_clean(ds, varname)  # <--- ADD THIS LINE
+            ds = cdo_clean(ds, varname)
             file_path = Path(tmpdir) / f"{name}.nc"
-            ds[[varname, 'lat', 'lon', 'time']].to_netcdf(file_path)
+            ds.to_netcdf(file_path)
+        print(f"[INFO] Cleaned files for CDO written to {tmpdir}")
         output_file = Path(tmpdir) / "interp.nc"
         script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
         subprocess.run([
             str(script_path), str(Path(tmpdir) / "coarse.nc"), str(Path(tmpdir) / "target.nc"), str(output_file)
         ], check=True)
+        print(f"Bicubic interp complete: {output_file}")
         return xr.open_dataset(output_file)[[varname]]
-
-        
 
 def get_cdo_stats(file_path, method):
     stats = {}
@@ -193,19 +197,21 @@ def main():
     }
 
     if varname not in dataset_map:
-        raise ValueError(f"[ERROR] Unknown variable '{varname}'.")
+        raise ValueError(f"Unknown variable '{varname}'.")
 
     infile, scale_type, varname_in_file = dataset_map[varname]
     infile_path = INPUT_DIR / infile
     if not infile_path.exists():
-        raise FileNotFoundError(f"[ERROR] File does not exist: {infile_path}")
+        raise FileNotFoundError(f"File not present: {infile_path}")
 
-#promoting latlon
+    # promote lat/lon
     step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
     if step1_path.exists():
-        highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
+        ds = xr.open_dataset(step1_path)
+        highres_ds = ds.chunk(get_chunk_dict(ds))
+        print(f"Step1 file: {step1_path}")
     else:
-        print(f"[INFO] Creating {step1_path} from {infile_path}")
+        print(f"Creating {step1_path} from {infile_path}")
         ds = xr.open_dataset(infile_path)
         ds = ds.chunk(get_chunk_dict(ds))
         if 'lat' in ds.coords and 'lon' in ds.coords:
@@ -219,7 +225,9 @@ def main():
             ds[varname_in_file] = xr.where(ds[varname_in_file] < 0, 0, ds[varname_in_file])
         ds.to_netcdf(step1_path)
         ds.close()
-        highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
+        print(f"file created: {step1_path}")
+        ds = xr.open_dataset(step1_path)
+        highres_ds = ds.chunk(get_chunk_dict(ds))
 
     if highres_ds['lat'].ndim == 3:
         highres_ds = squeeze_latlon(highres_ds)
@@ -231,22 +239,26 @@ def main():
     if 'lon' in highres_ds.data_vars:
         highres_ds = highres_ds.set_coords('lon')
     for v in list(highres_ds.data_vars) + list(highres_ds.coords):
-        if hasattr(highres_ds[v], "attrs") and "grid_mapping" in highres_ds[v].attrs:
-            del highres_ds[v].attrs["grid_mapping"]
+        if hasattr(highres_ds[v], "attrs"):
+            highres_ds[v].attrs.pop("grid_mapping", None)
+            highres_ds[v].attrs.pop("coordinates", None)
     if "grid_mapping" in highres_ds.attrs:
         del highres_ds.attrs["grid_mapping"]
 
     # conservative coarsening
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
     if step2_path.exists():
-        coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
+        ds = xr.open_dataset(step2_path)
+        coarse_ds = ds.chunk(get_chunk_dict(ds))
+        print(f"Loaded existing step2: {step2_path}")
     else:
         if 'lat' not in highres_ds.coords or 'lon' not in highres_ds.coords:
             highres_ds = squeeze_latlon(highres_ds)
             highres_ds = promote_latlon(str(step1_path), varname_in_file)
             for v in list(highres_ds.data_vars) + list(highres_ds.coords):
-                if hasattr(highres_ds[v], "attrs") and "grid_mapping" in highres_ds[v].attrs:
-                    del highres_ds[v].attrs["grid_mapping"]
+                if hasattr(highres_ds[v], "attrs"):
+                    highres_ds[v].attrs.pop("grid_mapping", None)
+                    highres_ds[v].attrs.pop("coordinates", None)
             if "grid_mapping" in highres_ds.attrs:
                 del highres_ds.attrs["grid_mapping"]
             highres_ds.to_netcdf(step1_path)
@@ -255,19 +267,24 @@ def main():
             if v not in ['lat', 'lon', 'time']:
                 coarse_ds = coarse_ds.drop_vars(v)
         for v in list(coarse_ds.data_vars) + list(coarse_ds.coords):
-            if hasattr(coarse_ds[v], "attrs") and "grid_mapping" in coarse_ds[v].attrs:
-                del coarse_ds[v].attrs["grid_mapping"]
+            if hasattr(coarse_ds[v], "attrs"):
+                coarse_ds[v].attrs.pop("grid_mapping", None)
+                coarse_ds[v].attrs.pop("coordinates", None)
         if "grid_mapping" in coarse_ds.attrs:
             del coarse_ds.attrs["grid_mapping"]
         assert coarse_ds['lat'].dims == ('N', 'E')
         assert coarse_ds['lon'].dims == ('N', 'E')
         coarse_ds.to_netcdf(step2_path)
-        coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
+        print(f"Step2 file created: {step2_path}")
+        ds = xr.open_dataset(step2_path)
+        coarse_ds = ds.chunk(get_chunk_dict(ds))
 
     # bicubic baseline interpolation
     step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
     if step3_path.exists():
-        interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
+        ds = xr.open_dataset(step3_path)
+        interp_ds = ds.chunk(get_chunk_dict(ds))
+        print(f"Existing step3 file: {step3_path}")
     else:
         interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
         interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
@@ -276,21 +293,27 @@ def main():
             if v not in ['lat', 'lon', 'time']:
                 interp_ds = interp_ds.drop_vars(v)
         for v in list(interp_ds.data_vars) + list(interp_ds.coords):
-            if hasattr(interp_ds[v], "attrs") and "grid_mapping" in interp_ds[v].attrs:
-                del interp_ds[v].attrs["grid_mapping"]
+            if hasattr(interp_ds[v], "attrs"):
+                interp_ds[v].attrs.pop("grid_mapping", None)
+                interp_ds[v].attrs.pop("coordinates", None)
         if "grid_mapping" in interp_ds.attrs:
             del interp_ds.attrs["grid_mapping"]
         assert interp_ds['lat'].dims == ('N', 'E')
         assert interp_ds['lon'].dims == ('N', 'E')
         interp_ds.to_netcdf(step3_path)
         interp_ds.close()
-        interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
+        print(f"Step3 file created: {step3_path}")
+        ds = xr.open_dataset(step3_path)
+        interp_ds = ds.chunk(get_chunk_dict(ds))
+
+    print("Processing over")
+    print("Splitting datasets using chron split")
 
     highres = highres_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
     upsampled = interp_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
     years = highres["time"].dt.year
     if not np.array_equal(highres["time"].values, upsampled["time"].values):
-        raise ValueError("Time correspondence mismatch between highres and upsampled datasets.")
+        raise ValueError("Time correspondence mismatch")
 
     train_mask = (years >= 1771) & (years <= 1980)
     val_mask = (years >= 1981) & (years <= 2010)
@@ -324,21 +347,21 @@ def main():
     with open(OUTPUT_DIR / f"{varname}_scaling_params_combined_chronological.json", "w") as f:
         json.dump(stats, f, indent=2)
 
+    print("O/P for all vars written.")
 
-#Deleting intermed files
-# Uncomment if required
-
-# for f in [
-#     OUTPUT_DIR / f"{varname}_step1_latlon.nc",
-#     OUTPUT_DIR / f"{varname}_step2_coarse.nc",
-#     OUTPUT_DIR / f"{varname}_step3_interp.nc",
-# ]:
-#     try:
-#         if f.exists():
-#             f.unlink()
-#             print(f"Deleted {f}")
-#     except Exception as e:
-#         print(f"Error deleting {f}: {e}")
+    # Optional: Delete intermediate files
+    # Uncomment if required
+    # for f in [
+    #     OUTPUT_DIR / f"{varname}_step1_latlon.nc",
+    #     OUTPUT_DIR / f"{varname}_step2_coarse.nc",
+    #     OUTPUT_DIR / f"{varname}_step3_interp.nc",
+    # ]:
+    #     try:
+    #         if f.exists():
+    #             f.unlink()
+    #             print(f"Deleted {f}")
+    #     except Exception as e:
+    #         print(f"Error deleting {f}: {e}")
 
 if __name__ == "__main__":
     main()
