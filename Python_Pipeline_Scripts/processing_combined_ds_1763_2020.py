@@ -126,6 +126,7 @@ def save_netcdf(ds, varname, path):
     ds.to_netcdf(
         path,
         engine="netcdf4",
+        encoding={varname: {"zlib": True, "complevel": 4}}
     )
     ds.close()
 
@@ -152,7 +153,7 @@ def main():
 
     step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
     if not step1_path.exists() or not {'lat', 'lon'}.issubset(xr.open_dataset(step1_path).coords):
-        print(f"Preparing dataset for '{varname}'...")
+        print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
         ds = xr.open_dataset(infile_path)
         ds = ds.chunk(get_chunk_dict(ds))
         if 'lat' in ds.coords and 'lon' in ds.coords:
@@ -180,6 +181,8 @@ def main():
     interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
 
     # Chron split: 1771–1980 train, 1981–2010 val, 2011–2020 test
+    highres_ds = highres_ds.sortby("time")
+    interp_ds = interp_ds.sortby("time")
     highres = highres_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
     upsampled = interp_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
     years = upsampled['time.year'].values
