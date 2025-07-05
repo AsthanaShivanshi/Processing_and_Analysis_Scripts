@@ -12,11 +12,25 @@ INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/ "Processing_and_Analysis_Scri
 OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Combined_Chronological_Dataset"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Function to clean encoding
 def clean_encoding(ds):
     for v in ds.data_vars:
         if "coordinates" in ds[v].encoding:
             del ds[v].encoding["coordinates"]
+    return ds
+
+def cdo_clean(ds, varname):
+    # Ensure lat/lon are coordinates
+    for coord in ['lat', 'lon']:
+        if coord in ds and coord not in ds.coords:
+            ds = ds.set_coords(coord)
+    # Only keep main variable and all coordinates
+    keep_vars = [varname] + list(ds.coords)
+    ds = ds[keep_vars]
+    # Set coordinates attribute for CDO
+    ds[varname].attrs["coordinates"] = "lat lon"
+    # Remove from encoding if present
+    if "coordinates" in ds[varname].encoding:
+        del ds[varname].encoding["coordinates"]
     return ds
 
 def conservative_coarsening(ds, varname, block_size):
@@ -42,16 +56,12 @@ def conservative_coarsening(ds, varname, block_size):
     data_coarse = data_coarse.assign_coords(lat=lat2d, lon=lon2d)
     data_coarse.name = varname
     ds_out = data_coarse.to_dataset()
+    # Ensure lat/lon are coordinates
+    for coord in ['lat', 'lon']:
+        if coord in ds_out and coord not in ds_out.coords:
+            ds_out = ds_out.set_coords(coord)
     return ds_out
 
-def cdo_clean(ds, varname):
-    keep_vars = [varname] + list(ds.coords)
-    ds = ds[keep_vars]
-    if "coordinates" not in ds[varname].attrs or ds[varname].attrs["coordinates"] != "lat lon":
-        ds[varname].attrs["coordinates"] = "lat lon"
-    if "coordinates" in ds[varname].encoding:
-        del ds[varname].encoding["coordinates"]
-    return ds
 
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -109,7 +119,7 @@ def main():
 
     ds = xr.open_dataset(infile_path)
 
-    #Conservative coarsening
+    # Conservative coarsening
     coarse_ds = conservative_coarsening(ds, varname_in_file, block_size=11)
     clean_encoding(coarse_ds).to_netcdf(OUTPUT_DIR / f"{varname}_coarse.nc")
 
@@ -135,8 +145,7 @@ def main():
     x_test = upsampled.isel(time=test_mask)
     y_test = highres.isel(time=test_mask)
 
-
-    # Scaling via tra<in params
+    # Scaling via train params
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
         clean_encoding(y_train).to_netcdf(tmpfile.name)
         stats = get_cdo_stats(tmpfile.name, scale_type)
