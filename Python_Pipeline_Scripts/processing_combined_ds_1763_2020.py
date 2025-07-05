@@ -39,12 +39,8 @@ def conservative_coarsening(ds, varname, block_size):
     return ds_out
 
 def cdo_clean(ds, varname):
-    keep_vars = [varname, 'lat', 'lon', 'time']
-    ds = ds[[v for v in keep_vars if v in ds]]
-
-    for coord in ['lat', 'lon']:
-        if coord in ds and coord not in ds.coords:
-            ds = ds.set_coords(coord)
+    keep_vars = [varname] + list(ds.coords)
+    ds = ds[keep_vars]
 
     if "coordinates" not in ds[varname].attrs or ds[varname].attrs["coordinates"] != "lat lon":
         ds[varname].attrs["coordinates"] = "lat lon"
