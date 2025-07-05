@@ -27,17 +27,20 @@ orig_1971 = [k for k, v in var_map_1971.items() if v == std_var][0]
 file_1763 = out_1763 / f"{orig_1763}_1763_2020.nc"
 file_1971 = out_1971 / f"{orig_1971}_1971_2023.nc"
 
-# Harmonisign var
-ds_1763 = xr.open_dataset(file_1763)
+
+ds_1763 = xr.open_dataset(file_1763, chunks={"time": 100})
 if orig_1763 == "precip":
     ds_1763["precip"] = xr.where(ds_1763["precip"] < 0, 0, ds_1763["precip"])
 ds_1763 = ds_1763.rename({orig_1763: std_var})
 
-ds_1971 = xr.open_dataset(file_1971)
+ds_1971 = xr.open_dataset(file_1971, chunks={"time": 100})
 if orig_1971 == "RhiresD":
     ds_1971["RhiresD"] = xr.where(ds_1971["RhiresD"] < 0, 0, ds_1971["RhiresD"])
 ds_1971 = ds_1971.rename({orig_1971: std_var})
 
+vars_to_keep = [std_var, "lat", "lon", "time", "E", "N"]
+ds_1763 = ds_1763[[v for v in vars_to_keep if v in ds_1763]]
+ds_1971 = ds_1971[[v for v in vars_to_keep if v in ds_1971]]
 
 for coord in ["lat", "lon"]:
     if coord in ds_1763 and coord not in ds_1763.coords:
@@ -48,28 +51,14 @@ for coord in ["lat", "lon"]:
 ds_merged = xr.concat([ds_1763, ds_1971], dim="time")
 ds_merged = ds_merged.sortby("time")
 
-#Setting lat lon
-for coord in ["lat", "lon"]:
-    if coord in ds_merged and coord not in ds_merged.coords:
-        ds_merged = ds_merged.set_coords(coord)
-
-#Squeezing out time from lat lon
 for coord in ["lat", "lon"]:
     if coord in ds_merged and "time" in ds_merged[coord].dims:
         ds_merged[coord] = ds_merged[coord].isel(time=0)
 
-for v in list(ds_merged.data_vars) + list(ds_merged.coords):
-    if hasattr(ds_merged[v], "attrs"):
-        ds_merged[v].attrs.pop("grid_mapping", None)
-        ds_merged[v].attrs.pop("coordinates", None)
-if "grid_mapping" in ds_merged.attrs:
-    del ds_merged.attrs["grid_mapping"]
-
-# swiss_lv95_coordinates var dropped
-if "swiss_lv95_coordinates" in ds_merged:
-    ds_merged = ds_merged.drop_vars("swiss_lv95_coordinates")
-
 ds_merged[std_var].attrs["coordinates"] = "lat lon"
+if "coordinates" in ds_merged[std_var].encoding:
+    del ds_merged[std_var].encoding["coordinates"]
+
 print(f"{std_var} merged dimensions: {ds_merged.dims}")
 ds_merged.to_netcdf(combined_out / f"{std_var}_merged.nc")
-print("Merged file (with duplicate times in overlap) saved.")
+print("Merged file saved.")
