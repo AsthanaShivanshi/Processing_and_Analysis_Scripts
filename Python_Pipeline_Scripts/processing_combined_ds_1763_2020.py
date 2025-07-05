@@ -12,7 +12,13 @@ INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/ "Processing_and_Analysis_Scri
 OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Combined_Chronological_Dataset"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# Conserving area sum
+# Function to clean encoding
+def clean_encoding(ds):
+    for v in ds.data_vars:
+        if "coordinates" in ds[v].encoding:
+            del ds[v].encoding["coordinates"]
+    return ds
+
 def conservative_coarsening(ds, varname, block_size):
     da = ds[varname]
     lat, lon = ds['lat'], ds['lon']
@@ -41,10 +47,10 @@ def conservative_coarsening(ds, varname, block_size):
 def cdo_clean(ds, varname):
     keep_vars = [varname] + list(ds.coords)
     ds = ds[keep_vars]
-
     if "coordinates" not in ds[varname].attrs or ds[varname].attrs["coordinates"] != "lat lon":
         ds[varname].attrs["coordinates"] = "lat lon"
-
+    if "coordinates" in ds[varname].encoding:
+        del ds[varname].encoding["coordinates"]
     return ds
 
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
@@ -52,7 +58,7 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
         for name, ds in zip(['coarse', 'target'], [coarse_ds, target_ds]):
             ds = cdo_clean(ds, varname)
             file_path = Path(tmpdir) / f"{name}.nc"
-            ds.to_netcdf(file_path)
+            clean_encoding(ds).to_netcdf(file_path)
         output_file = Path(tmpdir) / "interp.nc"
         script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
         subprocess.run([
@@ -103,11 +109,13 @@ def main():
 
     ds = xr.open_dataset(infile_path)
 
-    # Conservative coarsening
+    #Conservative coarsening
     coarse_ds = conservative_coarsening(ds, varname_in_file, block_size=11)
+    clean_encoding(coarse_ds).to_netcdf(OUTPUT_DIR / f"{varname}_coarse.nc")
 
-    # Bicubic interpolation 
+    # Bicubic interpolation
     interp_ds = interpolate_bicubic_shell(coarse_ds, ds, varname_in_file)
+    clean_encoding(interp_ds).to_netcdf(OUTPUT_DIR / f"{varname}_interp.nc")
 
     # Chronological splits
     highres = ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
@@ -127,25 +135,28 @@ def main():
     x_test = upsampled.isel(time=test_mask)
     y_test = highres.isel(time=test_mask)
 
+
+    # Scaling via tra<in params
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
-        y_train.to_netcdf(tmpfile.name)
+        clean_encoding(y_train).to_netcdf(tmpfile.name)
         stats = get_cdo_stats(tmpfile.name, scale_type)
 
     x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
-    x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
     y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
+    x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
     y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
     x_test_scaled = apply_cdo_scaling(x_test, stats, scale_type)
     y_test_scaled = apply_cdo_scaling(y_test, stats, scale_type)
 
-    x_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_input_train_chronological_scaled.nc")
-    y_train_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_target_train_chronological_scaled.nc")
-    x_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_input_val_chronological_scaled.nc")
-    y_val_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_target_val_chronological_scaled.nc")
-    x_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_input_test_chronological_scaled.nc")
-    y_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_target_test_chronological_scaled.nc")
+    # Saving scaled splits
+    clean_encoding(x_train_scaled).to_netcdf(OUTPUT_DIR / f"{varname}_input_train_chronological_scaled.nc")
+    clean_encoding(y_train_scaled).to_netcdf(OUTPUT_DIR / f"{varname}_target_train_chronological_scaled.nc")
+    clean_encoding(x_val_scaled).to_netcdf(OUTPUT_DIR / f"{varname}_input_val_chronological_scaled.nc")
+    clean_encoding(y_val_scaled).to_netcdf(OUTPUT_DIR / f"{varname}_target_val_chronological_scaled.nc")
+    clean_encoding(x_test_scaled).to_netcdf(OUTPUT_DIR / f"{varname}_input_test_chronological_scaled.nc")
+    clean_encoding(y_test_scaled).to_netcdf(OUTPUT_DIR / f"{varname}_target_test_chronological_scaled.nc")
 
-#Params from the test set
+    # Saving params
     with open(OUTPUT_DIR / f"{varname}_scaling_params_combined_chronological.json", "w") as f:
         json.dump(stats, f, indent=2)
 
