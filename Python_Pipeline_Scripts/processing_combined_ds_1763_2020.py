@@ -141,6 +141,7 @@ def main():
     x_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_input_test_chronological_scaled.nc")
     y_test_scaled.to_netcdf(OUTPUT_DIR / f"{varname}_combined_target_test_chronological_scaled.nc")
 
+#Params from the test set
     with open(OUTPUT_DIR / f"{varname}_scaling_params_combined_chronological.json", "w") as f:
         json.dump(stats, f, indent=2)
 
