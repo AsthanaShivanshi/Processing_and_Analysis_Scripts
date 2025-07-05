@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=4       
 #SBATCH --mem=500G
 #SBATCH --time=3-00:00:00
-#SBATCH --array=0-3        
+#SBATCH --array=1-3        
 
 source sasthana/Downscaling/Processing_and_Analysis_Scripts/environment.sh 
 module load cdo
@@ -16,7 +16,7 @@ export HDF5_USE_FILE_LOCKING=FALSE
 
 cd "$BASE_DIR" || { echo "[ERROR] Failed to cd into BASE_DIR"; exit 1; }
 
-VARS=(pr tas tasmin tasmax)
+VARS=(precip temp tmin tmax)
 VAR=${VARS[$SLURM_ARRAY_TASK_ID]}
 
 SCRIPT_PATH="sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/processing_combined_ds_1763_2020.py"
