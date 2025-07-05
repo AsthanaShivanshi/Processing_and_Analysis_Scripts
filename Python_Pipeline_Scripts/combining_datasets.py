@@ -27,13 +27,14 @@ orig_1971 = [k for k, v in var_map_1971.items() if v == std_var][0]
 file_1763 = out_1763 / f"{orig_1763}_1763_2020.nc"
 file_1971 = out_1971 / f"{orig_1971}_1971_2023.nc"
 
+chunk_size = 300
 
-ds_1763 = xr.open_dataset(file_1763, chunks={"time": 100})
+ds_1763 = xr.open_dataset(file_1763, chunks={"time": chunk_size})
 if orig_1763 == "precip":
     ds_1763["precip"] = xr.where(ds_1763["precip"] < 0, 0, ds_1763["precip"])
 ds_1763 = ds_1763.rename({orig_1763: std_var})
 
-ds_1971 = xr.open_dataset(file_1971, chunks={"time": 100})
+ds_1971 = xr.open_dataset(file_1971, chunks={"time": chunk_size})
 if orig_1971 == "RhiresD":
     ds_1971["RhiresD"] = xr.where(ds_1971["RhiresD"] < 0, 0, ds_1971["RhiresD"])
 ds_1971 = ds_1971.rename({orig_1971: std_var})
@@ -49,7 +50,6 @@ for coord in ["lat", "lon"]:
         ds_1971 = ds_1971.set_coords(coord)
 
 ds_merged = xr.concat([ds_1763, ds_1971], dim="time")
-ds_merged = ds_merged.sortby("time")
 
 for coord in ["lat", "lon"]:
     if coord in ds_merged and "time" in ds_merged[coord].dims:
@@ -59,6 +59,20 @@ ds_merged[std_var].attrs["coordinates"] = "lat lon"
 if "coordinates" in ds_merged[std_var].encoding:
     del ds_merged[std_var].encoding["coordinates"]
 
+if "N" in ds_merged:
+    ds_merged["N"].attrs["units"] = "meters"
+if "E" in ds_merged:
+    ds_merged["E"].attrs["units"] = "meters"
+
 print(f"{std_var} merged dimensions: {ds_merged.dims}")
-ds_merged.to_netcdf(combined_out / f"{std_var}_merged.nc")
+
+ds_merged.to_netcdf(
+    combined_out / f"{std_var}_merged.nc",
+    engine="netcdf4"
+)
 print("Merged file saved.")
+
+# Close datasets to free resources
+ds_1763.close()
+ds_1971.close()
+ds_merged.close()

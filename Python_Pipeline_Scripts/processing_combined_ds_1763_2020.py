@@ -6,8 +6,6 @@ import numpy as np
 import xarray as xr
 import subprocess
 import tempfile
-import json
-import argparse
 from pyproj import Transformer, datadir
 from dask.distributed import Client
 
@@ -19,9 +17,8 @@ proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downsca
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
-CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
-CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
- 
+CHUNK_DICT_RAW = {"time": 100, "E": 100, "N": 100}
+CHUNK_DICT_LATLON = {"time": 100, "lat": 100, "lon": 100}
 
 def get_chunk_dict(ds):
     dims = set(ds.dims)
@@ -31,10 +28,9 @@ def get_chunk_dict(ds):
         return CHUNK_DICT_RAW
     else:
         raise ValueError(f"Dataset has unknown dimensions: {ds.dims}")
-    
 
 def promote_latlon(infile, varname):
-    ds = xr.open_dataset(infile).chunk({"time": 50, "N": 100, "E": 100})
+    ds = xr.open_dataset(infile).chunk({"time": 100, "N": 100, "E": 100})
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
     def transform_coords(e, n):
         lon, lat = transformer.transform(e, n)
@@ -54,7 +50,18 @@ def promote_latlon(infile, varname):
     ds = ds.assign_coords(lat=lat, lon=lon).set_coords(["lat", "lon"])
     return ds
 
-
+def ensure_cdo_compliance(ds, varname):
+    for coord in ['lat', 'lon']:
+        if coord in ds and coord not in ds.coords:
+            ds = ds.set_coords(coord)
+    ds[varname].attrs["coordinates"] = "lat lon"
+    if "coordinates" in ds[varname].encoding:
+        del ds[varname].encoding["coordinates"]
+    if "N" in ds:
+        ds["N"].attrs["units"] = "meters"
+    if "E" in ds:
+        ds["E"].attrs["units"] = "meters"
+    return ds
 
 def conservative_coarsening(ds, varname, block_size):
     da = ds[varname]
@@ -81,20 +88,18 @@ def conservative_coarsening(ds, varname, block_size):
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
     return ds_out
 
-
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
     with tempfile.TemporaryDirectory() as tmpdir:
         coarse_file = Path(tmpdir) / "coarse.nc"
         target_file = Path(tmpdir) / "target.nc"
         output_file = Path(tmpdir) / "interp.nc"
-        coarse_ds[[varname]].transpose("time", "N", "E").to_netcdf(coarse_file)
-        target_ds[[varname]].transpose("time", "N", "E").to_netcdf(target_file)
+        ensure_cdo_compliance(coarse_ds, varname).to_netcdf(coarse_file)
+        ensure_cdo_compliance(target_ds, varname).to_netcdf(target_file)
         script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
         subprocess.run([
             str(script_path), str(coarse_file), str(target_file), str(output_file)
         ], check=True)
         return xr.open_dataset(output_file)[[varname]]
-
 
 def get_cdo_stats(file_path, method):
     stats = {}
@@ -115,8 +120,14 @@ def apply_cdo_scaling(ds, stats, method):
         return (ds - stats['min']) / (stats['max'] - stats['min'])
     else:
         raise ValueError(f"Unknown method: {method}")
-    
 
+def save_netcdf(ds, varname, path):
+    ds = ensure_cdo_compliance(ds, varname)
+    ds.to_netcdf(
+        path,
+        engine="netcdf4",
+    )
+    ds.close()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -141,7 +152,7 @@ def main():
 
     step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
     if not step1_path.exists() or not {'lat', 'lon'}.issubset(xr.open_dataset(step1_path).coords):
-        print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
+        print(f"Preparing dataset for '{varname}'...")
         ds = xr.open_dataset(infile_path)
         ds = ds.chunk(get_chunk_dict(ds))
         if 'lat' in ds.coords and 'lon' in ds.coords:
@@ -151,30 +162,24 @@ def main():
         else:
             ds.close()
             ds = promote_latlon(infile_path, varname_in_file)
-        # Handling potential negative vals for RhiresD due to dirty data
-        if varname == "RhiresD":
-            ds[varname_in_file] = xr.where(ds[varname_in_file] < 0, 0, ds[varname_in_file])
-        ds.to_netcdf(step1_path)
-        ds.close()
+        save_netcdf(ds, varname_in_file, step1_path)
 
     highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
 
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
-        coarse_ds.to_netcdf(step2_path)
-        coarse_ds.close()
+        save_netcdf(coarse_ds, varname_in_file, step2_path)
     coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
 
     step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
     if not step3_path.exists():
         interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
         interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
-        interp_ds.to_netcdf(step3_path)
-        interp_ds.close()
+        save_netcdf(interp_ds, varname_in_file, step3_path)
     interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
 
-    # Chron split: 1771–2000 train, 2001–2010 val, 2011–2020 test
+    # Chron split: 1771–1980 train, 1981–2010 val, 2011–2020 test
     highres = highres_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
     upsampled = interp_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
     years = upsampled['time.year'].values
@@ -202,22 +207,22 @@ def main():
     x_test_scaled = apply_cdo_scaling(x_test, stats, scale_type)
     y_test_scaled = apply_cdo_scaling(y_test, stats, scale_type)
 
-    x_train_scaled.to_netcdf(OUTPUT_DIR / f"combined_{varname}_input_train_chronological_scaled.nc")
-    y_train_scaled.to_netcdf(OUTPUT_DIR / f"combined_{varname}_target_train_chronological_scaled.nc")
-    x_val_scaled.to_netcdf(OUTPUT_DIR / f"combined_{varname}_input_val_chronological_scaled.nc")
-    y_val_scaled.to_netcdf(OUTPUT_DIR / f"combined_{varname}_target_val_chronological_scaled.nc")
-    x_test_scaled.to_netcdf(OUTPUT_DIR / f"combined_{varname}_input_test_chronological_scaled.nc")
-    y_test_scaled.to_netcdf(OUTPUT_DIR / f"combined_{varname}_target_test_chronological_scaled.nc")
+    save_netcdf(x_train_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_input_train_chronological_scaled.nc")
+    save_netcdf(y_train_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_target_train_chronological_scaled.nc")
+    save_netcdf(x_val_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_input_val_chronological_scaled.nc")
+    save_netcdf(y_val_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_target_val_chronological_scaled.nc")
+    save_netcdf(x_test_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_input_test_chronological_scaled.nc")
+    save_netcdf(y_test_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_target_test_chronological_scaled.nc")
 
     with open(OUTPUT_DIR / f"combined_{varname}_scaling_params_chronological.json", "w") as f:
         json.dump(stats, f, indent=2)
 
-    # Cleaning up intermed files
-    #for step_path in [step1_path, step2_path, step3_path]:
-        #try:
-            #os.remove(step_path)
-        #except FileNotFoundError:
-            #pass
+    # Cleaning up intermed files (optional)
+    # for step_path in [step1_path, step2_path, step3_path]:
+    #     try:
+    #         os.remove(step_path)
+    #     except FileNotFoundError:
+    #         pass
 
 if __name__ == "__main__":
     client = Client(processes=False)
