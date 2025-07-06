@@ -9,6 +9,7 @@ import tempfile
 from pyproj import Transformer, datadir
 from dask.distributed import Client, LocalCluster
 import time
+import glob
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/ "Processing_and_Analysis_Scripts" / "Combined_Dataset"
@@ -31,7 +32,8 @@ def get_chunk_dict(ds):
         raise ValueError(f"Dataset has unknown dimensions: {ds.dims}")
 
 def promote_latlon(infile, varname):
-    ds = xr.open_dataset(infile).chunk({"time": 3000, "N": 300, "E": 300})
+    ds = xr.open_dataset(infile)
+    ds = ds.chunk(get_chunk_dict(ds))
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
     def transform_coords(e, n):
         lon, lat = transformer.transform(e, n)
@@ -100,7 +102,9 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
         subprocess.run([
             str(script_path), str(coarse_file), str(target_file), str(output_file)
         ], check=True)
-        return xr.open_dataset(output_file)[[varname]]
+        # Load the result into memory before the temp directory is deleted!
+        result = xr.open_dataset(output_file)[[varname]].load()
+        return result
 
 def get_cdo_stats(file_path, method):
     stats = {}
@@ -122,10 +126,10 @@ def apply_cdo_scaling(ds, stats, method):
     else:
         raise ValueError(f"Unknown method: {method}")
 
+
 def save_netcdf(ds, varname, path, chunk_dim="time", chunk_size=2000):
     ds = ensure_cdo_compliance(ds, varname)
-    # Point 3: Reduce compression for faster writing
-    encoding = {varname: {"zlib": False}}  # No compression for fastest output
+    encoding = {varname: {"zlib": False}}
     if chunk_dim in ds.dims:
         for i in range(0, ds.sizes[chunk_dim], chunk_size):
             ds_chunk = ds.isel({chunk_dim: slice(i, i+chunk_size)})
@@ -134,16 +138,16 @@ def save_netcdf(ds, varname, path, chunk_dim="time", chunk_size=2000):
             ds_chunk.to_netcdf(
                 path,
                 mode=mode,
-                engine="h5netcdf",
+                engine="netcdf4",  
                 encoding=encoding,
-                unlimited_dims=chunk_dim if mode == "w" else None
+                unlimited_dims=chunk_dim
             )
             ds_chunk.close()
     else:
         ds = ds.compute()
         ds.to_netcdf(
             path,
-            engine="h5netcdf",
+            engine="netcdf4",
             encoding=encoding
         )
         ds.close()
@@ -173,7 +177,8 @@ def main():
     step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
     if not step1_path.exists() or not {'lat', 'lon'}.issubset(xr.open_dataset(step1_path).coords):
         print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
-        ds = xr.open_dataset(infile_path).chunk(get_chunk_dict(xr.open_dataset(infile_path)))
+        ds = xr.open_dataset(infile_path)
+        ds = ds.chunk(get_chunk_dict(ds)) 
         if 'lat' in ds.coords and 'lon' in ds.coords:
             pass
         elif 'lat' in ds.data_vars and 'lon' in ds.data_vars:
@@ -185,23 +190,26 @@ def main():
     print(f"[TIMER] Step 1 done in {time.time() - t0:.1f} s")
 
     t1 = time.time()
-    highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
+    highres_ds = xr.open_dataset(step1_path)
+    highres_ds = highres_ds.chunk(get_chunk_dict(highres_ds))
 
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
         save_netcdf(coarse_ds, varname_in_file, step2_path)
     print(f"[TIMER] Step 2 done in {time.time() - t1:.1f} s")
-    coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
+    coarse_ds = xr.open_dataset(step2_path)
+    coarse_ds = coarse_ds.chunk(get_chunk_dict(coarse_ds))
 
     t2 = time.time()
     step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
     if not step3_path.exists():
         interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
-        interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
+        interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds)) 
         save_netcdf(interp_ds, varname_in_file, step3_path)
     print(f"[TIMER] Step 3 done in {time.time() - t2:.1f} s")
-    interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
+    interp_ds = xr.open_dataset(step3_path)
+    interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
 
     # Chron split: 1771–1980 train, 1981–2010 val, 2011–2020 test
     highres_ds = highres_ds.sortby("time")
@@ -218,8 +226,6 @@ def main():
     y_train = highres.isel(time=train_mask)
     x_val   = upsampled.isel(time=val_mask)
     y_val   = highres.isel(time=val_mask)
-    x_test  = upsampled.isel(time=test_mask)
-    y_test  = highres.isel(time=test_mask)
 
     # Scaling params
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
@@ -242,7 +248,7 @@ def main():
     print(f"All steps done in {time.time() - t0:.1f} s")
 
 if __name__ == "__main__":
-    cluster = LocalCluster(n_workers=4, threads_per_worker=1)
+    cluster = LocalCluster(n_workers=8, threads_per_worker=1)
     client = Client(cluster)
     try:
         main()
