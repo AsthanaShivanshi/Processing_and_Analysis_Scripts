@@ -18,8 +18,8 @@ proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downsca
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
-CHUNK_DICT_RAW = {"time": 500, "E": 300, "N": 300}
-CHUNK_DICT_LATLON = {"time": 500, "lat": 300, "lon": 300}
+CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
+CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
 
 def get_chunk_dict(ds):
     dims = set(ds.dims)
@@ -90,21 +90,6 @@ def conservative_coarsening(ds, varname, block_size):
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
     return ds_out
 
-def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        coarse_file = Path(tmpdir) / "coarse.nc"
-        target_file = Path(tmpdir) / "target.nc"
-        output_file = Path(tmpdir) / "interp.nc"
-        ensure_cdo_compliance(coarse_ds, varname).to_netcdf(coarse_file)
-        ensure_cdo_compliance(target_ds, varname).to_netcdf(target_file)
-        script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
-        subprocess.run([
-            str(script_path), str(coarse_file), str(target_file), str(output_file)
-        ], check=True)
-        # Load the result into memory before the temp directory is deleted!
-        result = xr.open_dataset(output_file)[[varname]].load()
-        return result
-
 def get_cdo_stats(file_path, method):
     stats = {}
     if method == "standard":
@@ -125,10 +110,32 @@ def apply_cdo_scaling(ds, stats, method):
     else:
         raise ValueError(f"Unknown method: {method}")
 
-def save_zarr(ds, path):
+def save(ds, path):
+    encoding = {v: {"zlib": True, "complevel": 1} for v in ds.data_vars}
     ds = ds.compute()
-    ds.to_zarr(str(path), mode="w")
+    ds.to_netcdf(str(path), encoding=encoding)
     ds.close()
+
+def bicubic_interpolate_in_time_chunks(coarse_ds, target_ds, varname, out_path, chunk_size=50):
+    times = coarse_ds["time"].values
+    for i in range(0, len(times), chunk_size):
+        coarse_chunk = coarse_ds.isel(time=slice(i, i+chunk_size))
+        target_chunk = target_ds.isel(time=slice(i, i+chunk_size))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            coarse_file = Path(tmpdir) / "coarse.nc"
+            target_file = Path(tmpdir) / "target.nc"
+            output_file = Path(tmpdir) / "interp.nc"
+            ensure_cdo_compliance(coarse_chunk, varname).to_netcdf(coarse_file)
+            ensure_cdo_compliance(target_chunk, varname).to_netcdf(target_file)
+            script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
+            subprocess.run([
+                str(script_path), str(coarse_file), str(target_file), str(output_file)
+            ], check=True)
+            result = xr.open_dataset(output_file)[[varname]].load()
+            mode = "w" if i == 0 else "a"
+            encoding = {v: {"zlib": True, "complevel": 1} for v in result.data_vars}
+            result.to_netcdf(str(out_path), mode=mode, unlimited_dims="time", encoding=encoding)
+            result.close()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -152,7 +159,7 @@ def main():
         raise FileNotFoundError(f"[ERROR] Input file does not exist: {infile_path}")
 
     t0 = time.time()
-    step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.zarr"
+    step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
     if not step1_path.exists():
         print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
         ds = xr.open_dataset(infile_path)
@@ -164,30 +171,24 @@ def main():
         else:
             ds.close()
             ds = promote_latlon(infile_path, varname_in_file)
-        save_zarr(ds, step1_path)
+        save(ds, step1_path)
     print(f"[TIMER] Step 1 done in {time.time() - t0:.1f} s")
 
     t1 = time.time()
-    highres_ds = xr.open_zarr(step1_path)
-    highres_ds = highres_ds.chunk(get_chunk_dict(highres_ds))
-
-    step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.zarr"
+    highres_ds = xr.open_dataset(step1_path, chunks=get_chunk_dict(xr.open_dataset(step1_path)))
+    step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
-        save_zarr(coarse_ds, step2_path)
+        save(coarse_ds, step2_path)
     print(f"[TIMER] Step 2 done in {time.time() - t1:.1f} s")
-    coarse_ds = xr.open_zarr(step2_path)
-    coarse_ds = coarse_ds.chunk(get_chunk_dict(coarse_ds))
+    coarse_ds = xr.open_dataset(step2_path, chunks=get_chunk_dict(xr.open_dataset(step2_path)))
 
     t2 = time.time()
-    step3_path = OUTPUT_DIR / f"{varname}_step3_interp.zarr"
+    step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
     if not step3_path.exists():
-        interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
-        interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
-        save_zarr(interp_ds, step3_path)
+        bicubic_interpolate_in_time_chunks(coarse_ds, highres_ds, varname_in_file, step3_path)
     print(f"[TIMER] Step 3 done in {time.time() - t2:.1f} s")
-    interp_ds = xr.open_zarr(step3_path)
-    interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
+    interp_ds = xr.open_dataset(step3_path, chunks=get_chunk_dict(xr.open_dataset(step3_path)))
 
     # Chron split: 1771–1980 train, 1981–2010 val, 2011–2020 test
     highres_ds = highres_ds.sortby("time")
@@ -198,7 +199,6 @@ def main():
 
     train_mask = (years >= 1771) & (years <= 1980)
     val_mask   = (years >= 1981) & (years <= 2010)
-    # test_mask  = (years >= 2011) & (years <= 2020)  # Not used
 
     x_train = upsampled.isel(time=train_mask)
     y_train = highres.isel(time=train_mask)
@@ -215,11 +215,11 @@ def main():
     y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
     y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
 
-    # Save final outputs as Zarr
-    save_zarr(x_train_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_train_chronological_scaled.zarr")
-    save_zarr(y_train_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_train_chronological_scaled.zarr")
-    save_zarr(x_val_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_val_chronological_scaled.zarr")
-    save_zarr(y_val_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_val_chronological_scaled.zarr")
+    # Save final outputs as NetCDF in time chunks
+    save(x_train_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_train_chronological_scaled.nc")
+    save(y_train_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_train_chronological_scaled.nc")
+    save(x_val_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_val_chronological_scaled.nc")
+    save(y_val_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_val_chronological_scaled.nc")
 
     with open(OUTPUT_DIR / f"combined_{varname}_scaling_params_chronological.json", "w") as f:
         json.dump(stats, f, indent=2)
