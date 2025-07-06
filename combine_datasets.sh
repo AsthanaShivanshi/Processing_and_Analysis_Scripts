@@ -13,5 +13,5 @@ export PROJ_LIB="$ENVIRONMENT/share/proj"
 
 for idx in 0 1; do 
     echo "Processing variable index $idx"
-    python /work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/combining_tmin_tmax.py $idx
+    python /work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/combining_datasets.py $idx
 done

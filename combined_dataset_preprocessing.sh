@@ -4,7 +4,7 @@
 #SBATCH --output=sasthana/Downscaling/Processing_and_Analysis_Scripts/logs/combined_ds_preprocess_%A_%a.log
 #SBATCH --error=sasthana/Downscaling/Processing_and_Analysis_Scripts/logs/combined_ds_preprocess_%A_%a.log
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4       
+#SBATCH --cpus-per-task=16      
 #SBATCH --mem=500G
 #SBATCH --time=3-00:00:00
 #SBATCH --array=0-3
