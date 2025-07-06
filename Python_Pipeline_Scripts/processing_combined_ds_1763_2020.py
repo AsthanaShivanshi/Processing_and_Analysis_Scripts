@@ -190,18 +190,14 @@ def main():
     interp_ds = interp_ds.sortby("time")
     highres = highres_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
     upsampled = interp_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
-    years = upsampled['time.year'].values
 
-    train_mask = (years >= 1771) & (years <= 1980)
-    val_mask   = (years >= 1981) & (years <= 2010)
-    test_mask  = (years >= 2011) & (years <= 2020)
 
-    x_train = upsampled.isel(time=train_mask)
-    y_train = highres.isel(time=train_mask)
-    x_val   = upsampled.isel(time=val_mask)
-    y_val   = highres.isel(time=val_mask)
-    x_test  = upsampled.isel(time=test_mask)
-    y_test  = highres.isel(time=test_mask)
+    x_train = upsampled.sel(time=slice("1771-01-01", "1980-12-31"))
+    y_train = highres.sel(time=slice("1771-01-01", "1980-12-31"))
+    x_val   = upsampled.sel(time=slice("1981-01-01", "2010-12-31"))
+    y_val   = highres.sel(time=slice("1981-01-01", "2010-12-31"))
+    x_test  = upsampled.sel(time=slice("2011-01-01", "2020-12-31"))
+    y_test  = highres.sel(time=slice("2011-01-01", "2020-12-31"))
 
     # Scaling params
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
