@@ -18,8 +18,8 @@ proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downsca
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
-CHUNK_DICT_RAW = {"time": 5000, "E": 200, "N": 200}
-CHUNK_DICT_LATLON = {"time": 5000, "lat": 200, "lon": 200}
+CHUNK_DICT_RAW = {"time": 2000, "E": 200, "N": 200}
+CHUNK_DICT_LATLON = {"time": 2000, "lat": 200, "lon": 200}
 
 def get_chunk_dict(ds):
     dims = set(ds.dims)
@@ -31,7 +31,7 @@ def get_chunk_dict(ds):
         raise ValueError(f"Dataset has unknown dimensions: {ds.dims}")
 
 def promote_latlon(infile, varname):
-    ds = xr.open_dataset(infile).chunk({"time": 200, "N": 200, "E": 200})
+    ds = xr.open_dataset(infile).chunk({"time": 2000, "N": 200, "E": 200})
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
     def transform_coords(e, n):
         lon, lat = transformer.transform(e, n)
@@ -122,14 +122,30 @@ def apply_cdo_scaling(ds, stats, method):
     else:
         raise ValueError(f"Unknown method: {method}")
 
-def save_netcdf(ds, varname, path):
+def save_netcdf(ds, varname, path, chunk_dim="time", chunk_size=1000):
     ds = ensure_cdo_compliance(ds, varname)
-    ds.to_netcdf(
-        path,
-        engine="netcdf4",
-        encoding={varname: {"zlib": True, "complevel": 4}}
-    )
-    ds.close()
+    # Write in smaller chunks to avoid memory blowup
+    if chunk_dim in ds.dims:
+        for i in range(0, ds.sizes[chunk_dim], chunk_size):
+            ds_chunk = ds.isel({chunk_dim: slice(i, i+chunk_size)})
+            mode = "w" if i == 0 else "a"
+            ds_chunk = ds_chunk.compute()
+            ds_chunk.to_netcdf(
+                path,
+                mode=mode,
+                engine="h5netcdf",
+                encoding={varname: {"zlib": True, "complevel": 1}},
+                unlimited_dims=chunk_dim if mode == "w" else None
+            )
+            ds_chunk.close()
+    else:
+        ds = ds.compute()
+        ds.to_netcdf(
+            path,
+            engine="h5netcdf",
+            encoding={varname: {"zlib": True, "complevel": 4}}
+        )
+        ds.close()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -152,7 +168,6 @@ def main():
     if not infile_path.exists():
         raise FileNotFoundError(f"[ERROR] Input file does not exist: {infile_path}")
 
-    # 4. Profile timing for each step
     t0 = time.time()
     step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
     if not step1_path.exists() or not {'lat', 'lon'}.issubset(xr.open_dataset(step1_path).coords):
@@ -207,7 +222,7 @@ def main():
 
     # Scaling params
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
-        y_train.to_netcdf(tmpfile.name)
+        y_train.compute().to_netcdf(tmpfile.name)
         stats = get_cdo_stats(tmpfile.name, scale_type)
 
     x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
@@ -226,7 +241,7 @@ def main():
     print(f"All steps done in {time.time() - t0:.1f} s")
 
 if __name__ == "__main__":
-    cluster = LocalCluster(n_workers=16, threads_per_worker=1)
+    cluster = LocalCluster(n_workers=8, threads_per_worker=1)
     client = Client(cluster)
     try:
         main()
