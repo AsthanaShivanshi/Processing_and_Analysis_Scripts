@@ -18,8 +18,8 @@ proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downsca
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
-CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
-CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
+CHUNK_DICT_RAW = {"time": 500}
+CHUNK_DICT_LATLON = {"time": 500}
 
 def get_chunk_dict(ds):
     dims = set(ds.dims)
