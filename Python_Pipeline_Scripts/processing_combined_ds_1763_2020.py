@@ -18,8 +18,8 @@ proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downsca
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
-CHUNK_DICT_RAW = {"time": 2000, "E": 200, "N": 200}
-CHUNK_DICT_LATLON = {"time": 2000, "lat": 200, "lon": 200}
+CHUNK_DICT_RAW = {"time": 3000, "E": 300, "N": 300}
+CHUNK_DICT_LATLON = {"time": 3000, "lat": 300, "lon": 300}
 
 def get_chunk_dict(ds):
     dims = set(ds.dims)
@@ -31,7 +31,7 @@ def get_chunk_dict(ds):
         raise ValueError(f"Dataset has unknown dimensions: {ds.dims}")
 
 def promote_latlon(infile, varname):
-    ds = xr.open_dataset(infile).chunk({"time": 2000, "N": 200, "E": 200})
+    ds = xr.open_dataset(infile).chunk({"time": 3000, "N": 300, "E": 300})
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
     def transform_coords(e, n):
         lon, lat = transformer.transform(e, n)
@@ -122,9 +122,10 @@ def apply_cdo_scaling(ds, stats, method):
     else:
         raise ValueError(f"Unknown method: {method}")
 
-def save_netcdf(ds, varname, path, chunk_dim="time", chunk_size=1000):
+def save_netcdf(ds, varname, path, chunk_dim="time", chunk_size=2000):
     ds = ensure_cdo_compliance(ds, varname)
-    # Write in smaller chunks to avoid memory blowup
+    # Point 3: Reduce compression for faster writing
+    encoding = {varname: {"zlib": False}}  # No compression for fastest output
     if chunk_dim in ds.dims:
         for i in range(0, ds.sizes[chunk_dim], chunk_size):
             ds_chunk = ds.isel({chunk_dim: slice(i, i+chunk_size)})
@@ -134,7 +135,7 @@ def save_netcdf(ds, varname, path, chunk_dim="time", chunk_size=1000):
                 path,
                 mode=mode,
                 engine="h5netcdf",
-                encoding={varname: {"zlib": True, "complevel": 1}},
+                encoding=encoding,
                 unlimited_dims=chunk_dim if mode == "w" else None
             )
             ds_chunk.close()
@@ -143,7 +144,7 @@ def save_netcdf(ds, varname, path, chunk_dim="time", chunk_size=1000):
         ds.to_netcdf(
             path,
             engine="h5netcdf",
-            encoding={varname: {"zlib": True, "complevel": 4}}
+            encoding=encoding
         )
         ds.close()
 
@@ -241,7 +242,7 @@ def main():
     print(f"All steps done in {time.time() - t0:.1f} s")
 
 if __name__ == "__main__":
-    cluster = LocalCluster(n_workers=8, threads_per_worker=1)
+    cluster = LocalCluster(n_workers=4, threads_per_worker=1)
     client = Client(cluster)
     try:
         main()
