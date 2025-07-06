@@ -9,7 +9,6 @@ import tempfile
 from pyproj import Transformer, datadir
 from dask.distributed import Client, LocalCluster
 import time
-import glob
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/ "Processing_and_Analysis_Scripts" / "Combined_Dataset"
@@ -19,8 +18,8 @@ proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downsca
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
-CHUNK_DICT_RAW = {"time": 3000, "E": 300, "N": 300}
-CHUNK_DICT_LATLON = {"time": 3000, "lat": 300, "lon": 300}
+CHUNK_DICT_RAW = {"time": 500, "E": 300, "N": 300}
+CHUNK_DICT_LATLON = {"time": 500, "lat": 300, "lon": 300}
 
 def get_chunk_dict(ds):
     dims = set(ds.dims)
@@ -126,31 +125,10 @@ def apply_cdo_scaling(ds, stats, method):
     else:
         raise ValueError(f"Unknown method: {method}")
 
-
-def save_netcdf(ds, varname, path, chunk_dim="time", chunk_size=2000):
-    ds = ensure_cdo_compliance(ds, varname)
-    encoding = {varname: {"zlib": False}}
-    if chunk_dim in ds.dims:
-        for i in range(0, ds.sizes[chunk_dim], chunk_size):
-            ds_chunk = ds.isel({chunk_dim: slice(i, i+chunk_size)})
-            mode = "w" if i == 0 else "a"
-            ds_chunk = ds_chunk.compute()
-            ds_chunk.to_netcdf(
-                path,
-                mode=mode,
-                engine="netcdf4",  
-                encoding=encoding,
-                unlimited_dims=chunk_dim
-            )
-            ds_chunk.close()
-    else:
-        ds = ds.compute()
-        ds.to_netcdf(
-            path,
-            engine="netcdf4",
-            encoding=encoding
-        )
-        ds.close()
+def save_zarr(ds, path):
+    ds = ds.compute()
+    ds.to_zarr(str(path), mode="w")
+    ds.close()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -174,11 +152,11 @@ def main():
         raise FileNotFoundError(f"[ERROR] Input file does not exist: {infile_path}")
 
     t0 = time.time()
-    step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
-    if not step1_path.exists() or not {'lat', 'lon'}.issubset(xr.open_dataset(step1_path).coords):
+    step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.zarr"
+    if not step1_path.exists():
         print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
         ds = xr.open_dataset(infile_path)
-        ds = ds.chunk(get_chunk_dict(ds)) 
+        ds = ds.chunk(get_chunk_dict(ds))
         if 'lat' in ds.coords and 'lon' in ds.coords:
             pass
         elif 'lat' in ds.data_vars and 'lon' in ds.data_vars:
@@ -186,29 +164,29 @@ def main():
         else:
             ds.close()
             ds = promote_latlon(infile_path, varname_in_file)
-        save_netcdf(ds, varname_in_file, step1_path)
+        save_zarr(ds, step1_path)
     print(f"[TIMER] Step 1 done in {time.time() - t0:.1f} s")
 
     t1 = time.time()
-    highres_ds = xr.open_dataset(step1_path)
+    highres_ds = xr.open_zarr(step1_path)
     highres_ds = highres_ds.chunk(get_chunk_dict(highres_ds))
 
-    step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
+    step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.zarr"
     if not step2_path.exists():
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
-        save_netcdf(coarse_ds, varname_in_file, step2_path)
+        save_zarr(coarse_ds, step2_path)
     print(f"[TIMER] Step 2 done in {time.time() - t1:.1f} s")
-    coarse_ds = xr.open_dataset(step2_path)
+    coarse_ds = xr.open_zarr(step2_path)
     coarse_ds = coarse_ds.chunk(get_chunk_dict(coarse_ds))
 
     t2 = time.time()
-    step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
+    step3_path = OUTPUT_DIR / f"{varname}_step3_interp.zarr"
     if not step3_path.exists():
         interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
-        interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds)) 
-        save_netcdf(interp_ds, varname_in_file, step3_path)
+        interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
+        save_zarr(interp_ds, step3_path)
     print(f"[TIMER] Step 3 done in {time.time() - t2:.1f} s")
-    interp_ds = xr.open_dataset(step3_path)
+    interp_ds = xr.open_zarr(step3_path)
     interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
 
     # Chron split: 1771–1980 train, 1981–2010 val, 2011–2020 test
@@ -220,7 +198,7 @@ def main():
 
     train_mask = (years >= 1771) & (years <= 1980)
     val_mask   = (years >= 1981) & (years <= 2010)
-    test_mask  = (years >= 2011) & (years <= 2020)
+    # test_mask  = (years >= 2011) & (years <= 2020)  # Not used
 
     x_train = upsampled.isel(time=train_mask)
     y_train = highres.isel(time=train_mask)
@@ -237,10 +215,11 @@ def main():
     y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
     y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
 
-    save_netcdf(x_train_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_input_train_chronological_scaled.nc")
-    save_netcdf(y_train_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_target_train_chronological_scaled.nc")
-    save_netcdf(x_val_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_input_val_chronological_scaled.nc")
-    save_netcdf(y_val_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_target_val_chronological_scaled.nc")
+    # Save final outputs as Zarr
+    save_zarr(x_train_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_train_chronological_scaled.zarr")
+    save_zarr(y_train_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_train_chronological_scaled.zarr")
+    save_zarr(x_val_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_val_chronological_scaled.zarr")
+    save_zarr(y_val_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_val_chronological_scaled.zarr")
 
     with open(OUTPUT_DIR / f"combined_{varname}_scaling_params_chronological.json", "w") as f:
         json.dump(stats, f, indent=2)
@@ -248,7 +227,7 @@ def main():
     print(f"All steps done in {time.time() - t0:.1f} s")
 
 if __name__ == "__main__":
-    cluster = LocalCluster(n_workers=8, threads_per_worker=1)
+    cluster = LocalCluster(n_workers=1, threads_per_worker=1)
     client = Client(cluster)
     try:
         main()
