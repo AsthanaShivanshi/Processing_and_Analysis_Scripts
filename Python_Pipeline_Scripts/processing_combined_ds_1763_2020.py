@@ -7,7 +7,8 @@ import xarray as xr
 import subprocess
 import tempfile
 from pyproj import Transformer, datadir
-from dask.distributed import Client
+from dask.distributed import Client, LocalCluster
+import time
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/ "Processing_and_Analysis_Scripts" / "Combined_Dataset"
@@ -17,8 +18,8 @@ proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downsca
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
-CHUNK_DICT_RAW = {"time": 1000, "E": 100, "N": 100}
-CHUNK_DICT_LATLON = {"time": 1000, "lat": 100, "lon": 100}
+CHUNK_DICT_RAW = {"time": 5000, "E": 200, "N": 200}
+CHUNK_DICT_LATLON = {"time": 5000, "lat": 200, "lon": 200}
 
 def get_chunk_dict(ds):
     dims = set(ds.dims)
@@ -30,7 +31,7 @@ def get_chunk_dict(ds):
         raise ValueError(f"Dataset has unknown dimensions: {ds.dims}")
 
 def promote_latlon(infile, varname):
-    ds = xr.open_dataset(infile).chunk({"time": 100, "N": 100, "E": 100})
+    ds = xr.open_dataset(infile).chunk({"time": 200, "N": 200, "E": 200})
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
     def transform_coords(e, n):
         lon, lat = transformer.transform(e, n)
@@ -151,11 +152,12 @@ def main():
     if not infile_path.exists():
         raise FileNotFoundError(f"[ERROR] Input file does not exist: {infile_path}")
 
+    # 4. Profile timing for each step
+    t0 = time.time()
     step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
     if not step1_path.exists() or not {'lat', 'lon'}.issubset(xr.open_dataset(step1_path).coords):
         print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
-        ds = xr.open_dataset(infile_path)
-        ds = ds.chunk(get_chunk_dict(ds))
+        ds = xr.open_dataset(infile_path).chunk(get_chunk_dict(xr.open_dataset(infile_path)))
         if 'lat' in ds.coords and 'lon' in ds.coords:
             pass
         elif 'lat' in ds.data_vars and 'lon' in ds.data_vars:
@@ -164,20 +166,25 @@ def main():
             ds.close()
             ds = promote_latlon(infile_path, varname_in_file)
         save_netcdf(ds, varname_in_file, step1_path)
+    print(f"[TIMER] Step 1 done in {time.time() - t0:.1f} s")
 
+    t1 = time.time()
     highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
 
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
         save_netcdf(coarse_ds, varname_in_file, step2_path)
+    print(f"[TIMER] Step 2 done in {time.time() - t1:.1f} s")
     coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
 
+    t2 = time.time()
     step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
     if not step3_path.exists():
         interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
         interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
         save_netcdf(interp_ds, varname_in_file, step3_path)
+    print(f"[TIMER] Step 3 done in {time.time() - t2:.1f} s")
     interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
 
     # Chron split: 1771–1980 train, 1981–2010 val, 2011–2020 test
@@ -207,28 +214,20 @@ def main():
     x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
     y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
     y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
-    x_test_scaled = apply_cdo_scaling(x_test, stats, scale_type)
-    y_test_scaled = apply_cdo_scaling(y_test, stats, scale_type)
 
     save_netcdf(x_train_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_input_train_chronological_scaled.nc")
     save_netcdf(y_train_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_target_train_chronological_scaled.nc")
     save_netcdf(x_val_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_input_val_chronological_scaled.nc")
     save_netcdf(y_val_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_target_val_chronological_scaled.nc")
-    save_netcdf(x_test_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_input_test_chronological_scaled.nc")
-    save_netcdf(y_test_scaled, varname_in_file, OUTPUT_DIR / f"combined_{varname}_target_test_chronological_scaled.nc")
 
     with open(OUTPUT_DIR / f"combined_{varname}_scaling_params_chronological.json", "w") as f:
         json.dump(stats, f, indent=2)
 
-    # Cleaning up intermed files (optional)
-    # for step_path in [step1_path, step2_path, step3_path]:
-    #     try:
-    #         os.remove(step_path)
-    #     except FileNotFoundError:
-    #         pass
+    print(f"All steps done in {time.time() - t0:.1f} s")
 
 if __name__ == "__main__":
-    client = Client(processes=False)
+    cluster = LocalCluster(n_workers=16, threads_per_worker=1)
+    client = Client(cluster)
     try:
         main()
     finally:

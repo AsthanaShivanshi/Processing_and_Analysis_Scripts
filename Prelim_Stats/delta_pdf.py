@@ -87,12 +87,12 @@ def plot_city_delta_pdf(city_coords, obs, unet_1971, unet_1771, unet_combined, b
     delta_unet_combined = unet_series_combined - obs_series
 
     plt.figure(figsize=(8,6))
-    plt.hist(delta_bicubic, bins=50, density=True, histtype="step", linewidth=2, color="orange", label="Bicubic - Obs")
-    plt.hist(delta_unet_1971, bins=50, density=True, histtype="step", linewidth=2, color="blue", label="UNet 1971-2020 - Obs")
-    plt.hist(delta_unet_1771, bins=50, density=True, histtype="step", linewidth=2, color="red", label="UNet 1771-2020 - Obs")
-    plt.hist(delta_unet_combined, bins=50, density=True, histtype="step", linewidth=2, color="purple", label="UNet Combined - Obs")
+    plt.hist(delta_bicubic, bins=50, density=True, histtype="step", linewidth=2, color="green", label="delta Bicubic")
+    plt.hist(delta_unet_1971, bins=50, density=True, histtype="step", linewidth=2, color="blue", label="delta UNet 1971-2020")
+    plt.hist(delta_unet_1771, bins=50, density=True, histtype="step", linewidth=2, color="red", label="delta UNet 1771-2020")
+    plt.hist(delta_unet_combined, bins=50, density=True, histtype="step", linewidth=2, color="black", label="delta UNet Combined")
     plt.axvline(0, color='k', linestyle='--', linewidth=1)
-    plt.title(f"{varname} ΔPDF at {city_name} (model - obs, 2011-2020)")
+    plt.title(f"{varname} ΔPDF at {city_name} (model - obs, for testing set 2011-2020)")
     plt.xlabel(f"{varname} (Model - Obs)")
     plt.ylabel("Density")
     plt.legend()
