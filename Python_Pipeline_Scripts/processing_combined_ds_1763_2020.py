@@ -116,26 +116,21 @@ def save(ds, path):
     ds.to_netcdf(str(path), encoding=encoding)
     ds.close()
 
-def bicubic_interpolate_in_time_chunks(coarse_ds, target_ds, varname, out_path, chunk_size=50):
-    times = coarse_ds["time"].values
-    for i in range(0, len(times), chunk_size):
-        coarse_chunk = coarse_ds.isel(time=slice(i, i+chunk_size))
-        target_chunk = target_ds.isel(time=slice(i, i+chunk_size))
-        with tempfile.TemporaryDirectory() as tmpdir:
-            coarse_file = Path(tmpdir) / "coarse.nc"
-            target_file = Path(tmpdir) / "target.nc"
-            output_file = Path(tmpdir) / "interp.nc"
-            ensure_cdo_compliance(coarse_chunk, varname).to_netcdf(coarse_file)
-            ensure_cdo_compliance(target_chunk, varname).to_netcdf(target_file)
-            script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
-            subprocess.run([
-                str(script_path), str(coarse_file), str(target_file), str(output_file)
-            ], check=True)
-            result = xr.open_dataset(output_file)[[varname]].load()
-            mode = "w" if i == 0 else "a"
-            encoding = {v: {"zlib": True, "complevel": 1} for v in result.data_vars}
-            result.to_netcdf(str(out_path), mode=mode, unlimited_dims="time", encoding=encoding)
-            result.close()
+def bicubic_interpolation(coarse_ds, target_ds, varname, out_path):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        coarse_file = Path(tmpdir) / "coarse.nc"
+        target_file = Path(tmpdir) / "target.nc"
+        output_file = Path(tmpdir) / "interp.nc"
+        ensure_cdo_compliance(coarse_ds, varname).to_netcdf(coarse_file)
+        ensure_cdo_compliance(target_ds, varname).to_netcdf(target_file)
+        script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
+        subprocess.run([
+            str(script_path), str(coarse_file), str(target_file), str(output_file)
+        ], check=True)
+        result = xr.open_dataset(output_file)[[varname]].load()
+        encoding = {v: {"zlib": True, "complevel": 1} for v in result.data_vars}
+        result.to_netcdf(str(out_path), encoding=encoding)
+        result.close()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -186,7 +181,7 @@ def main():
     t2 = time.time()
     step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
     if not step3_path.exists():
-        bicubic_interpolate_in_time_chunks(coarse_ds, highres_ds, varname_in_file, step3_path)
+        bicubic_interpolation(coarse_ds, highres_ds, varname_in_file, step3_path)
     print(f"[TIMER] Step 3 done in {time.time() - t2:.1f} s")
     interp_ds = xr.open_dataset(step3_path, chunks=get_chunk_dict(xr.open_dataset(step3_path)))
 
