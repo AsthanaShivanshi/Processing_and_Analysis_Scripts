@@ -199,11 +199,14 @@ def main():
 
     train_mask = (years >= 1771) & (years <= 1980)
     val_mask   = (years >= 1981) & (years <= 2010)
+    test_mask  = (years >= 2011) & (years <= 2020)
 
     x_train = upsampled.isel(time=train_mask)
     y_train = highres.isel(time=train_mask)
     x_val   = upsampled.isel(time=val_mask)
     y_val   = highres.isel(time=val_mask)
+    x_test  = upsampled.isel(time=test_mask)
+    y_test  = highres.isel(time=test_mask)
 
     # Scaling params
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
@@ -214,12 +217,16 @@ def main():
     x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
     y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
     y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
+    x_test_scaled = apply_cdo_scaling(x_test, stats, scale_type)
+    y_test_scaled = apply_cdo_scaling(y_test, stats, scale_type)
 
     # Save final outputs as NetCDF in time chunks
     save(x_train_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_train_chronological_scaled.nc")
     save(y_train_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_train_chronological_scaled.nc")
     save(x_val_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_val_chronological_scaled.nc")
     save(y_val_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_val_chronological_scaled.nc")
+    save(x_test_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_test_chronological_scaled.nc")
+    save(y_test_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_test_chronological_scaled.nc")
 
     with open(OUTPUT_DIR / f"combined_{varname}_scaling_params_chronological.json", "w") as f:
         json.dump(stats, f, indent=2)
