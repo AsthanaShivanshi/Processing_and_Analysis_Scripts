@@ -1,18 +1,21 @@
 import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 import config
 
-bicubic_path = f"{config.BASE_DIR}/bicubic_predictions.nc"
-unet_pretrain_path = f"{config.BASE_DIR}/Pretraining_Dataset_Downscaled_Predictions_2011_2020.nc"
-unet_train_path = f"{config.BASE_DIR}/Training_Dataset_Downscaled_Predictions_2011_2020.nc"
-target_path = f"{config.BASE_DIR}/your_target_file.nc"
-bicubic_files = {
-    "precip": f"{config.BASE_DIR}/sasthana/Downscaling/Downscaling_Models/Training_Chronological_Dataset/RhiresD_step3_interp.nc",
-    "temp":   f"{config.BASE_DIR}/sasthana/Downscaling/Downscaling_Models/Training_Chronological_Dataset/TabsD_step3_interp.nc",
-    "tmin":   f"{config.BASE_DIR}/sasthana/Downscaling/Downscaling_Models/Training_Chronological_Dataset/TminD_step3_interp.nc",
-    "tmax":   f"{config.BASE_DIR}/sasthana/Downscaling/Downscaling_Models/Training_Chronological_Dataset/TmaxD_step3_interp.nc",
+unet_pretrain_path = f"{config.UNET_1771_DIR}/Pretraining_Dataset_Downscaled_Predictions_2011_2020.nc" #This has precip, temp, tmin and tmax
+unet_train_path = f"{config.UNET_1971_DIR}/Training_Dataset_Downscaled_Predictions_2011_2020.nc"#this has RhiresD, TminD, TmaxD and TabsD as vars
+target_files = {#this has RhiresD, TminD, TmaxD and TabsD as vars
+    "RhiresD": f"{config.TARGET_DIR}/RhiresD_1971_2023.nc",
+    "TabsD": f"{config.TARGET_DIR}/TabsD_1971_2023.nc",
+    "TminD": f"{config.TARGET_DIR}/TminD_1971_2023.nc",
+    "TmaxD": f"{config.TARGET_DIR}/TmaxD_1971_2023.nc",
+} 
+bicubic_files = { #this has RhiresD, TminD, TmaxD and TabsD as vars
+    "RhiresD": f"{config.DATASETS_TRAINING_DIR}/RhiresD_step3_interp.nc",
+    "TabsD":   f"{config.DATASETS_TRAINING_DIR}/TabsD_step3_interp.nc",
+    "TminD":   f"{config.DATASETS_TRAINING_DIR}/TminD_step3_interp.nc",
+    "TmaxD":   f"{config.DATASETS_TRAINING_DIR}/TmaxD_step3_interp.nc",
 }
 
 bicubic_varnames = {
@@ -23,10 +26,10 @@ bicubic_varnames = {
 }
 var_names = ["precip", "temp", "tmin", "tmax"]
 
-bicubic_ds = xr.open_dataset(bicubic_files["precip"])
-unet_pretrain_ds = xr.open_dataset(unet_pretrain_path)
-unet_train_ds = xr.open_dataset(unet_train_path)
-target_ds = xr.open_dataset(target_path)
+bicubic_ds = xr.open_mfdataset(bicubic_files) #Bicubic baseline
+unet_pretrain_ds = xr.open_dataset(unet_pretrain_path) #downscaled ts from 1771 model
+unet_train_ds = xr.open_dataset(unet_train_path) #downscaled ts from 1971 model
+target_ds = xr.open_mfdataset(target_files)
 
 quantiles = list(range(5, 100, 5))
 
@@ -69,5 +72,5 @@ for var in var_names:
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(f"thresholded_mse_comparison_{var}.png", dpi=300)
+    plt.savefig(f"{config.OUTPUTS_DIR}/thresholded_mse_comparison_multiple_baselines_{var}.png", dpi=1000)
     plt.close()
