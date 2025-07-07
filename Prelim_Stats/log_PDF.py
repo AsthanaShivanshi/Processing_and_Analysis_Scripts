@@ -55,66 +55,87 @@ def swiss_lv95_grid_to_wgs84(E_grid, N_grid):
 
 def plot_city_logpdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname, city_name="City"):
     obs_N, obs_E, obs_N_dim, obs_E_dim = get_lat_lon(obs)
+
     unet_lat, unet_lon, unet_lat_dim, unet_lon_dim = get_lat_lon(unet_1971)
+
     bicubic_N, bicubic_E, bicubic_N_dim, bicubic_E_dim = get_lat_lon(bicubic)
 
     obs_E_grid, obs_N_grid = np.meshgrid(obs_E, obs_N)
+
     obs_lon_grid, obs_lat_grid = swiss_lv95_grid_to_wgs84(obs_E_grid, obs_N_grid)
 
     bicubic_E_grid, bicubic_N_grid = np.meshgrid(bicubic_E, bicubic_N)
+
     bicubic_lon_grid, bicubic_lat_grid = swiss_lv95_grid_to_wgs84(bicubic_E_grid, bicubic_N_grid)
 
     city_lat, city_lon = city_coords
 
     dist_obs = np.sqrt((obs_lat_grid - city_lat)**2 + (obs_lon_grid - city_lon)**2)
+
+
     lat_idx, lon_idx = np.unravel_index(np.argmin(dist_obs), dist_obs.shape)
+
     obs_series = obs.isel({obs_N_dim: lat_idx, obs_E_dim: lon_idx}).values.flatten()
+
     unet_series_1971 = unet_1971.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
+
     unet_series_1771 = unet_1771.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
+
     dist_bicubic = np.sqrt((bicubic_lat_grid - city_lat)**2 + (bicubic_lon_grid - city_lon)**2)
+
     lat_idx_bicubic, lon_idx_bicubic = np.unravel_index(np.argmin(dist_bicubic), dist_bicubic.shape)
+
     bicubic_series = bicubic.isel({bicubic_N_dim: lat_idx_bicubic, bicubic_E_dim: lon_idx_bicubic}).values.flatten()
 
     mask = ~np.isnan(obs_series)
+
     obs_series = obs_series[mask]
+
     unet_series_1971 = unet_series_1971[mask] if unet_series_1971.shape == obs_series.shape else unet_series_1971[~np.isnan(unet_series_1971)]
+
     unet_series_1771 = unet_series_1771[mask] if unet_series_1771.shape == obs_series.shape else unet_series_1771[~np.isnan(unet_series_1771)]
+
     bicubic_series = bicubic_series[mask] if bicubic_series.shape == obs_series.shape else bicubic_series[~np.isnan(bicubic_series)]
 
     plt.figure(figsize=(8,6))
 
     all_data = np.concatenate([obs_series, unet_series_1971, unet_series_1771, bicubic_series])
+
     x_grid = np.linspace(np.nanmin(all_data), np.nanmax(all_data), 300)
 
     for series, color, label in [
         (obs_series, "green", "Observations 2011-2020"),
+
         (unet_series_1971, "blue", "UNet 1971-2020"),
+
         (unet_series_1771, "red", "UNet 1771-2020"),
+
         (bicubic_series, "orange", "Bicubic baseline"),
     ]:
         if varname.lower().startswith("rhiresd") or varname.lower() == "precip":
-            # Only use positive values for gamma fit
+
             series_pos = series[series > 0]
             if len(series_pos) > 0:
-                # Fit gamma distribution
+
                 a, loc, scale = gamma.fit(series_pos, floc=0)
                 logpdf = gamma.logpdf(x_grid, a, loc=loc, scale=scale)
                 plt.plot(x_grid, logpdf, color=color, linewidth=2, label=label + " (gamma fit)")
-            # Also plot empirical KDE logPDF for precipitation
+
+            # Empirical KDE logPDF for precip
             kde = gaussian_kde(series_pos)
             pdf = kde(x_grid)
             logpdf_emp = np.log(np.where(pdf > 0, pdf, 1e-12))
             plt.plot(x_grid, logpdf_emp, color=color, linewidth=1, linestyle="--", label=label + " (empirical KDE)")
+
         else:
-            # For temperature etc, use normal fit
             mu, std = np.mean(series), np.std(series)
             logpdf = norm.logpdf(x_grid, loc=mu, scale=std)
             plt.plot(x_grid, logpdf, color=color, linewidth=2, label=label + " (Normal fit)")
-            # Also plot empirical KDE logPDF
             kde = gaussian_kde(series)
             pdf = kde(x_grid)
             logpdf_emp = np.log(np.where(pdf > 0, pdf, 1e-12))
             plt.plot(x_grid, logpdf_emp, color=color, linewidth=1, linestyle="--", label=label + " (empirical KDE)")
+            
 
     plt.title(f"{varname} logPDF at {city_name} (lat={city_lat:.4f}, lon={city_lon:.4f})")
     plt.xlabel(varname)
