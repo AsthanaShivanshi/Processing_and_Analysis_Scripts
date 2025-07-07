@@ -89,23 +89,23 @@ def plot_city_delta_pdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname
     delta_unet_1771 = unet_series_1771 - obs_series
 
     plt.figure(figsize=(8,6))
-    plt.hist(delta_bicubic, bins=50, density=True, histtype="step", linewidth=2, color="green", label="delta Bicubic")
-    plt.hist(delta_unet_1971, bins=50, density=True, histtype="step", linewidth=2, color="blue", label="delta UNet 1971-2020")
-    plt.hist(delta_unet_1771, bins=50, density=True, histtype="step", linewidth=2, color="red", label="delta UNet 1771-2020")
+    plt.hist(delta_bicubic, bins=50, density=True, linewidth=1, color="orange", label="delta Bicubic")
+    plt.hist(delta_unet_1971, bins=50, density=True, linewidth=1, color="blue", label="delta UNet 1971-2020")
+    plt.hist(delta_unet_1771, bins=50, density=True, linewidth=1, color="red", label="delta UNet 1771-2020")
     plt.axvline(0, color='k', linestyle='--', linewidth=1)
     plt.title(f"{varname} ΔPDF at {city_name} (model - obs, for testing set 2011-2020)")
     plt.xlabel(f"{varname} (Model - Obs)")
     plt.ylabel("Density")
     plt.legend()
     plt.tight_layout()
-    output_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Prelim_Stats" / "Outputs" / f"deltaPDF_{varname}_{city_name}_latlon_distance_UNet_pred.png"
-    plt.savefig(str(output_path))
+    output_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Outputs" / f"deltaPDF_{varname}_{city_name}_latlon_distance_UNet_pred.png"
+    plt.savefig(str(output_path), dpi=500)
     plt.close()
 
 if __name__ == "__main__":
     idx = int(os.environ.get("SLURM_ARRAY_TASK_ID", 0))
-    city_coords = (46.2044, 6.1432) # Example: Geneva
-    city_name = "Geneva"
+    city_coords = (47.3769, 8.5417) # Example: Zürich
+    city_name = "Zürich"
 
     var_keys = list(VAR_MAP.keys())
     var_key = var_keys[idx]
