@@ -79,7 +79,10 @@ def conservative_coarsening(ds, varname, block_size):
     return ds_out
 
 def save(ds, path):
-    ds.to_netcdf(str(path))
+    encoding = {}
+    for v in ds.data_vars:
+        encoding[v] = {"_FillValue": np.nan}
+    ds.to_netcdf(str(path), encoding=encoding)
     ds.close()
 
 def interp_xarray_cubic(coarse_ds, highres_ds, varname, out_path):
@@ -108,10 +111,18 @@ def interp_xarray_cubic(coarse_ds, highres_ds, varname, out_path):
     # Restore NaNs
     for v in ds_interpolated.data_vars:
         arr = ds_interpolated[v]
-        ds_interpolated[v] = arr.where(~np.isclose(arr, -999, atol=1e-2), np.nan)
+        arr = arr.where(~np.isclose(arr, -999, atol=1e-2), np.nan)
 
-    ds_interpolated.to_netcdf(str(out_path))
+        # CLEANING STEP: Retain only valid grid cells from highres_ds for each timestep
+        mask = ~np.isnan(highres_ds[varname])
+        # Broadcast mask to arr shape if needed
+        arr = arr.where(mask)
+
+        ds_interpolated[v] = arr
+
+    ds_interpolated.to_netcdf(str(out_path), encoding={v: {"_FillValue": np.nan} for v in ds_interpolated.data_vars})
     ds_interpolated.close()
+    
 
 def main():
     parser = argparse.ArgumentParser()
