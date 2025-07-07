@@ -2,6 +2,23 @@ import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
 import config
+import argparse
+
+
+#Argparsing for runnign as an array
+parser = argparse.ArgumentParser(description="Thresholded MSE Calculation")
+parser.add_argument("--var", type=int, required=True, help="Variable index (0-3)")
+args = parser.parse_args()
+
+varnames = {
+    "precip": "RhiresD",
+    "temp": "TabsD",
+    "tmin": "TminD",
+    "tmax": "TmaxD"
+}
+var_list=list(varnames.keys())
+var=var_list[args.var]
+file_var= varnames[var]
 
 unet_pretrain_path = f"{config.UNET_1771_DIR}/Pretraining_Dataset_Downscaled_Predictions_2011_2020.nc" #This has precip, temp, tmin and tmax
 unet_train_path = f"{config.UNET_1971_DIR}/Training_Dataset_Downscaled_Predictions_2011_2020.nc"#this has RhiresD, TminD, TmaxD and TabsD as vars
@@ -18,27 +35,25 @@ bicubic_files = { #this has RhiresD, TminD, TmaxD and TabsD as vars
     "TmaxD":   f"{config.DATASETS_TRAINING_DIR}/TmaxD_step3_interp.nc",
 }
 
-bicubic_varnames = {
-    "precip": "RhiresD",
-    "temp": "TabsD",
-    "tmin": "TminD",
-    "tmax": "TmaxD"
-}
-var_names = ["precip", "temp", "tmin", "tmax"]
 
-bicubic_ds = xr.open_mfdataset(bicubic_files) #Bicubic baseline
+
 unet_pretrain_ds = xr.open_dataset(unet_pretrain_path) #downscaled ts from 1771 model
 unet_train_ds = xr.open_dataset(unet_train_path) #downscaled ts from 1971 model
-target_ds = xr.open_mfdataset(target_files)
 
 quantiles = list(range(5, 100, 5))
 
-for var in var_names:
-    target = target_ds[var].values
-    bicubic = bicubic_ds[var].values
-    unet_pretrain = unet_pretrain_ds[var].values
-    unet_train = unet_train_ds[var].values
+for var, file_var in varnames.items():
+    bicubic_ds = xr.open_dataset(bicubic_files[file_var]).sel(time=slice("2011-01-01", "2020-12-31"))
+    bicubic = bicubic_ds[file_var].values
 
+    target_ds_var = xr.open_dataset(target_files[file_var]).sel(time=slice("2011-01-01", "2020-12-31"))
+    target = target_ds_var[file_var].values
+
+    unet_pretrain = unet_pretrain_ds[var].sel(time=slice("2011-01-01", "2020-12-31")).values
+
+    unet_train = unet_train_ds[file_var].sel(time=slice("2011-01-01", "2020-12-31")).values
+
+    # Flattenningn for pooling and thresholding
     target_flat = target.flatten()
     bicubic_flat = bicubic.flatten()
     unet_pretrain_flat = unet_pretrain.flatten()
@@ -61,16 +76,16 @@ for var in var_names:
         mse_pretrain.append(np.mean((unet_pretrain_flat[mask] - target_flat[mask])**2))
         mse_train.append(np.mean((unet_train_flat[mask] - target_flat[mask])**2))
 
-    # Plot
+
     plt.figure(figsize=(10, 5))
-    plt.plot(quantiles, mse_bicubic, marker='o', label="Bicubic")
-    plt.plot(quantiles, mse_pretrain, marker='o', label="UNet 1771 time series")
-    plt.plot(quantiles, mse_train, marker='o', label="UNet 1971 time series")
+    plt.plot(quantiles, mse_bicubic, marker='o', color='blue', label="Bicubic")
+    plt.plot(quantiles, mse_pretrain, marker='o', color='red', label="UNet 1771 time series")
+    plt.plot(quantiles, mse_train, marker='o', color='green', label="UNet 1971 time series")
     plt.xlabel("Quantile (%)")
     plt.ylabel("Thresholded MSE")
-    plt.title(f"Thresholded MSE by Quantile for {var}")
+    plt.title(f"Thresholded MSE by Quantile for {var} ({file_var})")
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(f"{config.OUTPUTS_DIR}/thresholded_mse_comparison_multiple_baselines_{var}.png", dpi=1000)
+    plt.savefig(f"{config.OUTPUTS_DIR}/thresholded_mse_comparison_{var}.png", dpi=1000)
     plt.close()
