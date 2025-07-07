@@ -53,7 +53,7 @@ def swiss_lv95_grid_to_wgs84(E_grid, N_grid):
     lat = np.array([float(ll[1]) for ll in lon_lat]).reshape(E_grid.shape)
     return lon, lat
 
-def plot_city_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname, city_name="City"):
+def plot_city_delta_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname, city_name="City"):
     obs_N, obs_E, obs_N_dim, obs_E_dim = get_lat_lon(obs)
     unet_lat, unet_lon, unet_lat_dim, unet_lon_dim = get_lat_lon(unet_1971)
     bicubic_N, bicubic_E, bicubic_N_dim, bicubic_E_dim = get_lat_lon(bicubic)
@@ -84,17 +84,22 @@ def plot_city_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname, city
     unet_series_1771 = unet_series_1771[mask] if unet_series_1771.shape == obs_series.shape else unet_series_1771[~np.isnan(unet_series_1771)]
     bicubic_series = bicubic_series[mask] if bicubic_series.shape == obs_series.shape else bicubic_series[~np.isnan(bicubic_series)]
 
+    # Calculate deltas (model - obs)
+    delta_bicubic = bicubic_series - obs_series
+    delta_unet_1971 = unet_series_1971 - obs_series
+    delta_unet_1771 = unet_series_1771 - obs_series
+
     plt.figure(figsize=(8,6))
-    plt.hist(obs_series, bins=50, density=True, cumulative=True,histtype="step", linewidth=1, color="green", label="Observations 2011-2020")
-    plt.hist(unet_series_1971, bins=50, density=True, cumulative=True, histtype="step", linewidth=1, color="blue", label="UNet trained on 1971 time series")
-    plt.hist(unet_series_1771, bins=50, density=True, cumulative=True, histtype="step", linewidth=1, color="red", label="UNet trained on 1771 time series")
-    plt.hist(bicubic_series, bins=50, density=True, cumulative=True, histtype="step", linewidth=1, color="orange", label="Bicubic baseline from 1971 time series for 2011-2020")
-    plt.title(f"{varname} CDF at {city_name} (lat={city_lat:.4f}, lon={city_lon:.4f})")
-    plt.xlabel(varname)
-    plt.ylabel("CDF")
+    plt.hist(delta_bicubic, bins=50, density=True, cumulative=True, histtype="step", linewidth=2, color="orange", label="Bicubic baseline delta")
+    plt.hist(delta_unet_1971, bins=50, density=True, cumulative=True, histtype="step", linewidth=2, color="blue", label="UNet 1971-2020 delta")
+    plt.hist(delta_unet_1771, bins=50, density=True, cumulative=True, histtype="step", linewidth=2, color="red", label="UNet 1771-2020 delta")
+    plt.axvline(0, color='k', linestyle='--', linewidth=1)
+    plt.title(f"{varname} ΔCDF at {city_name} (model - obs, lat={city_lat:.4f}, lon={city_lon:.4f})")
+    plt.xlabel(f"{varname} (Model - Obs)")
+    plt.ylabel("Cumulative Probability")
     plt.legend()
     plt.tight_layout()
-    output_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Outputs" / f"CDF_{varname}_{city_name}_latlon_distance_UNet_pred.png"
+    output_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Outputs" / f"deltaCDF_{varname}_{city_name}_latlon_distance_UNet_pred.png"
     plt.savefig(str(output_path), dpi=500)
     plt.close()
 
@@ -127,7 +132,7 @@ if __name__ == "__main__":
     bicubic_path = bicubic_paths[hr_var]
     bicubic_ds = xr.open_dataset(str(bicubic_path), chunks={"time": 100}).sel(time=slice("2011-01-01", "2020-12-31"))
 
-    plot_city_cdf(
+    plot_city_delta_cdf(
         city_coords,
         obs_ds[hr_var],
         unet_ds_1971[hr_var],

@@ -12,4 +12,4 @@ module load python
 source environment.sh
 cd $BASE_DIR/sasthana/Downscaling/Processing_and_Analysis_Scripts/Prelim_Stats
 
-python distributions_predictions_CDF_cities.py
+python distributions_predictions_deltaCDF_cities.py
