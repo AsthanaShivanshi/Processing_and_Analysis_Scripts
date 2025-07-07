@@ -4,10 +4,8 @@ import argparse
 from pathlib import Path
 import numpy as np
 import xarray as xr
-import subprocess
 import tempfile
 from pyproj import Transformer, datadir
-from dask.distributed import Client, LocalCluster
 import time
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
@@ -18,21 +16,11 @@ proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downsca
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
-CHUNK_DICT_RAW = {"time": 500}
-CHUNK_DICT_LATLON = {"time": 500}
-
 def get_chunk_dict(ds):
-    dims = set(ds.dims)
-    if {"lat", "lon"}.issubset(dims):
-        return CHUNK_DICT_LATLON
-    elif {"E", "N"}.issubset(dims):
-        return CHUNK_DICT_RAW
-    else:
-        raise ValueError(f"Dataset has unknown dimensions: {ds.dims}")
+    return {}
 
 def promote_latlon(infile, varname):
     ds = xr.open_dataset(infile)
-    ds = ds.chunk(get_chunk_dict(ds))
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
     def transform_coords(e, n):
         lon, lat = transformer.transform(e, n)
@@ -90,47 +78,40 @@ def conservative_coarsening(ds, varname, block_size):
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
     return ds_out
 
-def get_cdo_stats(file_path, method):
-    stats = {}
-    if method == "standard":
-        stats['mean'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timmean", str(file_path)]).decode().strip())
-        stats['std'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timstd", str(file_path)]).decode().strip())
-    elif method == "minmax":
-        stats['min'] = float(subprocess.check_output(["cdo", "output", "-fldmin", "-timmin", str(file_path)]).decode().strip())
-        stats['max'] = float(subprocess.check_output(["cdo", "output", "-fldmax", "-timmax", str(file_path)]).decode().strip())
-    else:
-        raise ValueError(f"Unsupported method: {method}")
-    return stats
-
-def apply_cdo_scaling(ds, stats, method):
-    if method == "standard":
-        return (ds - stats['mean']) / stats['std']
-    elif method == "minmax":
-        return (ds - stats['min']) / (stats['max'] - stats['min'])
-    else:
-        raise ValueError(f"Unknown method: {method}")
-
 def save(ds, path):
-    encoding = {v: {"zlib": True, "complevel": 1} for v in ds.data_vars}
-    ds = ds.compute()
-    ds.to_netcdf(str(path), encoding=encoding)
+    ds.to_netcdf(str(path))
     ds.close()
 
-def bicubic_interpolation(coarse_ds, target_ds, varname, out_path):
-    with tempfile.TemporaryDirectory() as tmpdir:
-        coarse_file = Path(tmpdir) / "coarse.nc"
-        target_file = Path(tmpdir) / "target.nc"
-        output_file = Path(tmpdir) / "interp.nc"
-        ensure_cdo_compliance(coarse_ds, varname).to_netcdf(coarse_file)
-        ensure_cdo_compliance(target_ds, varname).to_netcdf(target_file)
-        script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
-        subprocess.run([
-            str(script_path), str(coarse_file), str(target_file), str(output_file)
-        ], check=True)
-        result = xr.open_dataset(output_file)[[varname]].load()
-        encoding = {v: {"zlib": True, "complevel": 1} for v in result.data_vars}
-        result.to_netcdf(str(out_path), encoding=encoding)
-        result.close()
+def interp_xarray_cubic(coarse_ds, highres_ds, varname, out_path):
+    # Prepare 1D lat/lon from coarse grid
+    lat_1d = coarse_ds['lat'][:, 0].values if coarse_ds['lat'].ndim == 2 else coarse_ds['lat'].values
+    lon_1d = coarse_ds['lon'][0, :].values if coarse_ds['lon'].ndim == 2 else coarse_ds['lon'].values
+
+    # Drop 2D lat/lon if present, assign 1D
+    ds_lowres = coarse_ds.drop_vars([v for v in ['lat', 'lon'] if v in coarse_ds])
+    ds_lowres = ds_lowres.rename({'N': 'lat', 'E': 'lon'})
+    ds_lowres = ds_lowres.assign_coords(lat=lat_1d, lon=lon_1d)
+
+    # Target grid
+    new_lat = highres_ds['lat']
+    new_lon = highres_ds['lon']
+
+    # Fill NaNs with -999 before interpolation
+    ds_lowres_filled = ds_lowres.fillna(-999)
+
+    # Interpolate
+    ds_interpolated = ds_lowres_filled.interp(
+        lat=new_lat, lon=new_lon, method='cubic',
+        kwargs={'bounds_error': False, 'fill_value': -999}
+    )
+
+    # Restore NaNs
+    for v in ds_interpolated.data_vars:
+        arr = ds_interpolated[v]
+        ds_interpolated[v] = arr.where(~np.isclose(arr, -999, atol=1e-2), np.nan)
+
+    ds_interpolated.to_netcdf(str(out_path))
+    ds_interpolated.close()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -158,7 +139,6 @@ def main():
     if not step1_path.exists():
         print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
         ds = xr.open_dataset(infile_path)
-        ds = ds.chunk(get_chunk_dict(ds))
         if 'lat' in ds.coords and 'lon' in ds.coords:
             pass
         elif 'lat' in ds.data_vars and 'lon' in ds.data_vars:
@@ -170,27 +150,26 @@ def main():
     print(f"[TIMER] Step 1 done in {time.time() - t0:.1f} s")
 
     t1 = time.time()
-    highres_ds = xr.open_dataset(step1_path, chunks=get_chunk_dict(xr.open_dataset(step1_path)))
+    highres_ds = xr.open_dataset(step1_path)
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
         save(coarse_ds, step2_path)
     print(f"[TIMER] Step 2 done in {time.time() - t1:.1f} s")
-    coarse_ds = xr.open_dataset(step2_path, chunks=get_chunk_dict(xr.open_dataset(step2_path)))
+    coarse_ds = xr.open_dataset(step2_path)
 
     t2 = time.time()
     step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
     if not step3_path.exists():
-        bicubic_interpolation(coarse_ds, highres_ds, varname_in_file, step3_path)
+        interp_xarray_cubic(coarse_ds, highres_ds, varname_in_file, step3_path)
     print(f"[TIMER] Step 3 done in {time.time() - t2:.1f} s")
-    interp_ds = xr.open_dataset(step3_path, chunks=get_chunk_dict(xr.open_dataset(step3_path)))
+    interp_ds = xr.open_dataset(step3_path)
 
     # Chron split: 1771–1980 train, 1981–2010 val, 2011–2020 test
     highres_ds = highres_ds.sortby("time")
     interp_ds = interp_ds.sortby("time")
     highres = highres_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
     upsampled = interp_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
-
 
     x_train = upsampled.sel(time=slice("1771-01-01", "1980-12-31"))
     y_train = highres.sel(time=slice("1771-01-01", "1980-12-31"))
@@ -200,18 +179,29 @@ def main():
     y_test  = highres.sel(time=slice("2011-01-01", "2020-12-31"))
 
     # Scaling params
-    with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
-        y_train.compute().to_netcdf(tmpfile.name)
-        stats = get_cdo_stats(tmpfile.name, scale_type)
+    stats = {}
+    stats['mean'] = float(y_train.mean().values)
+    stats['std'] = float(y_train.std().values)
+    stats['min'] = float(y_train.min().values)
+    stats['max'] = float(y_train.max().values)
 
-    x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
-    x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
-    y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
-    y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
-    x_test_scaled = apply_cdo_scaling(x_test, stats, scale_type)
-    y_test_scaled = apply_cdo_scaling(y_test, stats, scale_type)
+    if scale_type == "standard":
+        x_train_scaled = (x_train - stats['mean']) / stats['std']
+        x_val_scaled = (x_val - stats['mean']) / stats['std']
+        y_train_scaled = (y_train - stats['mean']) / stats['std']
+        y_val_scaled = (y_val - stats['mean']) / stats['std']
+        x_test_scaled = (x_test - stats['mean']) / stats['std']
+        y_test_scaled = (y_test - stats['mean']) / stats['std']
+    elif scale_type == "minmax":
+        x_train_scaled = (x_train - stats['min']) / (stats['max'] - stats['min'])
+        x_val_scaled = (x_val - stats['min']) / (stats['max'] - stats['min'])
+        y_train_scaled = (y_train - stats['min']) / (stats['max'] - stats['min'])
+        y_val_scaled = (y_val - stats['min']) / (stats['max'] - stats['min'])
+        x_test_scaled = (x_test - stats['min']) / (stats['max'] - stats['min'])
+        y_test_scaled = (y_test - stats['min']) / (stats['max'] - stats['min'])
+    else:
+        raise ValueError(f"Unknown scale_type: {scale_type}")
 
-    # Save final outputs as NetCDF in time chunks
     save(x_train_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_train_chronological_scaled.nc")
     save(y_train_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_train_chronological_scaled.nc")
     save(x_val_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_val_chronological_scaled.nc")
@@ -225,9 +215,4 @@ def main():
     print(f"All steps done in {time.time() - t0:.1f} s")
 
 if __name__ == "__main__":
-    cluster = LocalCluster(n_workers=1, threads_per_worker=1)
-    client = Client(cluster)
-    try:
-        main()
-    finally:
-        client.close()
+    main()
