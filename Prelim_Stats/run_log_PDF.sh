@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=plot_distributions
-#SBATCH --output=logs/distributions%j.out
-#SBATCH --error=logs/distributions%j.err
+#SBATCH --job-name=log_PDF
+#SBATCH --output=logs/log_PDF%j.out
+#SBATCH --error=logs/log_PDF%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=500G
@@ -11,4 +11,4 @@
 module load python 
 source environment.sh 
 
-python Prelim_Stats/delta_pdf.py
+python Prelim_Stats/log_PDF.py

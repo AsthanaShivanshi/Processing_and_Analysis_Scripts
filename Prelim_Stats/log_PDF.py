@@ -6,10 +6,10 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import xarray as xr
 import numpy as np
+from scipy.stats import norm
 
 BASE_DIR = Path(os.environ.get("BASE_DIR", "/work/FAC/FGSE/IDYST/tbeucler/downscaling/"))
 
-# var mapping
 VAR_MAP = {
     "precip": {"hr": "RhiresD", "model": "precip"}, 
     "temp":   {"hr": "TabsD",   "model": "temp"},
@@ -53,7 +53,7 @@ def swiss_lv95_grid_to_wgs84(E_grid, N_grid):
     lat = np.array([float(ll[1]) for ll in lon_lat]).reshape(E_grid.shape)
     return lon, lat
 
-def plot_city_delta_pdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname, city_name="City"):
+def plot_city_logpdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname, city_name="City"):
     obs_N, obs_E, obs_N_dim, obs_E_dim = get_lat_lon(obs)
     unet_lat, unet_lon, unet_lat_dim, unet_lon_dim = get_lat_lon(unet_1971)
     bicubic_N, bicubic_E, bicubic_N_dim, bicubic_E_dim = get_lat_lon(bicubic)
@@ -68,9 +68,6 @@ def plot_city_delta_pdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname
 
     dist_obs = np.sqrt((obs_lat_grid - city_lat)**2 + (obs_lon_grid - city_lon)**2)
     lat_idx, lon_idx = np.unravel_index(np.argmin(dist_obs), dist_obs.shape)
-    obs_N_val = obs_N[lat_idx]
-    obs_E_val = obs_E[lon_idx]
-
     obs_series = obs.isel({obs_N_dim: lat_idx, obs_E_dim: lon_idx}).values.flatten()
     unet_series_1971 = unet_1971.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
     unet_series_1771 = unet_1771.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
@@ -84,21 +81,28 @@ def plot_city_delta_pdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname
     unet_series_1771 = unet_series_1771[mask] if unet_series_1771.shape == obs_series.shape else unet_series_1771[~np.isnan(unet_series_1771)]
     bicubic_series = bicubic_series[mask] if bicubic_series.shape == obs_series.shape else bicubic_series[~np.isnan(bicubic_series)]
 
-    delta_bicubic = bicubic_series - obs_series
-    delta_unet_1971 = unet_series_1971 - obs_series
-    delta_unet_1771 = unet_series_1771 - obs_series
-
     plt.figure(figsize=(8,6))
-    plt.hist(delta_bicubic, bins=50, density=True, linewidth=1, color="orange", label="delta Bicubic")
-    plt.hist(delta_unet_1971, bins=50, density=True, linewidth=1, color="blue", label="delta UNet 1971-2020")
-    plt.hist(delta_unet_1771, bins=50, density=True, linewidth=1, color="red", label="delta UNet 1771-2020")
-    plt.axvline(0, color='k', linestyle='--', linewidth=1)
-    plt.title(f"{varname} ΔPDF at {city_name} (model - obs, for testing set 2011-2020)")
-    plt.xlabel(f"{varname} (Model - Obs)")
-    plt.ylabel("Density")
+
+    all_data = np.concatenate([obs_series, unet_series_1971, unet_series_1771, bicubic_series])
+    x_grid = np.linspace(np.nanmin(all_data), np.nanmax(all_data), 300)
+
+    for series, color, label in [
+        (obs_series, "green", "Observations 2011-2020"),
+        (unet_series_1971, "blue", "UNet 1971-2020"),
+        (unet_series_1771, "red", "UNet 1771-2020"),
+        (bicubic_series, "orange", "Bicubic baseline"),
+    ]:
+        # Fit a normal distribution and use its logpdf
+        mu, std = np.mean(series), np.std(series)
+        logpdf = norm.logpdf(x_grid, loc=mu, scale=std)
+        plt.plot(x_grid, logpdf, color=color, linewidth=2, label=label + " (Normal fit)")
+
+    plt.title(f"{varname} logPDF (Normal fit) at {city_name} (lat={city_lat:.4f}, lon={city_lon:.4f})")
+    plt.xlabel(varname)
+    plt.ylabel("log Probability Density")
     plt.legend()
     plt.tight_layout()
-    output_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Outputs" / f"deltaPDF_{varname}_{city_name}_latlon_distance_UNet_pred.png"
+    output_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Outputs" / f"logPDF_{varname}_{city_name}_latlon_distance_UNet_pred.png"
     plt.savefig(str(output_path), dpi=500)
     plt.close()
 
@@ -131,13 +135,11 @@ if __name__ == "__main__":
     bicubic_path = bicubic_paths[hr_var]
     bicubic_ds = xr.open_dataset(str(bicubic_path), chunks={"time": 100}).sel(time=slice("2011-01-01", "2020-12-31"))
 
-#1971 uses rhiresD etc, 1771 used precip etc and bicubic baseline also uses RhiresD etc 
-    plot_city_delta_pdf(
+    plot_city_logpdf(
         city_coords,
         obs_ds[hr_var],
         unet_ds_1971[hr_var],
         unet_ds_1771[model_var],
         bicubic_ds[hr_var],
         varname=hr_var,
-        city_name=city_name
-    )
+        city_name=city_name)
