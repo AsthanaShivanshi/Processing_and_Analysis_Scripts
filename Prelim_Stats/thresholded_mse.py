@@ -5,7 +5,7 @@ import config
 import argparse
 import os
 
-parser = argparse.ArgumentParser(description="Thresholded MSE Calculation")
+parser = argparse.ArgumentParser(description="Thresholded MSE Spatial Maps")
 parser.add_argument("--var", type=int, required=True, help="Variable index (0-3)")
 args = parser.parse_args()
 
@@ -37,8 +37,6 @@ bicubic_files = {
 unet_pretrain_ds = xr.open_dataset(unet_pretrain_path)
 unet_train_ds = xr.open_dataset(unet_train_path)
 
-quantiles = list(range(5, 100, 5))
-
 bicubic_ds = xr.open_dataset(bicubic_files[file_var]).sel(time=slice("2011-01-01", "2020-12-31"))
 bicubic = bicubic_ds[file_var].values
 
@@ -48,80 +46,52 @@ target = target_ds_var[file_var].values
 unet_pretrain = unet_pretrain_ds[var].sel(time=slice("2011-01-01", "2020-12-31")).values
 unet_train = unet_train_ds[file_var].sel(time=slice("2011-01-01", "2020-12-31")).values
 
-# Check shapes and NaN counts before flattening
-print("target shape:", target.shape, "NaNs:", np.isnan(target).sum())
-print("bicubic shape:", bicubic.shape, "NaNs:", np.isnan(bicubic).sum())
-print("unet_pretrain shape:", unet_pretrain.shape, "NaNs:", np.isnan(unet_pretrain).sum())
-print("unet_train shape:", unet_train.shape, "NaNs:", np.isnan(unet_train).sum())
+valid_mask = ~np.isnan(target) & ~np.isnan(bicubic) & ~np.isnan(unet_pretrain) & ~np.isnan(unet_train)
+target = np.where(valid_mask, target, np.nan)
+bicubic = np.where(valid_mask, bicubic, np.nan)
+unet_pretrain = np.where(valid_mask, unet_pretrain, np.nan)
+unet_train = np.where(valid_mask, unet_train, np.nan)
 
-# Check if NaN masks are aligned
-print("NaN mask equal (bicubic vs target):", np.array_equal(np.isnan(bicubic), np.isnan(target)))
-print("NaN mask equal (unet_pretrain vs target):", np.array_equal(np.isnan(unet_pretrain), np.isnan(target)))
-print("NaN mask equal (unet_train vs target):", np.array_equal(np.isnan(unet_train), np.isnan(target)))
+quantiles_to_plot = [5, 50, 95, 99]
+thresholds = [np.nanquantile(target, q/100) for q in quantiles_to_plot]
 
-# Check for all-NaN time steps and grid points
-if target.ndim == 3:
-    print("Any all-NaN time steps in target:", np.any(np.all(np.isnan(target), axis=(1,2))))
-    print("Any all-NaN grid points in target:", np.any(np.all(np.isnan(target), axis=0)))
+mse_maps = {
+    "Bicubic": [],
+    "UNet 1771": [],
+    "UNet 1971": []
+}
 
-# Flatten for thresholding
-target_flat = target.flatten()
-bicubic_flat = bicubic.flatten()
-unet_pretrain_flat = unet_pretrain.flatten()
-unet_train_flat = unet_train.flatten()
 
-# Check for all-NaN after flattening
-print("target_flat NaNs:", np.isnan(target_flat).sum(), "/", target_flat.size)
-print("bicubic_flat NaNs:", np.isnan(bicubic_flat).sum(), "/", bicubic_flat.size)
-print("unet_pretrain_flat NaNs:", np.isnan(unet_pretrain_flat).sum(), "/", unet_pretrain_flat.size)
-print("unet_train_flat NaNs:", np.isnan(unet_train_flat).sum(), "/", unet_train_flat.size)
+for thresh in thresholds:
+    mask = (target >= thresh)
+    def mse_map(pred):
+        squared_error = (pred - target) ** 2
+        squared_error_masked = np.where(mask, squared_error, np.nan)
+        return np.nanmean(squared_error_masked, axis=0)
+    mse_maps["Bicubic"].append(mse_map(bicubic))
+    mse_maps["UNet 1771"].append(mse_map(unet_pretrain))
+    mse_maps["UNet 1971"].append(mse_map(unet_train))
 
-print("target_flat min/max:", np.nanmin(target_flat), np.nanmax(target_flat))
-print("bicubic_flat min/max:", np.nanmin(bicubic_flat), np.nanmax(bicubic_flat))
-print("unet_pretrain_flat min/max:", np.nanmin(unet_pretrain_flat), np.nanmax(unet_pretrain_flat))
-print("unet_train_flat min/max:", np.nanmin(unet_train_flat), np.nanmax(unet_train_flat))
+all_maps = np.array(
+    [mse_maps[m][i] for i in range(len(quantiles_to_plot)) for m in ["Bicubic", "UNet 1771", "UNet 1971"]]
+)
+vmin = np.nanmin(all_maps)
+vmax = np.nanmax(all_maps)
 
-print("Sample (bicubic - target):", (bicubic_flat - target_flat)[:10])
-print("Sample (unet_pretrain - target):", (unet_pretrain_flat - target_flat)[:10])
-print("Sample (unet_train - target):", (unet_train_flat - target_flat)[:10])
+fig, axes = plt.subplots(4, 3, figsize=(15, 18), constrained_layout=True)
+method_names = ["Bicubic", "UNet 1771", "UNet 1971"]
 
-thresholds = [np.quantile(target_flat[~np.isnan(target_flat)], q/100) for q in quantiles]
-print("Thresholds:", thresholds)
+for i, q in enumerate(quantiles_to_plot):
+    for j, method in enumerate(method_names):
+        ax = axes[i, j]
+        im = ax.imshow(mse_maps[method][i], origin='lower', aspect='auto', cmap='coolwarm', vmin=vmin, vmax=vmax)
+        ax.set_title(f"{method}\n{q}th percentile")
+        ax.set_xticks([])
+        ax.set_yticks([])
 
-def thresholded_mse(pred, target, thresholds, quantiles, label=""):
-    mses = []
-    for q, thresh in zip(quantiles, thresholds):
-        mask = (target >= thresh)
-        valid = mask & ~np.isnan(target) & ~np.isnan(pred)
-        print(f"{label} Quantile {q}: threshold={thresh}, valid points={np.sum(valid)}")
-        if np.sum(valid) == 0:
-            mses.append(np.nan)
-        else:
-            mses.append(np.mean((pred[valid] - target[valid])**2))
-    return mses
+cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.025, pad=0.02)
+cbar.set_label("MSE")
 
-mse_bicubic = thresholded_mse(bicubic_flat, target_flat, thresholds, quantiles, label="Bicubic")
-mse_pretrain = thresholded_mse(unet_pretrain_flat, target_flat, thresholds, quantiles, label="UNet 1771")
-mse_train = thresholded_mse(unet_train_flat, target_flat, thresholds, quantiles, label="UNet 1971")
-
-diffs = np.abs(bicubic_flat - target_flat)
-print("Top 10 largest abs(bicubic - target):", np.sort(diffs)[-10:])
-
-print("First 10 target values:", target_flat[:10])
-print("First 10 bicubic values:", bicubic_flat[:10])
-
-plt.figure(figsize=(10, 5))
-plt.plot(quantiles, mse_bicubic, marker='o', color='blue', label="Bicubic")
-plt.plot(quantiles, mse_pretrain, marker='o', color='red', label="UNet 1771 time series")
-plt.plot(quantiles, mse_train, marker='o', color='green', label="UNet 1971 time series")
-plt.xlabel("Quantile (%)")
-plt.ylabel("Thresholded MSE")
-plt.title(f"Thresholded MSE by Quantile for {var} ({file_var})")
-plt.legend()
-plt.grid(True)
-plt.tight_layout()
-plt.savefig(f"{config.OUTPUTS_DIR}/thresholded_mse_comparison_{var}.png", dpi=1000)
+fig.suptitle(f"Spatial MSE Maps at Selected Quantiles for {var} ({file_var})", fontsize=18)
+plt.savefig(f"{config.OUTPUTS_DIR}/spatial_mse_maps_{var}.png", dpi=300)
 plt.close()
-
-bicubic_ds.close()
-target_ds_var.close()

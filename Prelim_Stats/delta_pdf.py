@@ -68,7 +68,7 @@ def plot_city_delta_pdf(city_coords, obs, unet_1971, unet_1771, unet_combined, b
     obs_series = obs.isel({obs_N_dim: lat_idx, obs_E_dim: lon_idx}).values.flatten()
     unet_series_1971 = unet_1971.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
     unet_series_1771 = unet_1771.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
-    unet_series_combined = unet_combined.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
+    #unet_series_combined = unet_combined.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
     dist_bicubic = np.sqrt((bicubic_lat_grid - city_lat)**2 + (bicubic_lon_grid - city_lon)**2)
     lat_idx_bicubic, lon_idx_bicubic = np.unravel_index(np.argmin(dist_bicubic), dist_bicubic.shape)
     bicubic_series = bicubic.isel({bicubic_N_dim: lat_idx_bicubic, bicubic_E_dim: lon_idx_bicubic}).values.flatten()
@@ -77,20 +77,20 @@ def plot_city_delta_pdf(city_coords, obs, unet_1971, unet_1771, unet_combined, b
     obs_series = obs_series[mask]
     unet_series_1971 = unet_series_1971[mask] if unet_series_1971.shape == obs_series.shape else unet_series_1971[~np.isnan(unet_series_1971)]
     unet_series_1771 = unet_series_1771[mask] if unet_series_1771.shape == obs_series.shape else unet_series_1771[~np.isnan(unet_series_1771)]
-    unet_series_combined = unet_series_combined[mask] if unet_series_combined.shape == obs_series.shape else unet_series_combined[~np.isnan(unet_series_combined)]
+    #unet_series_combined = unet_series_combined[mask] if unet_series_combined.shape == obs_series.shape else unet_series_combined[~np.isnan(unet_series_combined)]
     bicubic_series = bicubic_series[mask] if bicubic_series.shape == obs_series.shape else bicubic_series[~np.isnan(bicubic_series)]
 
     # Computing deltas, model -observations
     delta_bicubic = bicubic_series - obs_series
     delta_unet_1971 = unet_series_1971 - obs_series
     delta_unet_1771 = unet_series_1771 - obs_series
-    delta_unet_combined = unet_series_combined - obs_series
+    #delta_unet_combined = unet_series_combined - obs_series
 
     plt.figure(figsize=(8,6))
     plt.hist(delta_bicubic, bins=50, density=True, histtype="step", linewidth=2, color="green", label="delta Bicubic")
     plt.hist(delta_unet_1971, bins=50, density=True, histtype="step", linewidth=2, color="blue", label="delta UNet 1971-2020")
     plt.hist(delta_unet_1771, bins=50, density=True, histtype="step", linewidth=2, color="red", label="delta UNet 1771-2020")
-    plt.hist(delta_unet_combined, bins=50, density=True, histtype="step", linewidth=2, color="black", label="delta UNet Combined")
+    #plt.hist(delta_unet_combined, bins=50, density=True, histtype="step", linewidth=2, color="black", label="delta UNet Combined")
     plt.axvline(0, color='k', linestyle='--', linewidth=1)
     plt.title(f"{varname} ΔPDF at {city_name} (model - obs, for testing set 2011-2020)")
     plt.xlabel(f"{varname} (Model - Obs)")
