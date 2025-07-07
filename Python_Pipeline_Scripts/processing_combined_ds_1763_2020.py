@@ -8,6 +8,10 @@ import tempfile
 from pyproj import Transformer, datadir
 import time
 
+#No need for chunking with 500 GB RAM. only process one var per node 
+#alternative, command line remapbic in cdo per file, not via a pipeline
+#naN filling was performed simply because xarray interpolation function doesnt handle NaN or work with skipna
+#this pipeline was made to interpolate without cdo because of the sheer size of the datasets, xarray interpolation with nan filling was performed as a result. Faster than OOM kill issues with CDO
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/ "Processing_and_Analysis_Scripts" / "Combined_Dataset"
 OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Combined_Chronological_Dataset"
