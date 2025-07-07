@@ -62,15 +62,16 @@ mse_pretrain = []
 mse_train = []
 
 for thresh in thresholds:
-    mask = target_flat >= thresh
-    if np.sum(mask) == 0:
+    mask = (target_flat >= thresh)
+    valid = mask & ~np.isnan(target_flat) & ~np.isnan(bicubic_flat) & ~np.isnan(unet_pretrain_flat) & ~np.isnan(unet_train_flat)
+    if np.sum(valid) == 0:
         mse_bicubic.append(np.nan)
         mse_pretrain.append(np.nan)
         mse_train.append(np.nan)
         continue
-    mse_bicubic.append(np.mean((bicubic_flat[mask] - target_flat[mask])**2))
-    mse_pretrain.append(np.mean((unet_pretrain_flat[mask] - target_flat[mask])**2))
-    mse_train.append(np.mean((unet_train_flat[mask] - target_flat[mask])**2))
+    mse_bicubic.append(np.mean((bicubic_flat[valid] - target_flat[valid])**2))
+    mse_pretrain.append(np.mean((unet_pretrain_flat[valid] - target_flat[valid])**2))
+    mse_train.append(np.mean((unet_train_flat[valid] - target_flat[valid])**2))
 
 plt.figure(figsize=(10, 5))
 plt.plot(quantiles, mse_bicubic, marker='o', color='blue', label="Bicubic")
