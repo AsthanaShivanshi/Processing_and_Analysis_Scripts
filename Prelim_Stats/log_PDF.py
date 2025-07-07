@@ -6,7 +6,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import xarray as xr
 import numpy as np
-from scipy.stats import norm
+from scipy.stats import gaussian_kde, gamma, norm
 
 BASE_DIR = Path(os.environ.get("BASE_DIR", "/work/FAC/FGSE/IDYST/tbeucler/downscaling/"))
 
@@ -92,12 +92,31 @@ def plot_city_logpdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname, c
         (unet_series_1771, "red", "UNet 1771-2020"),
         (bicubic_series, "orange", "Bicubic baseline"),
     ]:
-        # Fit a normal distribution and use its logpdf
-        mu, std = np.mean(series), np.std(series)
-        logpdf = norm.logpdf(x_grid, loc=mu, scale=std)
-        plt.plot(x_grid, logpdf, color=color, linewidth=2, label=label + " (Normal fit)")
+        if varname.lower().startswith("rhiresd") or varname.lower() == "precip":
+            # Only use positive values for gamma fit
+            series_pos = series[series > 0]
+            if len(series_pos) > 0:
+                # Fit gamma distribution
+                a, loc, scale = gamma.fit(series_pos, floc=0)
+                logpdf = gamma.logpdf(x_grid, a, loc=loc, scale=scale)
+                plt.plot(x_grid, logpdf, color=color, linewidth=2, label=label + " (gamma fit)")
+            # Also plot empirical KDE logPDF for precipitation
+            kde = gaussian_kde(series_pos)
+            pdf = kde(x_grid)
+            logpdf_emp = np.log(np.where(pdf > 0, pdf, 1e-12))
+            plt.plot(x_grid, logpdf_emp, color=color, linewidth=1, linestyle="--", label=label + " (empirical KDE)")
+        else:
+            # For temperature etc, use normal fit
+            mu, std = np.mean(series), np.std(series)
+            logpdf = norm.logpdf(x_grid, loc=mu, scale=std)
+            plt.plot(x_grid, logpdf, color=color, linewidth=2, label=label + " (Normal fit)")
+            # Also plot empirical KDE logPDF
+            kde = gaussian_kde(series)
+            pdf = kde(x_grid)
+            logpdf_emp = np.log(np.where(pdf > 0, pdf, 1e-12))
+            plt.plot(x_grid, logpdf_emp, color=color, linewidth=1, linestyle="--", label=label + " (empirical KDE)")
 
-    plt.title(f"{varname} logPDF (Normal fit) at {city_name} (lat={city_lat:.4f}, lon={city_lon:.4f})")
+    plt.title(f"{varname} logPDF at {city_name} (lat={city_lat:.4f}, lon={city_lon:.4f})")
     plt.xlabel(varname)
     plt.ylabel("log Probability Density")
     plt.legend()
