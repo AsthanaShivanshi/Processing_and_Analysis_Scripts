@@ -63,10 +63,11 @@ def perkins(cdf1, cdf2):  #Sensitive to the shape of the CDFs
 
 #CVM test : does not assume any distribtuion, not senstive to mean or variance 
 
-def plot_city_cdf_and_scores(city_coords, obs, unet_1971, unet_1771, bicubic, varname, city_name="City"):
+def plot_city_cdf_and_scores(city_coords, obs, unet_1971, unet_1771, bicubic, unet_combined, varname, city_name="City"):
     obs_N, obs_E, obs_N_dim, obs_E_dim = get_lat_lon(obs)
     unet_lat, unet_lon, unet_lat_dim, unet_lon_dim = get_lat_lon(unet_1971)
     bicubic_N, bicubic_E, bicubic_N_dim, bicubic_E_dim = get_lat_lon(bicubic)
+    unet_combined_N, unet_combined_E, unet_combined_N_dim, unet_combined_E_dim = get_lat_lon(unet_combined)
 
     obs_E_grid, obs_N_grid = np.meshgrid(obs_E, obs_N)
     obs_lon_grid, obs_lat_grid = swiss_lv95_grid_to_wgs84(obs_E_grid, obs_N_grid)
@@ -85,14 +86,15 @@ def plot_city_cdf_and_scores(city_coords, obs, unet_1971, unet_1771, bicubic, va
     lat_idx_bicubic, lon_idx_bicubic = np.unravel_index(np.argmin(dist_bicubic), dist_bicubic.shape)
     bicubic_series = bicubic.isel({bicubic_N_dim: lat_idx_bicubic, bicubic_E_dim: lon_idx_bicubic}).values.flatten()
 
-    mask = ~np.isnan(obs_series)
+    mask = ~np.isnan(obs_series) & ~np.isnan(unet_series_1971) & ~np.isnan(unet_series_1771) & ~np.isnan(bicubic_series) & ~np.isnan(unet_series_combined)
     obs_series = obs_series[mask]
-    unet_series_1971 = unet_series_1971[mask] if unet_series_1971.shape == obs_series.shape else unet_series_1971[~np.isnan(unet_series_1971)]
-    unet_series_1771 = unet_series_1771[mask] if unet_series_1771.shape == obs_series.shape else unet_series_1771[~np.isnan(unet_series_1771)]
-    bicubic_series = bicubic_series[mask] if bicubic_series.shape == obs_series.shape else bicubic_series[~np.isnan(bicubic_series)]
+    unet_series_1971 = unet_series_1971[mask]
+    unet_series_1771 = unet_series_1771[mask]
+    bicubic_series = bicubic_series[mask]
+    unet_series_combined = unet_series_combined[mask]
 
     # Common x grid for all CDFs
-    all_series = [obs_series, unet_series_1971, unet_series_1771, bicubic_series]
+    all_series = [obs_series, unet_series_1971, unet_series_1771, bicubic_series, unet_series_combined]
     x_grid = np.linspace(np.nanmin(np.concatenate(all_series)), np.nanmax(np.concatenate(all_series)), 300)
 
     cdf_obs = empirical_cdf(obs_series, x_grid)
@@ -110,11 +112,19 @@ def plot_city_cdf_and_scores(city_coords, obs, unet_1971, unet_1771, bicubic, va
     pss_unet_1771 = perkins(cdf_unet_1771, cdf_obs)
     pss_bicubic = perkins(cdf_bicubic, cdf_obs)
 
+
+    #For combined
+    cdf_combined = empirical_cdf(unet_series_combined, x_grid)
+    cvm_combined = cramervonmises_2samp(unet_series_combined, obs_series).statistic
+    pss_combined = perkins(cdf_combined, cdf_obs)
+
     plt.figure(figsize=(8,6))
-    plt.plot(x_grid, cdf_obs, color="green", linewidth=2, label="Obs")
+    plt.plot(x_grid, cdf_obs, color="black", linewidth=2, label="Obs")
     plt.plot(x_grid, cdf_unet_1971, color="blue", linewidth=2, label=f"UNet 1971 (CvM={cvm_unet_1971:.3g}, PSS={pss_unet_1971:.3g})")
     plt.plot(x_grid, cdf_unet_1771, color="red", linewidth=2, label=f"UNet 1771 (CvM={cvm_unet_1771:.3g}, PSS={pss_unet_1771:.3g})")
     plt.plot(x_grid, cdf_bicubic, color="orange", linewidth=2, label=f"Bicubic (CvM={cvm_bicubic:.3g}, PSS={pss_bicubic:.3g})")
+    plt.plot(x_grid, cdf_combined, color="green", linewidth=2, label=f"UNet Combined (CvM={cvm_combined:.3g}, PSS={pss_combined:.3g})")
+    plt.axhline(1, color='gray', linestyle='--', linewidth=1)
     plt.title(f"{varname} CDF at {city_name} (lat={city_lat:.3f}, lon={city_lon:.3f})")
     plt.xlabel(varname)
     plt.ylabel("Cumulative Probability")
@@ -143,6 +153,10 @@ if __name__ == "__main__":
     unet_ds_1771 = xr.open_dataset(
         str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Pretraining_Dataset" / "Pretraining_Dataset_Downscaled_Predictions_2011_2020.nc"),
         chunks={"time": 100})
+    unet_combined = xr.open_dataset(
+    str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Training_Dataset" / "Combined_Dataset_Downscaled_Predictions_2011_2020.nc"),
+    chunks={"time": 100}
+)
 
     bicubic_paths = {
         "RhiresD": BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Chronological_Dataset" / "RhiresD_step3_interp.nc",
@@ -159,5 +173,7 @@ if __name__ == "__main__":
         unet_ds_1971[hr_var],
         unet_ds_1771[model_var],
         bicubic_ds[hr_var],
+        unet_combined[model_var],
         varname=hr_var,
-        city_name=city_name )
+        city_name=city_name
+    )

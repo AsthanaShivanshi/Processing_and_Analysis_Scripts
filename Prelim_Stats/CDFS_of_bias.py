@@ -93,7 +93,7 @@ def plot_city_bias_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname,
     plt.figure(figsize=(8,6))
     plt.plot(x_grid, cdf_unet_1971, color="blue", linewidth=2, label="UNet 1971")
     plt.plot(x_grid, cdf_unet_1771, color="red", linewidth=2, label="UNet 1771")
-    plt.plot(x_grid, cdf_bicubic, color="yellow", linewidth=2, label="Bicubic")
+    plt.plot(x_grid, cdf_bicubic, color="orange", linewidth=2, label="Bicubic")
     #plt.plot(x_grid, cdf_combined, color="green", linewidth=2, label="UNet Combined")
     plt.axhline(1, color='black', linestyle='--', linewidth=1)
     plt.title(f"CDF of Bias (Prediction - Obs) for {varname} at {city_name}\n(lat={city_lat:.3f}, lon={city_lon:.3f})")
