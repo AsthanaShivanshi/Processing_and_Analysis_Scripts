@@ -44,7 +44,7 @@ def swiss_lv95_grid_to_wgs84(E_grid, N_grid):
 def empirical_cdf(series, x_grid):
     return np.array([np.mean(series <= x) for x in x_grid])
 
-def plot_city_bias_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname, city_name="City"):
+def plot_city_bias_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, unet_combined, varname, city_name="City"):
     obs_N, obs_E, obs_N_dim, obs_E_dim = get_lat_lon(obs)
     unet_lat, unet_lon, unet_lat_dim, unet_lon_dim = get_lat_lon(unet_1971)
     bicubic_N, bicubic_E, bicubic_N_dim, bicubic_E_dim = get_lat_lon(bicubic)
@@ -87,7 +87,7 @@ def plot_city_bias_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname,
     bias_unet_1971 = unet_series_1971 - obs_series
     bias_unet_1771 = unet_series_1771 - obs_series
     bias_bicubic = bicubic_series - obs_series
-    #bias_combined = unet_series_combined - obs_series
+    bias_combined = unet_series_combined - obs_series
 
     # Common x grid for all bias CDFs
     all_bias = np.concatenate([bias_unet_1971, bias_unet_1771, bias_bicubic, bias_combined])
