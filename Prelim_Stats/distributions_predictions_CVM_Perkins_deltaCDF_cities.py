@@ -6,10 +6,10 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import xarray as xr
 import numpy as np
+from scipy.stats import cramervonmises_2samp
 
 BASE_DIR = Path(os.environ.get("BASE_DIR", "/work/FAC/FGSE/IDYST/tbeucler/downscaling/"))
 
-# Use the same variable mapping logic as in delta_pdf.py
 VAR_MAP = {
     "precip": {"hr": "RhiresD", "model": "precip"},
     "temp":   {"hr": "TabsD",   "model": "temp"},
@@ -53,7 +53,17 @@ def swiss_lv95_grid_to_wgs84(E_grid, N_grid):
     lat = np.array([float(ll[1]) for ll in lon_lat]).reshape(E_grid.shape)
     return lon, lat
 
-def plot_city_delta_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname, city_name="City"):
+def empirical_cdf(series, x_grid): #CDF empirical
+    return np.array([np.mean(series <= x) for x in x_grid])
+
+def perkins(cdf1, cdf2):  #Sensitive to the shape of the CDFs
+    # Perkins SS: calculated as the mean (min) of two CDFs
+    return np.mean(np.minimum(cdf1, cdf2))
+
+
+#CVM test : does not assume any distribtuion, not senstive to mean or variance 
+
+def plot_city_cdf_and_scores(city_coords, obs, unet_1971, unet_1771, bicubic, varname, city_name="City"):
     obs_N, obs_E, obs_N_dim, obs_E_dim = get_lat_lon(obs)
     unet_lat, unet_lon, unet_lat_dim, unet_lon_dim = get_lat_lon(unet_1971)
     bicubic_N, bicubic_E, bicubic_N_dim, bicubic_E_dim = get_lat_lon(bicubic)
@@ -68,9 +78,6 @@ def plot_city_delta_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname
 
     dist_obs = np.sqrt((obs_lat_grid - city_lat)**2 + (obs_lon_grid - city_lon)**2)
     lat_idx, lon_idx = np.unravel_index(np.argmin(dist_obs), dist_obs.shape)
-    obs_N_val = obs_N[lat_idx]
-    obs_E_val = obs_E[lon_idx]
-
     obs_series = obs.isel({obs_N_dim: lat_idx, obs_E_dim: lon_idx}).values.flatten()
     unet_series_1971 = unet_1971.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
     unet_series_1771 = unet_1771.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
@@ -84,22 +91,36 @@ def plot_city_delta_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, varname
     unet_series_1771 = unet_series_1771[mask] if unet_series_1771.shape == obs_series.shape else unet_series_1771[~np.isnan(unet_series_1771)]
     bicubic_series = bicubic_series[mask] if bicubic_series.shape == obs_series.shape else bicubic_series[~np.isnan(bicubic_series)]
 
-    # Calculate deltas (model - obs)
-    delta_bicubic = bicubic_series - obs_series
-    delta_unet_1971 = unet_series_1971 - obs_series
-    delta_unet_1771 = unet_series_1771 - obs_series
+    # Common x grid for all CDFs
+    all_series = [obs_series, unet_series_1971, unet_series_1771, bicubic_series]
+    x_grid = np.linspace(np.nanmin(np.concatenate(all_series)), np.nanmax(np.concatenate(all_series)), 300)
+
+    cdf_obs = empirical_cdf(obs_series, x_grid)
+    cdf_unet_1971 = empirical_cdf(unet_series_1971, x_grid)
+    cdf_unet_1771 = empirical_cdf(unet_series_1771, x_grid)
+    cdf_bicubic = empirical_cdf(bicubic_series, x_grid)
+
+    # Cramer-von Mises
+    cvm_unet_1971 = cramervonmises_2samp(unet_series_1971, obs_series).statistic
+    cvm_unet_1771 = cramervonmises_2samp(unet_series_1771, obs_series).statistic
+    cvm_bicubic = cramervonmises_2samp(bicubic_series, obs_series).statistic
+
+    # Perkins Skill Score
+    pss_unet_1971 = perkins(cdf_unet_1971, cdf_obs)
+    pss_unet_1771 = perkins(cdf_unet_1771, cdf_obs)
+    pss_bicubic = perkins(cdf_bicubic, cdf_obs)
 
     plt.figure(figsize=(8,6))
-    plt.hist(delta_bicubic, bins=50, density=True, cumulative=True, histtype="step", linewidth=2, color="orange", label="Bicubic baseline delta")
-    plt.hist(delta_unet_1971, bins=50, density=True, cumulative=True, histtype="step", linewidth=2, color="blue", label="UNet 1971-2020 delta")
-    plt.hist(delta_unet_1771, bins=50, density=True, cumulative=True, histtype="step", linewidth=2, color="red", label="UNet 1771-2020 delta")
-    plt.axvline(0, color='k', linestyle='--', linewidth=1)
-    plt.title(f"{varname} ΔCDF at {city_name} (model - obs, lat={city_lat:.4f}, lon={city_lon:.4f})")
-    plt.xlabel(f"{varname} (Model - Obs)")
+    plt.plot(x_grid, cdf_obs, color="green", linewidth=2, label="Obs")
+    plt.plot(x_grid, cdf_unet_1971, color="blue", linewidth=2, label=f"UNet 1971 (CvM={cvm_unet_1971:.3g}, PSS={pss_unet_1971:.3g})")
+    plt.plot(x_grid, cdf_unet_1771, color="red", linewidth=2, label=f"UNet 1771 (CvM={cvm_unet_1771:.3g}, PSS={pss_unet_1771:.3g})")
+    plt.plot(x_grid, cdf_bicubic, color="orange", linewidth=2, label=f"Bicubic (CvM={cvm_bicubic:.3g}, PSS={pss_bicubic:.3g})")
+    plt.title(f"{varname} CDF at {city_name} (lat={city_lat:.3f}, lon={city_lon:.3f})")
+    plt.xlabel(varname)
     plt.ylabel("Cumulative Probability")
     plt.legend()
     plt.tight_layout()
-    output_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Outputs" / f"deltaCDF_{varname}_{city_name}_latlon_distance_UNet_pred.png"
+    output_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Outputs" / f"CDF_{varname}_{city_name}_latlon_distance_UNet_pred.png"
     plt.savefig(str(output_path), dpi=500)
     plt.close()
 
@@ -132,12 +153,11 @@ if __name__ == "__main__":
     bicubic_path = bicubic_paths[hr_var]
     bicubic_ds = xr.open_dataset(str(bicubic_path), chunks={"time": 100}).sel(time=slice("2011-01-01", "2020-12-31"))
 
-    plot_city_delta_cdf(
+    plot_city_cdf_and_scores(
         city_coords,
         obs_ds[hr_var],
         unet_ds_1971[hr_var],
         unet_ds_1771[model_var],
         bicubic_ds[hr_var],
         varname=hr_var,
-        city_name=city_name
-    )
+        city_name=city_name )
