@@ -148,8 +148,8 @@ def plot_city_cdf_and_scores(city_coords, obs, unet_1971, unet_1771, bicubic, un
 
 if __name__ == "__main__":
     idx = int(os.environ.get("SLURM_ARRAY_TASK_ID", 0))
-    city_coords = (47.3769, 8.5417) # Zürich
-    city_name = "Zürich"
+    city_coords = (46.1670, 8.7943)  # Locarno coordinates
+    city_name = "Locarno"
 
     var_keys = list(VAR_MAP.keys())
     var_key = var_keys[idx]
