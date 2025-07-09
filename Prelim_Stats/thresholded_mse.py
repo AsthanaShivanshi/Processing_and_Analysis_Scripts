@@ -56,7 +56,7 @@ unet_train = np.where(valid_mask, unet_train, np.nan)
 unet_combined = np.where(valid_mask, unet_combined, np.nan)
 
 # Quantile thresholds for pooling
-quantiles_to_plot = np.linspace(0, 101, 10) # 0 to 100 percentiles
+quantiles_to_plot = np.arange(0, 101, 10) # 0 to 100 percentiles
 thresholds = [np.nanquantile(target, q/100) for q in quantiles_to_plot]
 
 pooled_mse = {
