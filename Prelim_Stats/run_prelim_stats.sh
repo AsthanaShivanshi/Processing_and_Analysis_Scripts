@@ -12,4 +12,4 @@ module load python
 source environment.sh 
 
 
-python Prelim_Stats/distributions_predictions_CVM_deltaCDF_cities.py #--var $SLURM_ARRAY_TASK_ID
+python Prelim_Stats/Cramer_Von_Mises_Gridded.py #--var $SLURM_ARRAY_TASK_ID
