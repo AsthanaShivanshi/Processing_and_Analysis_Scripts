@@ -65,12 +65,26 @@ bias_maps = {
 }
 
 for q in qvals:
+    if var == "precip":
+        # Remove zeros for quantile calculation only
+        target_masked = np.where(target == 0, np.nan, target)
+        bicubic_masked = np.where(bicubic == 0, np.nan, bicubic)
+        unet_pretrain_masked = np.where(unet_pretrain == 0, np.nan, unet_pretrain)
+        unet_train_masked = np.where(unet_train == 0, np.nan, unet_train)
+        unet_combined_masked = np.where(unet_combined == 0, np.nan, unet_combined)
+    else:
+        target_masked = target
+        bicubic_masked = bicubic
+        unet_pretrain_masked = unet_pretrain
+        unet_train_masked = unet_train
+        unet_combined_masked = unet_combined
+
     # Compute quantile over time axis (axis=0)
-    target_q = np.nanquantile(target, q, axis=0)
-    bicubic_q = np.nanquantile(bicubic, q, axis=0)
-    unet_pretrain_q = np.nanquantile(unet_pretrain, q, axis=0)
-    unet_train_q = np.nanquantile(unet_train, q, axis=0)
-    unet_combined_q = np.nanquantile(unet_combined, q, axis=0)
+    target_q = np.nanquantile(target_masked, q, axis=0)
+    bicubic_q = np.nanquantile(bicubic_masked, q, axis=0)
+    unet_pretrain_q = np.nanquantile(unet_pretrain_masked, q, axis=0)
+    unet_train_q = np.nanquantile(unet_train_masked, q, axis=0)
+    unet_combined_q = np.nanquantile(unet_combined_masked, q, axis=0)
 
     bias_maps["Bicubic"].append(bicubic_q - target_q)
     bias_maps["UNet 1771"].append(unet_pretrain_q - target_q)
@@ -78,20 +92,31 @@ for q in qvals:
     bias_maps["UNet Combined"].append(unet_combined_q - target_q)
 
 # Plotting the spatial quantile bias maps
-all_maps = np.array(
-    [bias_maps[m][i] for i in range(len(quantiles_to_plot)) for m in ["Bicubic", "UNet 1771", "UNet 1971", "UNet Combined"]]
-)
-vmin = np.nanmin(all_maps)
-vmax = np.nanmax(all_maps)
-
 method_names = ["Bicubic", "UNet 1771", "UNet 1971", "UNet Combined"]
-fig, axes = plt.subplots(len(quantiles_to_plot), len(method_names), figsize=(20, 3 * len(quantiles_to_plot)), constrained_layout=True)
+nrows = len(quantiles_to_plot)
+ncols = len(method_names)
 
-for i, q in enumerate(quantiles_to_plot):
-    for j, method in enumerate(method_names):
+all_maps = np.array(
+    [bias_maps[m][i] for m in method_names for i in range(nrows)]
+)
+if var == "precip":
+    vmin, vmax = -10, 10  # Adjust as needed for your precip units
+    cmap = "BrBG"
+else:
+    vmin = np.nanmin(all_maps)
+    vmax = np.nanmax(all_maps)
+    cmap = "RdBu"
+
+fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows), constrained_layout=True)
+
+for j, method in enumerate(method_names):
+    for i, q in enumerate(quantiles_to_plot):
         ax = axes[i, j]
-        im = ax.imshow(bias_maps[method][i], origin='lower', aspect='auto', cmap='viridis', vmin=vmin, vmax=vmax)
-        ax.set_title(f"{method}\n{q}th percentile")
+        im = ax.imshow(bias_maps[method][i], origin='lower', aspect='auto', cmap=cmap, vmin=vmin, vmax=vmax)
+        if i == 0:
+            ax.set_title(method)
+        if j == 0:
+            ax.set_ylabel(f"{q}th percentile")
         ax.set_xticks([])
         ax.set_yticks([])
 
@@ -99,5 +124,5 @@ cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.025, pad=0.0
 cbar.set_label("Quantile Bias (Model - Obs)")
 
 fig.suptitle(f"Spatial Quantile Bias Maps for {var} ({file_var})", fontsize=18)
-plt.savefig(f"{config.OUTPUTS_DIR}/spatial_quantile_bias_maps_{var}.png", dpi=300)
+plt.savefig(f"{config.OUTPUTS_DIR}/spatial_quantile_bias_maps_{var}.png", dpi=1000)
 plt.close()
