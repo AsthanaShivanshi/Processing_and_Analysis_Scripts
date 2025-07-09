@@ -85,7 +85,17 @@ def plot_city_cdf_and_scores(city_coords, obs, unet_1971, unet_1771, bicubic, un
     dist_bicubic = np.sqrt((bicubic_lat_grid - city_lat)**2 + (bicubic_lon_grid - city_lon)**2)
     lat_idx_bicubic, lon_idx_bicubic = np.unravel_index(np.argmin(dist_bicubic), dist_bicubic.shape)
     bicubic_series = bicubic.isel({bicubic_N_dim: lat_idx_bicubic, bicubic_E_dim: lon_idx_bicubic}).values.flatten()
-
+    unet_combined_N, unet_combined_E, unet_combined_N_dim, unet_combined_E_dim = get_lat_lon(unet_combined[model_var])
+    unet_combined_E_grid, unet_combined_N_grid = np.meshgrid(unet_combined_E, unet_combined_N)
+    unet_combined_lon_grid, unet_combined_lat_grid = swiss_lv95_grid_to_wgs84(unet_combined_E_grid, unet_combined_N_grid)
+    dist_combined = np.sqrt((unet_combined_lat_grid - city_lat)**2 + (unet_combined_lon_grid - city_lon)**2)
+    lat_idx_combined, lon_idx_combined = np.unravel_index(np.argmin(dist_combined), dist_combined.shape)
+    unet_series_combined = (
+        unet_combined[model_var]
+        .isel({unet_combined_N_dim: lat_idx_combined, unet_combined_E_dim: lon_idx_combined})
+        .sel(time=slice("2011-01-01", "2020-12-31"))
+        .values.flatten()
+)
     mask = ~np.isnan(obs_series) & ~np.isnan(unet_series_1971) & ~np.isnan(unet_series_1771) & ~np.isnan(bicubic_series) & ~np.isnan(unet_series_combined)
     obs_series = obs_series[mask]
     unet_series_1971 = unet_series_1971[mask]
@@ -107,7 +117,7 @@ def plot_city_cdf_and_scores(city_coords, obs, unet_1971, unet_1771, bicubic, un
     cvm_unet_1771 = cramervonmises_2samp(unet_series_1771, obs_series).statistic
     cvm_bicubic = cramervonmises_2samp(bicubic_series, obs_series).statistic
 
-    # Perkins Skill Score
+    # PSS
     pss_unet_1971 = perkins(cdf_unet_1971, cdf_obs)
     pss_unet_1771 = perkins(cdf_unet_1771, cdf_obs)
     pss_bicubic = perkins(cdf_bicubic, cdf_obs)
@@ -136,7 +146,7 @@ def plot_city_cdf_and_scores(city_coords, obs, unet_1971, unet_1771, bicubic, un
 
 if __name__ == "__main__":
     idx = int(os.environ.get("SLURM_ARRAY_TASK_ID", 0))
-    city_coords = (47.3769, 8.5417) # Example: Zürich
+    city_coords = (47.3769, 8.5417) # Zürich
     city_name = "Zürich"
 
     var_keys = list(VAR_MAP.keys())
@@ -173,7 +183,7 @@ if __name__ == "__main__":
         unet_ds_1971[hr_var],
         unet_ds_1771[model_var],
         bicubic_ds[hr_var],
-        unet_combined[model_var],
+        unet_combined,
         varname=hr_var,
         city_name=city_name
     )
