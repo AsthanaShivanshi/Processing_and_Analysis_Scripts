@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=thresholded_mse
-#SBATCH --output=logs/thresholded_mse%j.out
-#SBATCH --error=logs/thresholded_mse%j.err
+#SBATCH --job-name=Prelim_Stats
+#SBATCH --output=logs/prelim_stats%j.out
+#SBATCH --error=logs/prelim_stats%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=500G
@@ -12,4 +12,4 @@ module load python
 source environment.sh 
 
 
-python Prelim_Stats/thresholded_mse.py #--var $SLURM_ARRAY_TASK_ID
+python Prelim_Stats/CDFS_of_bias.py #--var $SLURM_ARRAY_TASK_ID

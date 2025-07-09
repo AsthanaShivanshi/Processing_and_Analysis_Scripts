@@ -62,8 +62,7 @@ def plot_city_bias_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, unet_com
     obs_series = obs.isel({obs_N_dim: lat_idx, obs_E_dim: lon_idx}).values.flatten()
     unet_series_1971 = unet_1971.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
     unet_series_1771 = unet_1771.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
-    unet_series_combined = unet_combined[model_var].sel(time=slice("2011-01-01", "2020-12-31")).values
-    unet_series_combined = unet_series_combined.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
+    unet_series_combined = unet_combined[model_var].sel(time=slice("2011-01-01", "2020-12-31"), lat=city_lat, lon=city_lon, method="nearest").values.flatten()
 
     dist_bicubic = np.sqrt((bicubic_lat_grid - city_lat)**2 + (bicubic_lon_grid - city_lon)**2)
     lat_idx_bicubic, lon_idx_bicubic = np.unravel_index(np.argmin(dist_bicubic), dist_bicubic.shape)
@@ -132,8 +131,10 @@ if __name__ == "__main__":
     unet_ds_1771 = xr.open_dataset(
         str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Pretraining_Dataset" / "Pretraining_Dataset_Downscaled_Predictions_2011_2020.nc"),
         chunks={"time": 100})
-    unet_combined = xr.open_dataset(str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Training_Dataset" / "Combined_Dataset_Downscaled_Predictions_2011_2020.nc"),chunks={"time": 100})   
-
+    print("unet_ds_1971 variables:", list(unet_ds_1971.data_vars))
+    print("unet_ds_1771 variables:", list(unet_ds_1771.data_vars))
+    unet_combined = xr.open_dataset(str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Combined_Dataset" / "Combined_Dataset_Downscaled_Predictions_2011_2020.nc"),chunks={"time": 100})   
+    print("unet_combined variables:", list(unet_combined.data_vars))
     bicubic_paths = {
         "RhiresD": BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Chronological_Dataset" / "RhiresD_step3_interp.nc",
         "TabsD":   BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Chronological_Dataset" / "TabsD_step3_interp.nc",
