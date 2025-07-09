@@ -9,10 +9,10 @@ import numpy as np
 BASE_DIR = Path(os.environ.get("BASE_DIR", "/work/FAC/FGSE/IDYST/tbeucler/downscaling/"))
 
 VAR_MAP = {
-    "precip": {"hr": "RhiresD", "model": "precip"},
-    "temp":   {"hr": "TabsD",   "model": "temp"},
-    "tmin":   {"hr": "TminD",   "model": "tmin"},
-    "tmax":   {"hr": "TmaxD",   "model": "tmax"},
+    "precip": {"hr": "RhiresD", "model": "precip"|"precip"},
+    "temp":   {"hr": "TabsD",   "model": "temp"|"tas"},
+    "tmin":   {"hr": "TminD",   "model": "tmin"|"tmind"},
+    "tmax":   {"hr": "TmaxD",   "model": "tmax"|"tmaxd"},
 }
 
 def get_lat_lon(da):
@@ -44,16 +44,20 @@ def swiss_lv95_grid_to_wgs84(E_grid, N_grid):
 def empirical_cdf(series, x_grid):
     return np.array([np.mean(series <= x) for x in x_grid])
 
-def plot_city_bias_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, unet_combined, varname, city_name="City"):
+def plot_city_bias_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, unet_combined, model_var, varname, city_name="City"):
     obs_N, obs_E, obs_N_dim, obs_E_dim = get_lat_lon(obs)
     unet_lat, unet_lon, unet_lat_dim, unet_lon_dim = get_lat_lon(unet_1971)
     bicubic_N, bicubic_E, bicubic_N_dim, bicubic_E_dim = get_lat_lon(bicubic)
+    combined_N, combined_E, combined_N_dim, combined_E_dim = get_lat_lon(unet_combined)
 
     obs_E_grid, obs_N_grid = np.meshgrid(obs_E, obs_N)
     obs_lon_grid, obs_lat_grid = swiss_lv95_grid_to_wgs84(obs_E_grid, obs_N_grid)
 
     bicubic_E_grid, bicubic_N_grid = np.meshgrid(bicubic_E, bicubic_N)
     bicubic_lon_grid, bicubic_lat_grid = swiss_lv95_grid_to_wgs84(bicubic_E_grid, bicubic_N_grid)
+
+    combined_E_grid, combined_N_grid = np.meshgrid(combined_E, combined_N)
+    combined_lon_grid, combined_lat_grid = swiss_lv95_grid_to_wgs84(combined_E_grid, combined_N_grid)
 
     city_lat, city_lon = city_coords
 
@@ -62,11 +66,20 @@ def plot_city_bias_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, unet_com
     obs_series = obs.isel({obs_N_dim: lat_idx, obs_E_dim: lon_idx}).values.flatten()
     unet_series_1971 = unet_1971.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
     unet_series_1771 = unet_1771.sel(lat=city_lat, lon=city_lon, method="nearest").values.flatten()
-    unet_series_combined = unet_combined[model_var].sel(time=slice("2011-01-01", "2020-12-31"), lat=city_lat, lon=city_lon, method="nearest").values.flatten()
 
     dist_bicubic = np.sqrt((bicubic_lat_grid - city_lat)**2 + (bicubic_lon_grid - city_lon)**2)
     lat_idx_bicubic, lon_idx_bicubic = np.unravel_index(np.argmin(dist_bicubic), dist_bicubic.shape)
     bicubic_series = bicubic.isel({bicubic_N_dim: lat_idx_bicubic, bicubic_E_dim: lon_idx_bicubic}).values.flatten()
+
+    # For unet_combined, find closest N/E grid point to city_lat/city_lon
+    dist_combined = np.sqrt((combined_lat_grid - city_lat)**2 + (combined_lon_grid - city_lon)**2)
+    lat_idx_combined, lon_idx_combined = np.unravel_index(np.argmin(dist_combined), dist_combined.shape)
+    unet_series_combined = (
+    unet_combined[model_var]
+    .isel({combined_N_dim: lat_idx_combined, combined_E_dim: lon_idx_combined})
+    .sel(time=slice("2011-01-01", "2020-12-31"))
+    .values.flatten()
+)
 
     mask = (
         ~np.isnan(obs_series)
@@ -109,12 +122,13 @@ def plot_city_bias_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, unet_com
     plt.legend()
     plt.tight_layout()
     output_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Outputs" / f"CDF_of_bias_{varname}_{city_name}_latlon_distance_UNet_pred.png"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(str(output_path), dpi=500)
     plt.close()
 
 if __name__ == "__main__":
     idx = int(os.environ.get("SLURM_ARRAY_TASK_ID", 0))
-    city_coords = (47.3769, 8.5417) # Example: Zürich
+    city_coords = (47.3769, 8.5417)
     city_name = "Zürich"
 
     var_keys = list(VAR_MAP.keys())
@@ -150,6 +164,7 @@ if __name__ == "__main__":
         unet_ds_1971[hr_var],
         unet_ds_1771[model_var],
         bicubic_ds[hr_var],
-        unet_combined[model_var],
+        unet_combined,
+        model_var,
         varname=hr_var,
         city_name=city_name)
