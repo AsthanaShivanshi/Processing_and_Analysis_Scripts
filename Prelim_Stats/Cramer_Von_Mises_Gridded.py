@@ -22,12 +22,12 @@ bicubic_paths = {
     "TmaxD":   BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Chronological_Dataset" / "TmaxD_step3_interp.nc",
 }
 
-def compute_gridwise_cvm(obs, baselines):
-    #[time, latlon] or [time, N, E]
+def compute_gridwise_cvm(obs, baselines, alpha=0.05):
     dims = [d for d in obs.dims if d != "time"]
     shape = obs.isel(time=0).shape
     coords = {d: obs.coords[d] for d in dims}
     cvm_maps = {name: np.full(shape, np.nan) for name in baselines}
+    pval_maps = {name: np.full(shape, np.nan) for name in baselines}
     for idx in np.ndindex(shape):
         obs_series = obs.isel({dims[0]: idx[0], dims[1]: idx[1]}).values
         if np.all(np.isnan(obs_series)):
@@ -38,29 +38,48 @@ def compute_gridwise_cvm(obs, baselines):
             if np.sum(mask) < 10:
                 continue
             try:
-                stat = cramervonmises_2samp(obs_series[mask], base_series[mask]).statistic
+                res = cramervonmises_2samp(obs_series[mask], base_series[mask])
+                stat = res.statistic
+                pval = res.pvalue
             except Exception:
                 stat = np.nan
+                pval = np.nan
             cvm_maps[name][idx] = stat
-    return {name: xr.DataArray(arr, coords=coords, dims=dims, name=f"cvm_{name}") for name, arr in cvm_maps.items()}
+            pval_maps[name][idx] = pval
+    return (
+        {name: xr.DataArray(arr, coords=coords, dims=dims, name=f"cvm_{name}") for name, arr in cvm_maps.items()},
+        {name: xr.DataArray(arr, coords=coords, dims=dims, name=f"pval_{name}") for name, arr in pval_maps.items()}
+    )
 
-
-def plot_cvm_maps(cvm_maps, var, file_var, save_path):
+def plot_cvm_maps_with_pval(cvm_maps, pval_maps, var, file_var, save_path, alpha=0.05):
     method_names = list(cvm_maps.keys())
     ncols = len(method_names)
     fig, axes = plt.subplots(1, ncols, figsize=(5*ncols, 4), constrained_layout=True)
     if ncols == 1:
         axes = [axes]
-    vmin, vmax = 0, np.nanmax([np.nanmax(cvm_maps[m].values) for m in method_names])
+    vmax = np.nanmax([np.nanmax(cvm_maps[m].where(pval_maps[m] >= alpha).values) for m in method_names])
+    vmin = 0
     for j, method in enumerate(method_names):
         ax = axes[j]
-        im = ax.imshow(cvm_maps[method].values, origin='lower', aspect='auto', cmap="viridis", vmin=vmin, vmax=vmax)
+        stat = cvm_maps[method].values
+        pval = pval_maps[method].values
+        # red where p < 0.05 ( less than 95 percent confidence)
+        cmap = plt.get_cmap("viridis")
+        normed_stat = (stat - vmin) / (vmax - vmin) if vmax > vmin else stat
+        rgb = cmap(normed_stat)
+        # Set red where p < 0.05
+        red_mask = (pval < 0.05) & ~np.isnan(pval)
+        rgb[red_mask] = [1, 0, 0, 1]  
+        nan_mask = np.isnan(stat)
+        rgb[nan_mask] = [1, 1, 1, 0]
+        ax.imshow(rgb, origin='lower', aspect='auto')
         ax.set_title(method)
         ax.set_xticks([])
         ax.set_yticks([])
-    cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.025, pad=0.02)
+    sm = plt.cm.ScalarMappable(cmap="viridis", norm=plt.Normalize(vmin=vmin, vmax=vmax))
+    cbar = fig.colorbar(sm, ax=axes, orientation='vertical', fraction=0.025, pad=0.02)
     cbar.set_label("Cramer-von Mises Statistic")
-    fig.suptitle(f"Spatial CvM Maps for {var} ({file_var})", fontsize=18)
+    fig.suptitle(f"Spatial CvM Maps for {var} ({file_var})\nRed: p < {alpha}", fontsize=18)
     plt.savefig(save_path, dpi=1000)
     plt.close()
 
@@ -98,6 +117,8 @@ if __name__ == "__main__":
             "UNet Combined": unet_comb,
             "Bicubic": bicubic,
         }
-        cvm_maps = compute_gridwise_cvm(obs, baselines)
-        plot_cvm_maps(cvm_maps, var_key, hr_var, OUTPUTS_DIR / f"spatial_cvm_maps_{var_key}.png")
+
+        #alpha rejection level : 95 percent confidence
+        cvm_maps, pval_maps = compute_gridwise_cvm(obs, baselines)
+        plot_cvm_maps_with_pval(cvm_maps, pval_maps, var_key, hr_var, OUTPUTS_DIR / f"spatial_cvm_maps_{var_key}.png")
         print(f"Done {var_key}")
