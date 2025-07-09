@@ -1,3 +1,5 @@
+#Bias of CDFs, CVM and Perkins SS for the different non generative baselines 
+
 import os
 import subprocess
 from pathlib import Path

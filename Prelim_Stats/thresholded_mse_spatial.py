@@ -3,9 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import config
 import argparse
-import os
 
-parser = argparse.ArgumentParser(description="Thresholded MSE Spatial Maps and Quantile MSE Curves")
+parser = argparse.ArgumentParser(description="Spatially Pooled MSE vs Quantile Threshold")
 parser.add_argument("--var", type=int, required=True, help="Variable index (0-3)")
 args = parser.parse_args()
 
@@ -56,11 +55,11 @@ unet_pretrain = np.where(valid_mask, unet_pretrain, np.nan)
 unet_train = np.where(valid_mask, unet_train, np.nan)
 unet_combined = np.where(valid_mask, unet_combined, np.nan)
 
-# Spatial MSE maps at selected quantiles---
-quantiles_to_plot = [5, 95, 99]
+# Quantile thresholds for pooling
+quantiles_to_plot = np.linspace(0, 100, 10) # 0 to 99 percentiles
 thresholds = [np.nanquantile(target, q/100) for q in quantiles_to_plot]
 
-mse_maps = {
+pooled_mse = {
     "Bicubic": [],
     "UNet 1771": [],
     "UNet 1971": [],
@@ -69,37 +68,23 @@ mse_maps = {
 
 for thresh in thresholds:
     mask = (target <= thresh)
-    def mse_map(pred):
+    def pooled(pred):
         squared_error = (pred - target) ** 2
         squared_error_masked = np.where(mask, squared_error, np.nan)
-        return np.nanmean(squared_error_masked, axis=0)
-    mse_maps["Bicubic"].append(mse_map(bicubic))
-    mse_maps["UNet 1771"].append(mse_map(unet_pretrain))
-    mse_maps["UNet 1971"].append(mse_map(unet_train))
-    mse_maps["UNet Combined"].append(mse_map(unet_combined))
+        return np.nanmean(squared_error_masked)
+    pooled_mse["Bicubic"].append(pooled(bicubic))
+    pooled_mse["UNet 1771"].append(pooled(unet_pretrain))
+    pooled_mse["UNet 1971"].append(pooled(unet_train))
+    pooled_mse["UNet Combined"].append(pooled(unet_combined))
 
-# Plotting the spatial MSE maps at selected quantiles
-all_maps = np.array(
-    [mse_maps[m][i] for i in range(len(quantiles_to_plot)) for m in ["Bicubic", "UNet 1771", "UNet 1971", "UNet Combined"]]
-)
-vmin = np.nanmin(all_maps)
-vmax = np.nanmax(all_maps)
-
-method_names = ["Bicubic", "UNet 1771", "UNet 1971", "UNet Combined dataset"]
-fig, axes = plt.subplots(len(quantiles_to_plot), len(method_names), figsize=(20, 12), constrained_layout=True)
-
-
-for i, q in enumerate(quantiles_to_plot):
-    for j, method in enumerate(method_names):
-        ax = axes[i, j]
-        im = ax.imshow(mse_maps[method][i], origin='lower', aspect='auto', cmap='RdYlBu', vmin=vmin, vmax=vmax)
-        ax.set_title(f"{method}\n{q}th percentile")
-        ax.set_xticks([])
-        ax.set_yticks([])
-
-cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.025, pad=0.02)
-cbar.set_label("MSE")
-
-fig.suptitle(f"Spatial MSE Maps at Selected Quantiles for {var} ({file_var})", fontsize=18)
-plt.savefig(f"{config.OUTPUTS_DIR}/spatial_mse_maps_{var}.png", dpi=300)
+plt.figure(figsize=(8,6))
+for method, color in zip(pooled_mse.keys(), ["orange", "red", "blue", "green"]):
+    plt.plot(quantiles_to_plot, pooled_mse[method], label=method, color=color, linewidth=2)
+plt.xlabel("Quantile threshold (%)")
+plt.ylabel("Spatially pooled MSE")
+plt.title(f"Spatially pooled MSE vs Quantile threshold for {var} ({file_var})")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.savefig(f"{config.OUTPUTS_DIR}/spatially_pooled_mse_vs_quantile_{var}.png", dpi=300)
 plt.close()

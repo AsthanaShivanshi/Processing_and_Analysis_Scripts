@@ -100,12 +100,13 @@ all_maps = np.array(
     [bias_maps[m][i] for m in method_names for i in range(nrows)]
 )
 if var == "precip":
-    vmin, vmax = -10, 10  # Adjust as needed for your precip units
+    vmin, vmax = -20, 20  # Adjust as needed for your precip units
     cmap = "BrBG"
+    title_label= "Non Zero Precipitation Quantile Bias (Model - Obs)"
 else:
-    vmin = np.nanmin(all_maps)
-    vmax = np.nanmax(all_maps)
-    cmap = "RdBu"
+    vmin = -10
+    vmax = 10
+    cmap = "coolwarm"
 
 fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows), constrained_layout=True)
 
