@@ -4,27 +4,23 @@ import argparse
 from pathlib import Path
 import numpy as np
 import xarray as xr
-import tempfile
 from pyproj import Transformer, datadir
 import time
 
-#No need for chunking with 500 GB RAM. only process one var per node 
-#alternative, command line remapbic in cdo per file, not via a pipeline
-#naN filling was performed simply because xarray interpolation function doesnt handle NaN or work with skipna
-#this pipeline was made to interpolate without cdo because of the sheer size of the datasets, xarray interpolation with nan filling was performed as a result. Faster than OOM kill issues with CDO
 BASE_DIR = Path(os.environ["BASE_DIR"])
-INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/ "Processing_and_Analysis_Scripts" / "Combined_Dataset"
+INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Combined_Dataset"
 OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Combined_Chronological_Dataset"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/share/proj"
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
-def get_chunk_dict(ds):
-    return {}
+def save(ds, path):
+    encoding = {v: {"_FillValue": np.nan} for v in ds.data_vars}
+    ds.to_netcdf(str(path), encoding=encoding)
+    ds.close()
 
-def promote_latlon(infile, varname):
-    ds = xr.open_dataset(infile)
+def promote_latlon(ds, varname):
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
     def transform_coords(e, n):
         lon, lat = transformer.transform(e, n)
@@ -82,51 +78,45 @@ def conservative_coarsening(ds, varname, block_size):
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
     return ds_out
 
-def save(ds, path):
-    encoding = {}
-    for v in ds.data_vars:
-        encoding[v] = {"_FillValue": np.nan}
-    ds.to_netcdf(str(path), encoding=encoding)
-    ds.close()
-
 def interp_xarray_cubic(coarse_ds, highres_ds, varname, out_path):
-    # Prepare 1D lat/lon from coarse grid
     lat_1d = coarse_ds['lat'][:, 0].values if coarse_ds['lat'].ndim == 2 else coarse_ds['lat'].values
     lon_1d = coarse_ds['lon'][0, :].values if coarse_ds['lon'].ndim == 2 else coarse_ds['lon'].values
-
-    # Drop 2D lat/lon if present, assign 1D
     ds_lowres = coarse_ds.drop_vars([v for v in ['lat', 'lon'] if v in coarse_ds])
     ds_lowres = ds_lowres.rename({'N': 'lat', 'E': 'lon'})
     ds_lowres = ds_lowres.assign_coords(lat=lat_1d, lon=lon_1d)
-
-    # Target grid
     new_lat = highres_ds['lat']
     new_lon = highres_ds['lon']
-
-    # Fill NaNs with -999 before interpolation
     ds_lowres_filled = ds_lowres.fillna(-999)
-
-    # Interpolate
     ds_interpolated = ds_lowres_filled.interp(
         lat=new_lat, lon=new_lon, method='cubic',
         kwargs={'bounds_error': False, 'fill_value': -999}
     )
-
-    # Restore NaNs
     for v in ds_interpolated.data_vars:
         arr = ds_interpolated[v]
         arr = arr.where(~np.isclose(arr, -999, atol=1e-2), np.nan)
-
-        # CLEANING STEP: Retain only valid grid cells from highres_ds for each timestep
         mask = ~np.isnan(highres_ds[varname])
-        # Broadcast mask to arr shape if needed
         arr = arr.where(mask)
-
         ds_interpolated[v] = arr
-
     ds_interpolated.to_netcdf(str(out_path), encoding={v: {"_FillValue": np.nan} for v in ds_interpolated.data_vars})
     ds_interpolated.close()
-    
+
+def process_split(ds, varname, split_name, block_size=11):
+    # Promote lat/lon if needed
+    if 'lat' not in ds.coords or 'lon' not in ds.coords:
+        ds = promote_latlon(ds, varname)
+    ds = ds.sortby("time")
+    # Save promoted
+    step1_path = OUTPUT_DIR / f"{varname}_{split_name}_step1_latlon.nc"
+    save(ds, step1_path)
+    # Coarsen
+    coarse_ds = conservative_coarsening(ds, varname, block_size=block_size)
+    step2_path = OUTPUT_DIR / f"{varname}_{split_name}_step2_coarse.nc"
+    save(coarse_ds, step2_path)
+    # Interpolate
+    step3_path = OUTPUT_DIR / f"{varname}_{split_name}_step3_interp.nc"
+    interp_xarray_cubic(coarse_ds, ds, varname, step3_path)
+    interp_ds = xr.open_dataset(step3_path)
+    return ds, interp_ds
 
 def main():
     parser = argparse.ArgumentParser()
@@ -135,94 +125,83 @@ def main():
     varname = args.var
 
     dataset_map = {
-        "precip": ("precip_merged.nc", "minmax", "precip"),
-        "temp":   ("temp_merged.nc", "standard", "temp"),
-        "tmin":   ("tmin_merged.nc", "standard", "tmin"),
-        "tmax":   ("tmax_merged.nc", "standard", "tmax"),
+        "precip": {
+            "train": "precip_train_merged.nc",
+            "val":   "precip_val_merged.nc",
+            "test_file": "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/RhiresD_1971_2023.nc",
+            "varname_in_file": "precip",
+            "scale_type": "minmax"
+        },
+        "temp": {
+            "train": "temp_train_merged.nc",
+            "val":   "temp_val_merged.nc",
+            "test_file": "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TabsD_1971_2023.nc",
+            "varname_in_file": "temp",
+            "scale_type": "standard"
+        },
+        "tmin": {
+            "train": "tmin_train_merged.nc",
+            "val":   "tmin_val_merged.nc",
+            "test_file": "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TminD_1971_2023.nc",
+            "varname_in_file": "tmin",
+            "scale_type": "standard"
+        },
+        "tmax": {
+            "train": "tmax_train_merged.nc",
+            "val":   "tmax_val_merged.nc",
+            "test_file": "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TmaxD_1971_2023.nc",
+            "varname_in_file": "tmax",
+            "scale_type": "standard"
+        }
     }
 
     if varname not in dataset_map:
         raise ValueError(f"[ERROR] Unknown variable '{varname}'. Choose from {list(dataset_map.keys())}.")
 
-    infile, scale_type, varname_in_file = dataset_map[varname]
-    infile_path = INPUT_DIR / infile
-    if not infile_path.exists():
-        raise FileNotFoundError(f"[ERROR] Input file does not exist: {infile_path}")
+    info = dataset_map[varname]
+    infile_train = INPUT_DIR / info["train"]
+    infile_val = INPUT_DIR / info["val"]
+    infile_test = Path(info["test_file"])
+    varname_in_file = info["varname_in_file"]
+    scale_type = info["scale_type"]
 
     t0 = time.time()
-    step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
-    if not step1_path.exists():
-        print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
-        ds = xr.open_dataset(infile_path)
-        if 'lat' in ds.coords and 'lon' in ds.coords:
-            pass
-        elif 'lat' in ds.data_vars and 'lon' in ds.data_vars:
-            ds = ds.set_coords(['lat', 'lon'])
-        else:
-            ds.close()
-            ds = promote_latlon(infile_path, varname_in_file)
-        save(ds, step1_path)
-    print(f"[TIMER] Step 1 done in {time.time() - t0:.1f} s")
 
-    t1 = time.time()
-    highres_ds = xr.open_dataset(step1_path)
-    step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
-    if not step2_path.exists():
-        coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
-        save(coarse_ds, step2_path)
-    print(f"[TIMER] Step 2 done in {time.time() - t1:.1f} s")
-    coarse_ds = xr.open_dataset(step2_path)
+    ds_train = xr.open_dataset(infile_train)
+    ds_val = xr.open_dataset(infile_val)
+    ds_test_full = xr.open_dataset(infile_test)
+    ds_test = ds_test_full.sel(time=slice("2011-01-01", "2020-12-31"))
 
-    t2 = time.time()
-    step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
-    if not step3_path.exists():
-        interp_xarray_cubic(coarse_ds, highres_ds, varname_in_file, step3_path)
-    print(f"[TIMER] Step 3 done in {time.time() - t2:.1f} s")
-    interp_ds = xr.open_dataset(step3_path)
+    # processing each split
+    highres_train, upsampled_train = process_split(ds_train, varname_in_file, "train")
+    highres_val, upsampled_val = process_split(ds_val, varname_in_file, "val")
+    highres_test, upsampled_test = process_split(ds_test, varname_in_file, "test")
 
-    # Chron split: 1771–1980 train, 1981–2010 val, 2011–2020 test
-    highres_ds = highres_ds.sortby("time")
-    interp_ds = interp_ds.sortby("time")
-    highres = highres_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
-    upsampled = interp_ds[varname_in_file].sel(time=slice("1771-01-01", "2020-12-31"))
-
-    x_train = upsampled.sel(time=slice("1771-01-01", "1980-12-31"))
-    y_train = highres.sel(time=slice("1771-01-01", "1980-12-31"))
-    x_val   = upsampled.sel(time=slice("1981-01-01", "2010-12-31"))
-    y_val   = highres.sel(time=slice("1981-01-01", "2010-12-31"))
-    x_test  = upsampled.sel(time=slice("2011-01-01", "2020-12-31"))
-    y_test  = highres.sel(time=slice("2011-01-01", "2020-12-31"))
-
-    # Scaling params
+    y_train = highres_train[varname_in_file]
     stats = {}
     stats['mean'] = float(y_train.mean().values)
     stats['std'] = float(y_train.std().values)
     stats['min'] = float(y_train.min().values)
     stats['max'] = float(y_train.max().values)
 
-    if scale_type == "standard":
-        x_train_scaled = (x_train - stats['mean']) / stats['std']
-        x_val_scaled = (x_val - stats['mean']) / stats['std']
-        y_train_scaled = (y_train - stats['mean']) / stats['std']
-        y_val_scaled = (y_val - stats['mean']) / stats['std']
-        x_test_scaled = (x_test - stats['mean']) / stats['std']
-        y_test_scaled = (y_test - stats['mean']) / stats['std']
-    elif scale_type == "minmax":
-        x_train_scaled = (x_train - stats['min']) / (stats['max'] - stats['min'])
-        x_val_scaled = (x_val - stats['min']) / (stats['max'] - stats['min'])
-        y_train_scaled = (y_train - stats['min']) / (stats['max'] - stats['min'])
-        y_val_scaled = (y_val - stats['min']) / (stats['max'] - stats['min'])
-        x_test_scaled = (x_test - stats['min']) / (stats['max'] - stats['min'])
-        y_test_scaled = (y_test - stats['min']) / (stats['max'] - stats['min'])
-    else:
-        raise ValueError(f"Unknown scale_type: {scale_type}")
+    def scale(arr, stats, scale_type):
+        if scale_type == "standard":
+            return (arr - stats['mean']) / stats['std']
+        elif scale_type == "minmax":
+            return (arr - stats['min']) / (stats['max'] - stats['min'])
+        else:
+            raise ValueError(f"Unknown scale_type: {scale_type}")
 
-    save(x_train_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_train_chronological_scaled.nc")
-    save(y_train_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_train_chronological_scaled.nc")
-    save(x_val_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_val_chronological_scaled.nc")
-    save(y_val_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_val_chronological_scaled.nc")
-    save(x_test_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_test_chronological_scaled.nc")
-    save(y_test_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_test_chronological_scaled.nc")
+    # Save scaled outputs
+    for split, upsampled, highres in [
+        ("train", upsampled_train, highres_train),
+        ("val", upsampled_val, highres_val),
+        ("test", upsampled_test, highres_test)
+    ]:
+        x_scaled = scale(upsampled[varname_in_file], stats, scale_type)
+        y_scaled = scale(highres[varname_in_file], stats, scale_type)
+        save(x_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_{split}_chronological_scaled.nc")
+        save(y_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_{split}_chronological_scaled.nc")
 
     with open(OUTPUT_DIR / f"combined_{varname}_scaling_params_chronological.json", "w") as f:
         json.dump(stats, f, indent=2)

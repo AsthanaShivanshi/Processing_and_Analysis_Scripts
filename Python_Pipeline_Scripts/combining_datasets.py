@@ -55,7 +55,7 @@ for coord in ["lat", "lon"]:
 
 # Train split
 ds_1971_train = ds_1971.sel(time=slice("1971-01-01", "2000-12-31"))
-ds_1763_train = ds_1763.sel(time=slice("1771-01-01", "1780-12-31"))
+ds_1763_train = ds_1763.sel(time=slice("1771-01-01", "1980-12-31"))
 ds_train = xr.concat([ds_1763_train, ds_1971_train], dim="time")
 
 # Validation split
