@@ -63,7 +63,6 @@ ds_1971_val = ds_1971.sel(time=slice("2001-01-01", "2010-12-31"))
 ds_1763_val = ds_1763.sel(time=slice("1981-01-01", "2010-12-31"))
 ds_val = xr.concat([ds_1763_val, ds_1971_val], dim="time")
 
-# Fix coordinates if needed
 for ds_merged in [ds_train, ds_val]:
     for coord in ["lat", "lon"]:
         if coord in ds_merged and "time" in ds_merged[coord].dims:
@@ -89,7 +88,6 @@ ds_val.to_netcdf(
 )
 print("Train and validation merged files saved.")
 
-# Freeing resources
 ds_1763.close()
 ds_1971.close()
 ds_train.close()

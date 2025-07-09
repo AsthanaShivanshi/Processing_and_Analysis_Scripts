@@ -95,13 +95,12 @@ def plot_city_bias_cdf(city_coords, obs, unet_1971, unet_1771, bicubic, unet_com
     bicubic_series = bicubic_series[mask]
     unet_series_combined = unet_series_combined[mask]
 
-    # Calculate bias (prediction - observation) for each model
+    # Bias (all models)
     bias_unet_1971 = unet_series_1971 - obs_series
     bias_unet_1771 = unet_series_1771 - obs_series
     bias_bicubic = bicubic_series - obs_series
     bias_combined = unet_series_combined - obs_series
 
-    # Common x grid for all bias CDFs
     all_bias = np.concatenate([bias_unet_1971, bias_unet_1771, bias_bicubic, bias_combined])
     x_grid = np.linspace(np.nanmin(all_bias), np.nanmax(all_bias), 300)
 
