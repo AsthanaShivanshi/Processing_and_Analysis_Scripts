@@ -10,6 +10,7 @@ import xarray as xr
 import numpy as np
 from scipy.stats import cramervonmises_2samp
 
+
 BASE_DIR = Path(os.environ.get("BASE_DIR", "/work/FAC/FGSE/IDYST/tbeucler/downscaling/"))
 
 VAR_MAP = {
@@ -57,10 +58,6 @@ def swiss_lv95_grid_to_wgs84(E_grid, N_grid):
 
 def empirical_cdf(series, x_grid): #CDF empirical
     return np.array([np.mean(series <= x) for x in x_grid])
-
-def perkins(cdf1, cdf2):  #Sensitive to the shape of the CDFs
-    # Perkins SS: calculated as the mean (min) of two CDFs
-    return np.mean(np.minimum(cdf1, cdf2))
 
 
 #CVM test : does not assume any distribtuion, not senstive to mean or variance 
@@ -119,23 +116,17 @@ def plot_city_cdf_and_scores(city_coords, obs, unet_1971, unet_1771, bicubic, un
     cvm_unet_1771 = cramervonmises_2samp(unet_series_1771, obs_series).statistic
     cvm_bicubic = cramervonmises_2samp(bicubic_series, obs_series).statistic
 
-    # PSS
-    pss_unet_1971 = perkins(cdf_unet_1971, cdf_obs)
-    pss_unet_1771 = perkins(cdf_unet_1771, cdf_obs)
-    pss_bicubic = perkins(cdf_bicubic, cdf_obs)
-
 
     #For combined
     cdf_combined = empirical_cdf(unet_series_combined, x_grid)
     cvm_combined = cramervonmises_2samp(unet_series_combined, obs_series).statistic
-    pss_combined = perkins(cdf_combined, cdf_obs)
 
     plt.figure(figsize=(8,6))
     plt.plot(x_grid, cdf_obs, color="black", linewidth=2, label="Obs")
-    plt.plot(x_grid, cdf_unet_1971, color="blue", linewidth=2, label=f"UNet 1971 (CvM={cvm_unet_1971:.3g}, PSS={pss_unet_1971:.3g})")
-    plt.plot(x_grid, cdf_unet_1771, color="red", linewidth=2, label=f"UNet 1771 (CvM={cvm_unet_1771:.3g}, PSS={pss_unet_1771:.3g})")
-    plt.plot(x_grid, cdf_bicubic, color="orange", linewidth=2, label=f"Bicubic (CvM={cvm_bicubic:.3g}, PSS={pss_bicubic:.3g})")
-    plt.plot(x_grid, cdf_combined, color="green", linewidth=2, label=f"UNet Combined (CvM={cvm_combined:.3g}, PSS={pss_combined:.3g})")
+    plt.plot(x_grid, cdf_unet_1971, color="blue", linewidth=2, label=f"UNet 1971 (CvM={cvm_unet_1971:.4g})")
+    plt.plot(x_grid, cdf_unet_1771, color="red", linewidth=2, label=f"UNet 1771 (CvM={cvm_unet_1771:.4g})")
+    plt.plot(x_grid, cdf_bicubic, color="orange", linewidth=2, label=f"Bicubic (CvM={cvm_bicubic:.4g})")
+    plt.plot(x_grid, cdf_combined, color="green", linewidth=2, label=f"UNet Combined (CvM={cvm_combined:.4g})")
     plt.axhline(1, color='gray', linestyle='--', linewidth=1)
     plt.title(f"{varname} CDF at {city_name} (lat={city_lat:.3f}, lon={city_lon:.3f})")
     plt.xlabel(varname)
@@ -143,7 +134,7 @@ def plot_city_cdf_and_scores(city_coords, obs, unet_1971, unet_1771, bicubic, un
     plt.legend()
     plt.tight_layout()
     output_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Outputs" / f"CDF_{varname}_{city_name}_latlon_distance_UNet_pred.png"
-    plt.savefig(str(output_path), dpi=500)
+    plt.savefig(str(output_path), dpi=1000)
     plt.close()
 
 if __name__ == "__main__":
