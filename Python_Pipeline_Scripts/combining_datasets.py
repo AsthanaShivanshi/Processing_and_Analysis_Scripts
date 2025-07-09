@@ -49,30 +49,48 @@ for coord in ["lat", "lon"]:
     if coord in ds_1971 and coord not in ds_1971.coords:
         ds_1971 = ds_1971.set_coords(coord)
 
-ds_merged = xr.concat([ds_1763, ds_1971], dim="time")
 
-for coord in ["lat", "lon"]:
-    if coord in ds_merged and "time" in ds_merged[coord].dims:
-        ds_merged[coord] = ds_merged[coord].isel(time=0)
+# 1971-2000 (train), 2001-2010 (val) from ds_1971
+# 1771-1980 (train), 1981-2010 (val) from ds_1763
 
-ds_merged[std_var].attrs["coordinates"] = "lat lon"
-if "coordinates" in ds_merged[std_var].encoding:
-    del ds_merged[std_var].encoding["coordinates"]
+# Train split
+ds_1971_train = ds_1971.sel(time=slice("1971-01-01", "2000-12-31"))
+ds_1763_train = ds_1763.sel(time=slice("1771-01-01", "1780-12-31"))
+ds_train = xr.concat([ds_1763_train, ds_1971_train], dim="time")
 
-if "N" in ds_merged:
-    ds_merged["N"].attrs["units"] = "meters"
-if "E" in ds_merged:
-    ds_merged["E"].attrs["units"] = "meters"
+# Validation split
+ds_1971_val = ds_1971.sel(time=slice("2001-01-01", "2010-12-31"))
+ds_1763_val = ds_1763.sel(time=slice("1981-01-01", "2010-12-31"))
+ds_val = xr.concat([ds_1763_val, ds_1971_val], dim="time")
 
-print(f"{std_var} merged dimensions: {ds_merged.dims}")
+# Fix coordinates if needed
+for ds_merged in [ds_train, ds_val]:
+    for coord in ["lat", "lon"]:
+        if coord in ds_merged and "time" in ds_merged[coord].dims:
+            ds_merged[coord] = ds_merged[coord].isel(time=0)
+    ds_merged[std_var].attrs["coordinates"] = "lat lon"
+    if "coordinates" in ds_merged[std_var].encoding:
+        del ds_merged[std_var].encoding["coordinates"]
+    if "N" in ds_merged:
+        ds_merged["N"].attrs["units"] = "meters"
+    if "E" in ds_merged:
+        ds_merged["E"].attrs["units"] = "meters"
 
-ds_merged.to_netcdf(
-    combined_out / f"{std_var}_merged.nc",
+print(f"{std_var} train split dimensions: {ds_train.dims}")
+print(f"{std_var} validation split dimensions: {ds_val.dims}")
+
+ds_train.to_netcdf(
+    combined_out / f"{std_var}_train_merged.nc",
     engine="netcdf4"
 )
-print("Merged file saved.")
+ds_val.to_netcdf(
+    combined_out / f"{std_var}_val_merged.nc",
+    engine="netcdf4"
+)
+print("Train and validation merged files saved.")
 
-#freeing resources
+# Freeing resources
 ds_1763.close()
 ds_1971.close()
-ds_merged.close()
+ds_train.close()
+ds_val.close()
