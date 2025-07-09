@@ -12,4 +12,4 @@ module load python
 source environment.sh 
 
 
-python Prelim_Stats/thresholded_mse.py --var $SLURM_ARRAY_TASK_ID
+python Prelim_Stats/thresholded_mse_spatial.py --var $SLURM_ARRAY_TASK_ID

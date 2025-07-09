@@ -76,6 +76,7 @@ for thresh in thresholds:
     mse_maps["Bicubic"].append(mse_map(bicubic))
     mse_maps["UNet 1771"].append(mse_map(unet_pretrain))
     mse_maps["UNet 1971"].append(mse_map(unet_train))
+    mse_maps["UNet Combined"].append(mse_map(unet_combined))
 
 all_maps = np.array(
     [mse_maps[m][i] for i in range(len(quantiles_to_plot)) for m in ["Bicubic", "UNet 1771", "UNet 1971", "UNet Combined"]]
