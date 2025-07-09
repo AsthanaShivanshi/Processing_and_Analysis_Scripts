@@ -90,7 +90,7 @@ fig, axes = plt.subplots(len(quantiles_to_plot), len(method_names), figsize=(20,
 for i, q in enumerate(quantiles_to_plot):
     for j, method in enumerate(method_names):
         ax = axes[i, j]
-        im = ax.imshow(bias_maps[method][i], origin='lower', aspect='auto', cmap='coolwarm', vmin=vmin, vmax=vmax)
+        im = ax.imshow(bias_maps[method][i], origin='lower', aspect='auto', cmap='viridis', vmin=vmin, vmax=vmax)
         ax.set_title(f"{method}\n{q}th percentile")
         ax.set_xticks([])
         ax.set_yticks([])
