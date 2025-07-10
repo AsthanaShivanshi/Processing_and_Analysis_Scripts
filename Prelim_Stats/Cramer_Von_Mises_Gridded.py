@@ -28,6 +28,8 @@ def compute_gridwise_cvm(obs, baselines, alpha=0.05):
     coords = {d: obs.coords[d] for d in dims}
     cvm_maps = {name: np.full(shape, np.nan) for name in baselines}
     pval_maps = {name: np.full(shape, np.nan) for name in baselines}
+    print("Spatial dims used:", dims)
+    print("Shape:", np.shape)
     for idx in np.ndindex(shape):
         obs_series = obs.isel({dims[0]: idx[0], dims[1]: idx[1]}).values
         if np.all(np.isnan(obs_series)):
@@ -52,11 +54,12 @@ def compute_gridwise_cvm(obs, baselines, alpha=0.05):
     )
 
 def ensure_latlon(da):
-    # If dims are N/E, rename to lat/lon
+    # Only rename if needed and avoid conflicts
+    dims = list(da.dims)
     rename_dict = {}
-    if 'N' in da.dims:
+    if 'N' in dims and 'lat' not in dims:
         rename_dict['N'] = 'lat'
-    if 'E' in da.dims:
+    if 'E' in dims and 'lon' not in dims:
         rename_dict['E'] = 'lon'
     if rename_dict:
         da = da.rename(rename_dict)
@@ -115,12 +118,26 @@ if __name__ == "__main__":
         )
         bicubic_path = bicubic_paths[hr_var]
         bicubic_ds = xr.open_dataset(str(bicubic_path), chunks={"time": 100}).sel(time=slice("2011-01-01", "2020-12-31"))
+        
+        #For debugging
+        print("obs_ds dims:", obs_ds[hr_var].dims)
+        print("unet_1971 dims:", unet_ds_1971[hr_var].dims)
+        print("unet_1771 dims:", unet_ds_1771[model_var].dims)
+        print("unet_comb dims:", unet_combined[model_var].dims)
+        print("bicubic dims:", bicubic_ds[hr_var].dims)
+
 
         obs = ensure_latlon(obs_ds[hr_var])
-        unet_1971 = ensure_latlon(unet_ds_1971[hr_var])
-        unet_1771 = ensure_latlon(unet_ds_1771[model_var])
-        unet_comb = ensure_latlon(unet_combined[model_var])
         bicubic = ensure_latlon(bicubic_ds[hr_var])
+        unet_1971 = unet_ds_1971[hr_var]
+        unet_1771 = unet_ds_1771[model_var]
+        unet_comb = unet_combined[model_var]
+
+        print("obs dims after ensure_latlon:", obs.dims)
+        print("unet_1971 dims after ensure_latlon:", unet_1971.dims)
+        print("unet_1771 dims after ensure_latlon:", unet_1771.dims)
+        print("unet_comb dims after ensure_latlon:", unet_comb.dims)
+        print("bicubic dims after ensure_latlon:", bicubic.dims)
 
         baselines = {
             "UNet 1971": unet_1971,
