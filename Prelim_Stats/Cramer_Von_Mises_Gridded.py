@@ -56,6 +56,11 @@ def compute_gridwise_cvm(obs, baselines, alpha=0.05):
 def ensure_latlon(da):
     # Only rename if needed and avoid conflicts
     dims = list(da.dims)
+    # Drop conflicting coordinates if present
+    if 'N' in dims and 'lat' in da.coords:
+        da = da.drop_vars('lat')
+    if 'E' in dims and 'lon' in da.coords:
+        da = da.drop_vars('lon')
     rename_dict = {}
     if 'N' in dims and 'lat' not in dims:
         rename_dict['N'] = 'lat'

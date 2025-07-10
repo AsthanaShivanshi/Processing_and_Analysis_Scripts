@@ -15,6 +15,13 @@ proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downsca
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
+VAR_RENAME_MAP = {
+    "RhiresD": "precip",
+    "TabsD": "temp",
+    "TminD": "tmin",
+    "TmaxD": "tmax"
+}
+
 def save(ds, path):
     encoding = {v: {"_FillValue": np.nan} for v in ds.data_vars}
     ds.to_netcdf(str(path), encoding=encoding)
@@ -100,6 +107,12 @@ def interp_xarray_cubic(coarse_ds, highres_ds, varname, out_path):
     ds_interpolated.to_netcdf(str(out_path), encoding={v: {"_FillValue": np.nan} for v in ds_interpolated.data_vars})
     ds_interpolated.close()
 
+def rename_to_standard(ds):
+    # Rename RhiresD, TabsD, TminD, TmaxD to precip, temp, tmin, tmax if present
+    rename_dict = {k: v for k, v in VAR_RENAME_MAP.items() if k in ds.data_vars}
+    ds = ds.rename(rename_dict)
+    return ds
+
 def process_split(ds, varname, split_name, block_size=11):
     # Promote lat/lon if needed
     if 'lat' not in ds.coords or 'lon' not in ds.coords:
@@ -170,6 +183,7 @@ def main():
     ds_train = xr.open_dataset(infile_train)
     ds_val = xr.open_dataset(infile_val)
     ds_test_full = xr.open_dataset(infile_test)
+    ds_test_full = rename_to_standard(ds_test_full)
     ds_test = ds_test_full.sel(time=slice("2011-01-01", "2020-12-31"))
 
     # processing each split
