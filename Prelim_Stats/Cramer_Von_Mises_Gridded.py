@@ -51,6 +51,17 @@ def compute_gridwise_cvm(obs, baselines, alpha=0.05):
         {name: xr.DataArray(arr, coords=coords, dims=dims, name=f"pval_{name}") for name, arr in pval_maps.items()}
     )
 
+def ensure_latlon(da):
+    # If dims are N/E, rename to lat/lon
+    rename_dict = {}
+    if 'N' in da.dims:
+        rename_dict['N'] = 'lat'
+    if 'E' in da.dims:
+        rename_dict['E'] = 'lon'
+    if rename_dict:
+        da = da.rename(rename_dict)
+    return da
+
 def plot_cvm_maps_with_pval(cvm_maps, pval_maps, var, file_var, save_path, alpha=0.05):
     method_names = list(cvm_maps.keys())
     ncols = len(method_names)
@@ -105,11 +116,11 @@ if __name__ == "__main__":
         bicubic_path = bicubic_paths[hr_var]
         bicubic_ds = xr.open_dataset(str(bicubic_path), chunks={"time": 100}).sel(time=slice("2011-01-01", "2020-12-31"))
 
-        obs = obs_ds[hr_var]
-        unet_1971 = unet_ds_1971[hr_var]
-        unet_1771 = unet_ds_1771[model_var]
-        unet_comb = unet_combined[model_var]
-        bicubic = bicubic_ds[hr_var]
+        obs = ensure_latlon(obs_ds[hr_var])
+        unet_1971 = ensure_latlon(unet_ds_1971[hr_var])
+        unet_1771 = ensure_latlon(unet_ds_1771[model_var])
+        unet_comb = ensure_latlon(unet_combined[model_var])
+        bicubic = ensure_latlon(bicubic_ds[hr_var])
 
         baselines = {
             "UNet 1971": unet_1971,
