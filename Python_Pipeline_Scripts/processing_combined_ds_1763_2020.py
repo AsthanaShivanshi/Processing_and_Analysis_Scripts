@@ -113,17 +113,27 @@ def rename_to_standard(ds):
     return ds
 
 def process_split(ds, varname, split_name, block_size=11):
+    # Promote lat/lon if needed
     if 'lat' not in ds.coords or 'lon' not in ds.coords:
         ds = promote_latlon(ds, varname)
     ds = ds.sortby("time")
     step1_path = OUTPUT_DIR / f"{varname}_{split_name}_step1_latlon.nc"
-    save(ds, step1_path)
+    if step1_path.exists():
+        ds = xr.open_dataset(step1_path)
+    else:
+        save(ds, step1_path)
     coarse_ds = conservative_coarsening(ds, varname, block_size=block_size)
     step2_path = OUTPUT_DIR / f"{varname}_{split_name}_step2_coarse.nc"
-    save(coarse_ds, step2_path)
+    if step2_path.exists():
+        coarse_ds = xr.open_dataset(step2_path)
+    else:
+        save(coarse_ds, step2_path)
     step3_path = OUTPUT_DIR / f"{varname}_{split_name}_step3_interp.nc"
-    interp_xarray_cubic(coarse_ds, ds, varname, step3_path)
-    interp_ds = xr.open_dataset(step3_path)
+    if step3_path.exists():
+        interp_ds = xr.open_dataset(step3_path)
+    else:
+        interp_xarray_cubic(coarse_ds, ds, varname, step3_path)
+        interp_ds = xr.open_dataset(step3_path)
     return ds, interp_ds
 
 def main():
@@ -215,15 +225,19 @@ def main():
         ("val", upsampled_val, highres_val),
         ("test", upsampled_test, highres_test)
     ]:
-        x_scaled = scale(upsampled[varname_in_file], stats, scale_type)
-        y_scaled = scale(highres[varname_in_file], stats, scale_type)
-        save(x_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_input_{split}_chronological_scaled.nc")
-        save(y_scaled.to_dataset(name=varname_in_file), OUTPUT_DIR / f"combined_{varname}_target_{split}_chronological_scaled.nc")
+        x_path = OUTPUT_DIR / f"combined_{varname}_input_{split}_chronological_scaled.nc"
+        y_path = OUTPUT_DIR / f"combined_{varname}_target_{split}_chronological_scaled.nc"
+        if not x_path.exists():
+            x_scaled = scale(upsampled[varname_in_file], stats, scale_type)
+            save(x_scaled.to_dataset(name=varname_in_file), x_path)
+        if not y_path.exists():
+            y_scaled = scale(highres[varname_in_file], stats, scale_type)
+            save(y_scaled.to_dataset(name=varname_in_file), y_path)
 
-    with open(OUTPUT_DIR / f"combined_{varname}_scaling_params_chronological.json", "w") as f:
-        json.dump(stats, f, indent=2)
-
-    print(f"All steps done in {time.time() - t0:.1f} s")
+    json_path = OUTPUT_DIR / f"combined_{varname}_scaling_params_chronological.json"
+    if not json_path.exists():
+        with open(json_path, "w") as f:
+            json.dump(stats, f, indent=2)
 
 if __name__ == "__main__":
     main()
