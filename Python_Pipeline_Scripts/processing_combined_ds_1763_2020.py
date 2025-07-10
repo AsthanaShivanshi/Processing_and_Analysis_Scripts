@@ -108,24 +108,19 @@ def interp_xarray_cubic(coarse_ds, highres_ds, varname, out_path):
     ds_interpolated.close()
 
 def rename_to_standard(ds):
-    # Rename RhiresD, TabsD, TminD, TmaxD to precip, temp, tmin, tmax if present
     rename_dict = {k: v for k, v in VAR_RENAME_MAP.items() if k in ds.data_vars}
     ds = ds.rename(rename_dict)
     return ds
 
 def process_split(ds, varname, split_name, block_size=11):
-    # Promote lat/lon if needed
     if 'lat' not in ds.coords or 'lon' not in ds.coords:
         ds = promote_latlon(ds, varname)
     ds = ds.sortby("time")
-    # Save promoted
     step1_path = OUTPUT_DIR / f"{varname}_{split_name}_step1_latlon.nc"
     save(ds, step1_path)
-    # Coarsen
     coarse_ds = conservative_coarsening(ds, varname, block_size=block_size)
     step2_path = OUTPUT_DIR / f"{varname}_{split_name}_step2_coarse.nc"
     save(coarse_ds, step2_path)
-    # Interpolate
     step3_path = OUTPUT_DIR / f"{varname}_{split_name}_step3_interp.nc"
     interp_xarray_cubic(coarse_ds, ds, varname, step3_path)
     interp_ds = xr.open_dataset(step3_path)
@@ -192,11 +187,20 @@ def main():
     highres_test, upsampled_test = process_split(ds_test, varname_in_file, "test")
 
     y_train = highres_train[varname_in_file]
-    stats = {}
-    stats['mean'] = float(y_train.mean().values)
-    stats['std'] = float(y_train.std().values)
-    stats['min'] = float(y_train.min().values)
-    stats['max'] = float(y_train.max().values)
+
+    # Only use train target for scaling params
+    if scale_type == "minmax":
+        stats = {
+            "min": float(y_train.min().values),
+            "max": float(y_train.max().values)
+        }
+    elif scale_type == "standard":
+        stats = {
+            "mean": float(y_train.mean().values),
+            "std": float(y_train.std().values)
+        }
+    else:
+        raise ValueError(f"Unknown scale_type: {scale_type}")
 
     def scale(arr, stats, scale_type):
         if scale_type == "standard":
@@ -206,7 +210,6 @@ def main():
         else:
             raise ValueError(f"Unknown scale_type: {scale_type}")
 
-    # Save scaled outputs
     for split, upsampled, highres in [
         ("train", upsampled_train, highres_train),
         ("val", upsampled_val, highres_val),
