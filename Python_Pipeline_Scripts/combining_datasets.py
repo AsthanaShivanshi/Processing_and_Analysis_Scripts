@@ -27,7 +27,7 @@ orig_1971 = [k for k, v in var_map_1971.items() if v == std_var][0]
 file_1763 = out_1763 / f"{orig_1763}_1763_2020.nc"
 file_1971 = out_1971 / f"{orig_1971}_1971_2023.nc"
 
-chunk_size = 300
+chunk_size = 500
 
 ds_1763 = xr.open_dataset(file_1763, chunks={"time": chunk_size})
 if orig_1763 == "precip":
