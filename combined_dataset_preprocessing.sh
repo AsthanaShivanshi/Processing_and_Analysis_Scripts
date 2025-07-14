@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=500G
 #SBATCH --time=3-00:00:00
-#SBATCH --array=0-1
+#SBATCH --array=2-3
 
 source sasthana/Downscaling/Processing_and_Analysis_Scripts/environment.sh
 module load cdo
