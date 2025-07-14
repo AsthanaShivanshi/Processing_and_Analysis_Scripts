@@ -11,7 +11,7 @@
 source sasthana/Downscaling/Processing_and_Analysis_Scripts/environment.sh
 export PROJ_LIB="$ENVIRONMENT/share/proj"
 
-for idx in 2 3; do 
+for idx in 3; do 
     echo "Processing variable index $idx"
     python /work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/combining_datasets.py $idx
 done
