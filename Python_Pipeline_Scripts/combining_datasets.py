@@ -5,15 +5,18 @@ import sys
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 
-var_list = ["precip", "temp", "tmin", "tmax"]
+#var_list = ["precip", "temp", "tmin", "tmax"]
+var_list = ["tmin", "tmax"]  # Only process tmax,tmin for now
 if len(sys.argv) > 1:
     idx = int(sys.argv[1])
     var_to_process = var_list[idx]
 else:
-    raise ValueError("Index for variable to process: missing (between 0-3)")
+    raise ValueError("Index for variable to process: missing")
 
-var_map_1763 = {"precip": "precip", "temp": "temp", "tmin": "tmin", "tmax": "tmax"}
-var_map_1971 = {"RhiresD": "precip", "TabsD": "temp", "TminD": "tmin", "TmaxD": "tmax"}
+#var_map_1763 = {"precip": "precip", "temp": "temp", "tmin": "tmin", "tmax": "tmax"}
+#var_map_1971 = {"RhiresD": "precip", "TabsD": "temp", "TminD": "tmin", "TmaxD": "tmax"}
+var_map_1763 = {"tmin": "tmin", "tmax": "tmax"}
+var_map_1971 = {"TminD": "tmin", "TmaxD": "tmax"}
 
 out_1971 = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "data_1971_2023" / "HR_files_full"
 out_1763 = BASE_DIR / "raw_data" / "Reconstruction_UniBern_1763_2020"
@@ -30,13 +33,13 @@ file_1971 = out_1971 / f"{orig_1971}_1971_2023.nc"
 chunk_size = 500
 
 ds_1763 = xr.open_dataset(file_1763, chunks={"time": chunk_size})
-if orig_1763 == "precip":
-    ds_1763["precip"] = xr.where(ds_1763["precip"] < 0, 0, ds_1763["precip"])
+#if orig_1763 == "precip":
+    #ds_1763["precip"] = xr.where(ds_1763["precip"] < 0, 0, ds_1763["precip"])
 ds_1763 = ds_1763.rename({orig_1763: std_var})
 
 ds_1971 = xr.open_dataset(file_1971, chunks={"time": chunk_size})
-if orig_1971 == "RhiresD":
-    ds_1971["RhiresD"] = xr.where(ds_1971["RhiresD"] < 0, 0, ds_1971["RhiresD"])
+#if orig_1971 == "RhiresD":
+    #ds_1971["RhiresD"] = xr.where(ds_1971["RhiresD"] < 0, 0, ds_1971["RhiresD"])
 ds_1971 = ds_1971.rename({orig_1971: std_var})
 
 vars_to_keep = [std_var, "lat", "lon", "time", "E", "N"]
@@ -80,13 +83,11 @@ print(f"{std_var} validation split dimensions: {ds_val.dims}")
 
 ds_train.to_netcdf(
     combined_out / f"{std_var}_train_merged.nc",
-    engine="netcdf4",
-    compute=True
+    engine="netcdf4"
 )
 ds_val.to_netcdf(
     combined_out / f"{std_var}_val_merged.nc",
-    engine="netcdf4",
-    compute=True
+    engine="netcdf4"
 )
 print("Train and validation merged files saved.")
 
