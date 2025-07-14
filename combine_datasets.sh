@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=combine_tmin_tmax
+#SBATCH --job-name=tmin_tmax_combination
 #SBATCH --chdir=/work/FAC/FGSE/IDYST/tbeucler/downscaling
 #SBATCH --output=sasthana/Downscaling/Processing_and_Analysis_Scripts/logs/combine_tmin_tmax_%j.log
 #SBATCH --error=sasthana/Downscaling/Processing_and_Analysis_Scripts/logs/combine_tmin_tmax_%j.log

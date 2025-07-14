@@ -51,7 +51,7 @@ for coord in ["lat", "lon"]:
 
 
 # 1971-2000 (train), 2001-2010 (val) from ds_1971
-# 1771-1980 (train), 1981-2010 (val) from ds_1763
+# 1771-2000 (train), 2001-2010 (val) from ds_1763
 
 # Train split
 ds_1971_train = ds_1971.sel(time=slice("1971-01-01", "2000-12-31"))
