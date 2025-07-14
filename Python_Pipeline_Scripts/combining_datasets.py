@@ -80,11 +80,13 @@ print(f"{std_var} validation split dimensions: {ds_val.dims}")
 
 ds_train.to_netcdf(
     combined_out / f"{std_var}_train_merged.nc",
-    engine="netcdf4"
+    engine="netcdf4",
+    compute=True
 )
 ds_val.to_netcdf(
     combined_out / f"{std_var}_val_merged.nc",
-    engine="netcdf4"
+    engine="netcdf4",
+    compute=True
 )
 print("Train and validation merged files saved.")
 
