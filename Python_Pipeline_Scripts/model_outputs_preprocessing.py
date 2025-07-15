@@ -2,36 +2,27 @@
 import os
 import subprocess
 import config
+import xarray as xr
 
-CH_BOX = (5.8, 10.6, 45.7, 47.9) 
+CH_BOX = (5.8, 10.6, 45.7, 47.9)
 
-def cdo_remapbic(source, target, outname):
-    if not (os.path.exists(source) and os.path.exists(target)):
-        print(f"Missing input: {source} or {target}")
-        return
-    cmd = [
-        "cdo", f"remapbic,{target}", source, outname
+def process_file(source, target, outname, oldvar, newvar):
+    cdo_cmd = [
+        "cdo",
+        f"sellonlatbox,{CH_BOX[0]},{CH_BOX[1]},{CH_BOX[2]},{CH_BOX[3]}",
+        f"-remapbic,{target}",
+        source,
+        outname
     ]
-    print("Running:", " ".join(cmd))
-    subprocess.run(cmd, check=True)
-    print(f"Saved: {outname}")
+    print("Running:", " ".join(cdo_cmd))
+    subprocess.run(cdo_cmd, check=True)
+    print(f"Remapped and cropped: {outname}")
 
-def cdo_sellonlatbox(ncfile, bbox, outname):
-    lon1, lon2, lat1, lat2 = bbox
-    cmd = [
-        "cdo", f"sellonlatbox,{lon1},{lon2},{lat1},{lat2}", ncfile, outname
-    ]
-    print("Cropping to CH:", " ".join(cmd))
-    subprocess.run(cmd, check=True)
-    print(f"Cropped: {outname}")
-
-def ncrename_var(ncfile, oldvar, newvar):
-    cmd = [
-        "ncrename", f"-v{oldvar},{newvar}", ncfile
-    ]
-    print("Renaming var:", " ".join(cmd))
-    subprocess.run(cmd, check=True)
-    print(f"Renamed {oldvar} to {newvar} in {ncfile}")
+    ds = xr.open_dataset(outname)
+    ds = ds.rename({oldvar: newvar})
+    ds.to_netcdf(outname, mode="w")
+    ds.close()
+    print(f"Renamed {oldvar} to {newvar} in {outname}")
 
 pairs = [
     (
@@ -61,7 +52,4 @@ pairs = [
 ]
 
 for src, tgt, out, oldvar, newvar in pairs:
-    tmp_cropped = out.replace(".nc", "_cropped.nc")
-    cdo_remapbic(src, tgt, out)
-    cdo_sellonlatbox(out, CH_BOX, tmp_cropped)
-    ncrename_var(tmp_cropped, oldvar, newvar)
+    process_file(src, tgt, out, oldvar, newvar)
