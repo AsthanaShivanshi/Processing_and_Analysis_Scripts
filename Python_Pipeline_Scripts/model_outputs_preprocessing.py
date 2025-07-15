@@ -18,11 +18,19 @@ def process_file(source, target, outname, oldvar, newvar):
     subprocess.run(cdo_cmd, check=True)
     print(f"Remapped and cropped: {outname}")
 
+    if os.path.exists(outname):
+        try:
+            os.remove(outname)
+        except PermissionError:
+            print(f"Permission denied: cannot remove {outname}")
+            return
+
     ds = xr.open_dataset(outname)
     ds = ds.rename({oldvar: newvar})
     ds.to_netcdf(outname, mode="w")
     ds.close()
     print(f"Renamed {oldvar} to {newvar} in {outname}")
+
 
 pairs = [
     (
