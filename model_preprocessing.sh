@@ -11,4 +11,4 @@
 source sasthana/Downscaling/Processing_and_Analysis_Scripts/environment.sh
 export PROJ_LIB="$ENVIRONMENT/share/proj"
 
-python /work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/model_outputs_processing.py
+python /work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/model_outputs_preprocessing.py
