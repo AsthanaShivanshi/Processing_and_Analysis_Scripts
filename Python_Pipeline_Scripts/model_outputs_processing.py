@@ -1,49 +1,54 @@
 #!/usr/bin/env python3
-import xarray as xr
 import os
-import config  # Contains file paths
+import subprocess
+import config
 
-def MO_process(source, target, outname, varname):
+def cdo_remapbic(source, target, outname):
     if not (os.path.exists(source) and os.path.exists(target)):
         print(f"Missing input: {source} or {target}")
         return
-
-    ds_source = xr.open_dataset(source)
-    ds_target = xr.open_dataset(target)
-
-    # Get variable from source and target
-    src_var = ds_source[varname]
-    tgt_var = list(ds_target.data_vars)[0]  # assumes only one variable in target
-    tgt_lat = ds_target['lat']
-    tgt_lon = ds_target['lon']
-
-    # Interpolate source to target grid
-    src_interp = src_var.interp(
-        lat=tgt_lat, lon=tgt_lon, method="cubic"
-    )
-
-    # Mask output where target is NaN
-    mask = ~xr.ufuncs.isnan(ds_target[tgt_var])
-    src_interp = src_interp.where(mask)
-
-    # Save to file
-    src_interp.to_netcdf(outname)
+    cmd = [
+        "cdo", f"remapbic,{target}", source, outname
+    ]
+    print("Running:", " ".join(cmd))
+    subprocess.run(cmd, check=True)
     print(f"Saved: {outname}")
+
+def ncrename_var(ncfile, oldvar, newvar):
+    cmd = [
+        "ncrename", f"-v{oldvar},{newvar}", ncfile
+    ]
+    print("Renaming variable:", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+    print(f"Renamed {oldvar} to {newvar} in {ncfile}")
 
 file_pairs = [
     (
         f"{config.MODELS_DIR}/pr_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
         f"{config.DATASETS_PRETRAINING_DIR}/precip_step2_coarse.nc",
-        f"{config.MODELS_DIR}/pr_r01_cropped.nc",
-        "pr"
+        f"{config.MODELS_DIR}/pr_r01_coarsed_notmasked.nc",
+        "pr", "precip"
     ),
     (
         f"{config.MODELS_DIR}/tas_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
         f"{config.DATASETS_PRETRAINING_DIR}/temp_step2_coarse.nc",
-        f"{config.MODELS_DIR}/tas_r01_cropped.nc",
-        "tas"
+        f"{config.MODELS_DIR}/tas_r01_coarsed_notmasked.nc",
+        "tas", "temp"
     ),
+    (
+        f"{config.MODELS_DIR}/tasmax_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
+        f"{config.DATASETS_PRETRAINING_DIR}/tmax_step2_coarse.nc",
+        f"{config.MODELS_DIR}/tmax_r01_coarsed_notmasked.nc",
+        "tasmax", "tmax"
+    ),
+    (
+        f"{config.MODELS_DIR}/tasmin_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
+        f"{config.DATASETS_PRETRAINING_DIR}/tmin_step2_coarse.nc",
+        f"{config.MODELS_DIR}/tmin_r01_coarsed_notmasked.nc",
+        "tasmin", "tmin"
+    )
 ]
 
-for src, tgt, out, var in file_pairs:
-    MO_process(src, tgt, out, var)
+for src, tgt, out, oldvar, newvar in file_pairs:
+    cdo_remapbic(src, tgt, out)
+    ncrename_var(out, oldvar, newvar)
