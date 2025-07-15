@@ -7,7 +7,7 @@ import config #For file paths (HIDDEN)
 def MO_process(source, target, outname):
     interp_file = outname.replace('.nc', '_interp.nc')
     cmd_interp = [
-        "cdo", f"remapbic,{target}", source, interp_file
+        "cdo", f"remapbil,{target}", source, interp_file
     ]
     print("Running:", " ".join(cmd_interp))
     subprocess.run(cmd_interp, check=True)
@@ -23,14 +23,14 @@ def MO_process(source, target, outname):
 file_pairs = [
     # (source_file, target_file, output_file)
     (
-        f"{config.MODELS_DIR}/source1.nc",
+        f"{config.MODELS_DIR}/pr_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
         f"{config.DATASETS_TRAINING_DIR}/RhiresD_step2_coarse.nc",
-        f"{config.MODELS_DIR}/source1_matched.nc"
+        f"{config.MODELS_DIR}/pr_r01_cropped.nc"
     ),
     (
-        f"{config.MODELS_DIR}/source2.nc",
+        f"{config.MODELS_DIR}/tas_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
         f"{config.DATASETS_TRAINING_DIR}/TabsD_step2_coarse.nc",
-        f"{config.MODELS_DIR}/source2_matched.nc"
+        f"{config.MODELS_DIR}/tas_r01_cropped.nc"
     ),
     # Add more (source, target, output) as needed
 ]
