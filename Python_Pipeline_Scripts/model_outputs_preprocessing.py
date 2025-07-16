@@ -11,7 +11,7 @@ PRECIP_MASK_PATH = f"{config.BASE_DIR}/sasthana/Downscaling/Processing_and_Analy
 
 # HR grid paths
 TEMP_HR_GRID = f"{config.DATASETS_COMBINED_DIR}/combined_temp_target_test_chronological_scaled.nc"
-PRECIP_HR_GRID = f"{config.DATASETS_TRAINING_DIR}/combined_precip_target_test_chronological_scaled.nc"
+PRECIP_HR_GRID = f"{config.DATASETS_COMBINED_DIR}/combined_precip_target_test_chronological_scaled.nc"
 
 def process_file(source, target, outname, oldvar, newvar, mask_path):
     outdir = os.path.dirname(outname)
