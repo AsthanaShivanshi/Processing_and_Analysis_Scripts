@@ -64,7 +64,8 @@ def process_file(source, target, outname, oldvar, newvar, mask_path):
         ds = ds.rename({oldvar: newvar})
         mask_ds = xr.open_dataset(mask_path)
         mask = mask_ds["mask"]
-        ds[newvar] = ds[newvar].where(mask)
+        mask_broadcast= xr.broadcast(ds[newvar], mask)[1]
+        ds[newvar] = ds[newvar].where(mask_broadcast)
         ds.to_netcdf(outname, mode="w")
         ds.close()
         print(f"Masked and renamed {oldvar} to {newvar} in {outname}")
