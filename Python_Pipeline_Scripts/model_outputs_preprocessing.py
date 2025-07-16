@@ -65,27 +65,27 @@ def process_file(source, target, outname, oldvar, newvar, mask_path):
 
 pairs = [
     (
-        f"{config.MODELS_DIR}/pr_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r2i1p1_rcp85_1971-2099.nc",
+        f"{config.MODELS_DIR}/pr_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
         f"{config.DATASETS_PRETRAINING_DIR}/precip_step2_coarse.nc",
-        f"{config.MODELS_DIR}/precip_r02_coarse_masked.nc",
+        f"{config.MODELS_DIR}/precip_r01_coarse_masked.nc",
         "pr", "precip", PRECIP_MASK_PATH
     ),
     (
-        f"{config.MODELS_DIR}/tas_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r2i1p1_rcp85_1971-2099.nc",
+        f"{config.MODELS_DIR}/tas_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
         f"{config.DATASETS_PRETRAINING_DIR}/temp_step2_coarse.nc",
-        f"{config.MODELS_DIR}/temp_r02_coarse_masked.nc",
+        f"{config.MODELS_DIR}/temp_r01_coarse_masked.nc",
         "tas", "temp", TEMP_MASK_PATH
     ),
     (
-        f"{config.MODELS_DIR}/tasmax_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r2i1p1_rcp85_1971-2099.nc",
+        f"{config.MODELS_DIR}/tasmax_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
         f"{config.DATASETS_PRETRAINING_DIR}/tmax_step2_coarse.nc",
-        f"{config.MODELS_DIR}/tmax_r02_coarse_masked.nc",
+        f"{config.MODELS_DIR}/tmax_r01_coarse_masked.nc",
         "tasmax", "tmax", TEMP_MASK_PATH
     ),
     (
-        f"{config.MODELS_DIR}/tasmin_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r2i1p1_rcp85_1971-2099.nc",
+        f"{config.MODELS_DIR}/tasmin_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
         f"{config.DATASETS_PRETRAINING_DIR}/tmin_step2_coarse.nc",
-        f"{config.MODELS_DIR}/tmin_r02_coarse_masked.nc",
+        f"{config.MODELS_DIR}/tmin_r01_coarse_masked.nc",
         "tasmin", "tmin", TEMP_MASK_PATH
     )
 ]
