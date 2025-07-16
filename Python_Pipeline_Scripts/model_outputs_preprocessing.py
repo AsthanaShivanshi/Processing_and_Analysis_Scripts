@@ -5,9 +5,13 @@ import xarray as xr
 
 CH_BOX = (5, 11, 45, 48)
 
-# Masks path
+# Mask file paths
 TEMP_MASK_PATH = f"{config.BASE_DIR}/sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/temp_mask.nc"
 PRECIP_MASK_PATH = f"{config.BASE_DIR}/sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/precip_mask.nc"
+
+# HR grid paths
+TEMP_HR_GRID = f"{config.DATASETS_PRETRAINING_DIR}/sasthana/Downscaling/Downscaling_Models/Pretraining_Chronological_Dataset/temp_step3_interp.nc"
+PRECIP_HR_GRID = f"{config.DATASETS_PRETRAINING_DIR}/sasthana/Downscaling/Downscaling_Models/Pretraining_Chronological_Dataset/precip_step3_interp.nc"
 
 def process_file(source, target, outname, oldvar, newvar, mask_path):
     outdir = os.path.dirname(outname)
@@ -18,77 +22,110 @@ def process_file(source, target, outname, oldvar, newvar, mask_path):
     step2 = outname.replace(".nc", "_step2.nc")
 
     # remapbic
-    cdo_cmd1 = [
-        "cdo",
-        f"-remapbic,{target}",
-        source,
-        step1
-    ]
-    print("Running:", " ".join(cdo_cmd1))
-    result1 = subprocess.run(cdo_cmd1, capture_output=True, text=True)
-    print(result1.stdout)
-    print(result1.stderr)
-    if result1.returncode != 0 or not os.path.exists(step1):
-        print(f"CDO remapbic failed for {source}")
-        return
+    if not os.path.exists(step1):
+        cdo_cmd1 = [
+            "cdo",
+            f"-remapbic,{target}",
+            source,
+            step1
+        ]
+        print("Running:", " ".join(cdo_cmd1))
+        result1 = subprocess.run(cdo_cmd1, capture_output=True, text=True)
+        print(result1.stdout)
+        print(result1.stderr)
+        if result1.returncode != 0 or not os.path.exists(step1):
+            print(f"CDO remapbic failed for {source}")
+            return
+    else:
+        print(f"Step1 file exists: {step1}, skipping remapbic.")
 
     # crop
-    cdo_cmd2 = [
-        "cdo",
-        f"sellonlatbox,{CH_BOX[0]},{CH_BOX[1]},{CH_BOX[2]},{CH_BOX[3]}",
-        step1,
-        step2
-    ]
-    print("Running:", " ".join(cdo_cmd2))
-    result2 = subprocess.run(cdo_cmd2, capture_output=True, text=True)
-    print(result2.stdout)
-    print(result2.stderr)
-    if result2.returncode != 0 or not os.path.exists(step2):
-        print(f"CDO sellonlatbox failed for {step1}")
+    if not os.path.exists(step2):
+        cdo_cmd2 = [
+            "cdo",
+            f"sellonlatbox,{CH_BOX[0]},{CH_BOX[1]},{CH_BOX[2]},{CH_BOX[3]}",
+            step1,
+            step2
+        ]
+        print("Running:", " ".join(cdo_cmd2))
+        result2 = subprocess.run(cdo_cmd2, capture_output=True, text=True)
+        print(result2.stdout)
+        print(result2.stderr)
+        if result2.returncode != 0 or not os.path.exists(step2):
+            print(f"CDO sellonlatbox failed for {step1}")
+            os.remove(step1)
+            return
+    else:
+        print(f"Step2 file exists: {step2}, skipping crop.")
+
+    # mask and rename
+    if not os.path.exists(outname):
+        ds = xr.open_dataset(step2)
+        ds = ds.rename({oldvar: newvar})
+        mask_ds = xr.open_dataset(mask_path)
+        mask = mask_ds["mask"]
+        ds[newvar] = ds[newvar].where(mask)
+        ds.to_netcdf(outname, mode="w")
+        ds.close()
+        print(f"Masked and renamed {oldvar} to {newvar} in {outname}")
+    else:
+        print(f"Final coarse masked file exists: {outname}, skipping masking.")
+
+    # Delete intermed files
+    if os.path.exists(step1):
         os.remove(step1)
-        return
-
-    # masking and renaming
-    ds = xr.open_dataset(step2)
-    ds = ds.rename({oldvar: newvar})
-    mask_ds = xr.open_dataset(mask_path)
-    mask = mask_ds["mask"]
-    ds[newvar] = ds[newvar].where(mask)
-    ds.to_netcdf(outname, mode="w")
-    ds.close()
-    print(f"Masked and renamed {oldvar} to {newvar} in {outname}")
-
-    # Intermed files deleted
-    os.remove(step1)
-    os.remove(step2)
+    if os.path.exists(step2):
+        os.remove(step2)
     print(f"Deleted temp files {step1} and {step2}")
+
+# Interpolating to 1 km file
+def interpolate_to_HR(coarse_file, hr_grid, out_hr_file, varname):
+    if not os.path.exists(out_hr_file):
+        cdo_cmd = [
+            "cdo",
+            f"-remapbic,{hr_grid}",
+            coarse_file,
+            out_hr_file
+        ]
+        print("Running HR interpolation:", " ".join(cdo_cmd))
+        result = subprocess.run(cdo_cmd, capture_output=True, text=True)
+        print(result.stdout)
+        print(result.stderr)
+        if result.returncode != 0 or not os.path.exists(out_hr_file):
+            print(f"CDO HR interpolation failed for {coarse_file}")
+            return
+        print(f"Saved HR interpolated file: {out_hr_file}")
+    else:
+        print(f"HR file exists: {out_hr_file}, skipping HR interpolation.")
 
 pairs = [
     (
         f"{config.MODELS_DIR}/pr_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
         f"{config.DATASETS_PRETRAINING_DIR}/precip_step2_coarse.nc",
         f"{config.MODELS_DIR}/precip_r01_coarse_masked.nc",
-        "pr", "precip", PRECIP_MASK_PATH
+        "pr", "precip", PRECIP_MASK_PATH, PRECIP_HR_GRID
     ),
     (
         f"{config.MODELS_DIR}/tas_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
         f"{config.DATASETS_PRETRAINING_DIR}/temp_step2_coarse.nc",
         f"{config.MODELS_DIR}/temp_r01_coarse_masked.nc",
-        "tas", "temp", TEMP_MASK_PATH
+        "tas", "temp", TEMP_MASK_PATH, TEMP_HR_GRID
     ),
     (
         f"{config.MODELS_DIR}/tasmax_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
         f"{config.DATASETS_PRETRAINING_DIR}/tmax_step2_coarse.nc",
         f"{config.MODELS_DIR}/tmax_r01_coarse_masked.nc",
-        "tasmax", "tmax", TEMP_MASK_PATH
+        "tasmax", "tmax", TEMP_MASK_PATH, TEMP_HR_GRID
     ),
     (
         f"{config.MODELS_DIR}/tasmin_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r1i1p1_rcp85_1971-2099.nc",
         f"{config.DATASETS_PRETRAINING_DIR}/tmin_step2_coarse.nc",
         f"{config.MODELS_DIR}/tmin_r01_coarse_masked.nc",
-        "tasmin", "tmin", TEMP_MASK_PATH
+        "tasmin", "tmin", TEMP_MASK_PATH, TEMP_HR_GRID
     )
 ]
 
-for src, tgt, out, oldvar, newvar, mask_path in pairs:
+for src, tgt, out, oldvar, newvar, mask_path, hr_grid in pairs:
     process_file(src, tgt, out, oldvar, newvar, mask_path)
+    out_hr = out.replace("_coarse_masked.nc", "_HR_masked.nc")
+    interpolate_to_HR(out, hr_grid, out_hr, newvar)
