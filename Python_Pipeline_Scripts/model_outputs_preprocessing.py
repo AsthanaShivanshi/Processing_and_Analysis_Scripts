@@ -71,13 +71,6 @@ def process_file(source, target, outname, oldvar, newvar, mask_path):
     else:
         print(f"Final coarse masked file exists: {outname}, skipping masking.")
 
-    # Delete intermed files
-    if os.path.exists(step1):
-        os.remove(step1)
-    if os.path.exists(step2):
-        os.remove(step2)
-    print(f"Deleted temp files {step1} and {step2}")
-
 # Interpolating to 1 km file
 def interpolate_to_HR(coarse_file, hr_grid, out_hr_file, varname):
     if not os.path.exists(out_hr_file):
@@ -126,6 +119,14 @@ pairs = [
 ]
 
 for src, tgt, out, oldvar, newvar, mask_path, hr_grid in pairs:
+    step1 = out.replace(".nc", "_step1.nc")
+    step2 = out.replace(".nc", "_step2.nc")
     process_file(src, tgt, out, oldvar, newvar, mask_path)
     out_hr = out.replace("_coarse_masked.nc", "_HR_masked.nc")
     interpolate_to_HR(out, hr_grid, out_hr, newvar)
+    # Now delete intermediate files
+    if os.path.exists(step1):
+        os.remove(step1)
+    if os.path.exists(step2):
+        os.remove(step2)
+    print(f"Deleted temp files {step1} and {step2}")
