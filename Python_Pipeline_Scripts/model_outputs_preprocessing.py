@@ -58,7 +58,7 @@ def process_file(source, target, outname, oldvar, newvar, mask_path):
     else:
         print(f"Step2 file exists: {step2}, skipping crop.")
 
-    # mask and rename
+    # masking renaming
     if not os.path.exists(outname):
         ds = xr.open_dataset(step2)
         ds = ds.rename({oldvar: newvar})
@@ -71,7 +71,7 @@ def process_file(source, target, outname, oldvar, newvar, mask_path):
     else:
         print(f"Final coarse masked file exists: {outname}, skipping masking.")
 
-# Interpolating to 1 km file
+# Interpolating to HR using obs grid
 def interpolate_to_HR(coarse_file, hr_grid, out_hr_file, varname):
     if not os.path.exists(out_hr_file):
         cdo_cmd = [
