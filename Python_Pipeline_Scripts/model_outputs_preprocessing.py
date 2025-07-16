@@ -58,13 +58,22 @@ def process_file(source, target, outname, oldvar, newvar, mask_path):
     else:
         print(f"Step2 file exists: {step2}, skipping crop.")
 
-    # masking renaming
+    # Masking renaming
     if not os.path.exists(outname):
         ds = xr.open_dataset(step2)
         ds = ds.rename({oldvar: newvar})
         mask_ds = xr.open_dataset(mask_path)
         mask = mask_ds["mask"]
-        mask_broadcast= xr.broadcast(ds[newvar], mask)[1]
+
+        # Align mask to data grid (lat/lon) using nearest neighbor
+        mask_aligned = mask.reindex_like(ds[newvar].isel(time=0), method="nearest")
+
+        # Broadcast mask to all timesteps
+        if "time" in ds[newvar].dims and "time" not in mask_aligned.dims:
+            mask_broadcast = mask_aligned.expand_dims({"time": ds[newvar].coords["time"]}, axis=0)
+        else:
+            mask_broadcast = mask_aligned
+
         ds[newvar] = ds[newvar].where(mask_broadcast)
         ds.to_netcdf(outname, mode="w")
         ds.close()
@@ -99,24 +108,24 @@ pairs = [
         f"{config.MODELS_DIR}/precip_r02_coarse_masked.nc",
         "pr", "precip", PRECIP_MASK_PATH, PRECIP_HR_GRID
     ),
-    (
-        f"{config.MODELS_DIR}/tas_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r2i1p1_rcp85_1971-2099.nc",
-        f"{config.DATASETS_COMBINED_DIR}/temp_test_step2_coarse.nc",
-        f"{config.MODELS_DIR}/temp_r02_coarse_masked.nc",
-        "tas", "temp", TEMP_MASK_PATH, TEMP_HR_GRID
-    ),
-    (
-        f"{config.MODELS_DIR}/tasmax_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r2i1p1_rcp85_1971-2099.nc",
-        f"{config.DATASETS_COMBINED_DIR}/tmax_test_step2_coarse.nc",
-        f"{config.MODELS_DIR}/tmax_r02_coarse_masked.nc",
-        "tasmax", "tmax", TEMP_MASK_PATH, TEMP_HR_GRID
-    ),
-    (
-        f"{config.MODELS_DIR}/tasmin_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r2i1p1_rcp85_1971-2099.nc",
-        f"{config.DATASETS_COMBINED_DIR}/tmin_test_step2_coarse.nc",
-        f"{config.MODELS_DIR}/tmin_r02_coarse_masked.nc",
-        "tasmin", "tmin", TEMP_MASK_PATH, TEMP_HR_GRID
-    )
+    #(
+        #f"{config.MODELS_DIR}/tas_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r2i1p1_rcp85_1971-2099.nc",
+        #f"{config.DATASETS_COMBINED_DIR}/temp_test_step2_coarse.nc",
+        #f"{config.MODELS_DIR}/temp_r02_coarse_masked.nc",
+        #"tas", "temp", TEMP_MASK_PATH, TEMP_HR_GRID
+    #),
+    #(
+        #######f"{config.MODELS_DIR}/tasmax_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r2i1p1_rcp85_1971-2099.nc",
+        ######f"{config.DATASETS_COMBINED_DIR}/tmax_test_step2_coarse.nc",
+        #####f"{config.MODELS_DIR}/tmax_r02_coarse_masked.nc",
+        ####"tasmax", "tmax", TEMP_MASK_PATH, TEMP_HR_GRID
+    ###),
+    ##(
+       #f"{config.MODELS_DIR}/tasmin_day_EUR-11_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_r2i1p1_rcp85_1971-2099.nc",
+        #f"{config.DATASETS_COMBINED_DIR}/tmin_test_step2_coarse.nc",
+        #f"{config.MODELS_DIR}/tmin_r02_coarse_masked.nc",
+        #"tasmin", "tmin", TEMP_MASK_PATH, TEMP_HR_GRID
+    #)
 ]
 
 for src, tgt, out, oldvar, newvar, mask_path, hr_grid in pairs:
