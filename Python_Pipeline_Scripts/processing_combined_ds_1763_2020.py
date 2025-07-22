@@ -130,8 +130,6 @@ def interp_cdo_bicubic(coarse_ds, highres_ds, varname, out_path):
         cmd = [
             "cdo", f"remapbic,{grid_tmp.name}", coarse_tmp.name, interp_tmp.name
         ]
-        subprocess.check_call(cmd)
-
         # Load result and save to out_path
         ds_interp = xr.open_dataset(interp_tmp.name)
         ds_interp.to_netcdf(str(out_path), encoding={v: {"_FillValue": np.nan} for v in ds_interp.data_vars})
@@ -162,7 +160,7 @@ def process_split(ds, varname, split_name, block_size=11):
     if step3_path.exists():
         interp_ds = xr.open_dataset(step3_path)
     else:
-        interp_xarray_cubic(coarse_ds, ds, varname, step3_path)
+        interp_cdo_bicubic(coarse_ds, ds, varname, step3_path)
         interp_ds = xr.open_dataset(step3_path)
     return ds, interp_ds
 
