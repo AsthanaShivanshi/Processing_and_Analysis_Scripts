@@ -6,10 +6,13 @@ import numpy as np
 import xarray as xr
 from pyproj import Transformer, datadir
 import time
+import subprocess
+import tempfile
+
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Combined_Dataset"
-OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Combined_Chronological_Dataset"
+OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Combined_Chronological_Dataset_Revised"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/share/proj"
 os.environ["PROJ_LIB"] = proj_path
@@ -85,7 +88,9 @@ def conservative_coarsening(ds, varname, block_size):
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
     return ds_out
 
-def interp_xarray_cubic(coarse_ds, highres_ds, varname, out_path):
+
+#Commented out older function. 
+"""def interp_xarray_cubic(coarse_ds, highres_ds, varname, out_path):
     lat_1d = coarse_ds['lat'][:, 0].values if coarse_ds['lat'].ndim == 2 else coarse_ds['lat'].values
     lon_1d = coarse_ds['lon'][0, :].values if coarse_ds['lon'].ndim == 2 else coarse_ds['lon'].values
     ds_lowres = coarse_ds.drop_vars([v for v in ['lat', 'lon'] if v in coarse_ds])
@@ -105,7 +110,32 @@ def interp_xarray_cubic(coarse_ds, highres_ds, varname, out_path):
         arr = arr.where(mask)
         ds_interpolated[v] = arr
     ds_interpolated.to_netcdf(str(out_path), encoding={v: {"_FillValue": np.nan} for v in ds_interpolated.data_vars})
-    ds_interpolated.close()
+    ds_interpolated.close()"""
+
+#New function
+
+def interp_cdo_bicubic(coarse_ds, highres_ds, varname, out_path):
+    # Save coarse and highres grids to temp files
+    with tempfile.NamedTemporaryFile(suffix=".nc") as coarse_tmp, \
+         tempfile.NamedTemporaryFile(suffix=".nc") as grid_tmp, \
+         tempfile.NamedTemporaryFile(suffix=".nc") as interp_tmp:
+
+        # Save coarse data
+        coarse_ds.to_netcdf(coarse_tmp.name)
+        # Save highres grid (only coordinates, minimal data)
+        grid_ds = highres_ds[[varname]].isel(time=0, drop=True) if "time" in highres_ds.dims else highres_ds[[varname]]
+        grid_ds.to_netcdf(grid_tmp.name)
+
+        # CDO remapbic: remap to highres grid using bicubic interpolation
+        cmd = [
+            "cdo", f"remapbic,{grid_tmp.name}", coarse_tmp.name, interp_tmp.name
+        ]
+        subprocess.check_call(cmd)
+
+        # Load result and save to out_path
+        ds_interp = xr.open_dataset(interp_tmp.name)
+        ds_interp.to_netcdf(str(out_path), encoding={v: {"_FillValue": np.nan} for v in ds_interp.data_vars})
+        ds_interp.close()
 
 def rename_to_standard(ds):
     rename_dict = {k: v for k, v in VAR_RENAME_MAP.items() if k in ds.data_vars}
