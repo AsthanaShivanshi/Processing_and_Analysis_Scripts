@@ -26,8 +26,7 @@ VAR_RENAME_MAP = {
 }
 
 def save(ds, path):
-    encoding = {v: {"_FillValue": np.nan} for v in ds.data_vars}
-    ds.to_netcdf(str(path), encoding=encoding)
+    ds.to_netcdf(str(path))
     ds.close()
 
 def promote_latlon(ds, varname):
@@ -115,24 +114,36 @@ def conservative_coarsening(ds, varname, block_size):
 #New function
 
 def interp_cdo_bicubic(coarse_ds, highres_ds, varname, out_path):
-    # Save coarse and highres grids to temp files
+    import shutil
+    if shutil.which("cdo") is None:
+        raise RuntimeError("CDO is not installed or not in PATH.")
+
+    coarse_var_ds = coarse_ds[[varname]]
+    if "time" in highres_ds.dims:
+        grid_ds = highres_ds[[varname]].isel(time=0, drop=True)
+    else:
+        grid_ds = highres_ds[[varname]]
+
     with tempfile.NamedTemporaryFile(suffix=".nc") as coarse_tmp, \
          tempfile.NamedTemporaryFile(suffix=".nc") as grid_tmp, \
          tempfile.NamedTemporaryFile(suffix=".nc") as interp_tmp:
 
-        # Save coarse data
-        coarse_ds.to_netcdf(coarse_tmp.name)
-        # Save highres grid (only coordinates, minimal data)
-        grid_ds = highres_ds[[varname]].isel(time=0, drop=True) if "time" in highres_ds.dims else highres_ds[[varname]]
+        coarse_var_ds.to_netcdf(coarse_tmp.name)
         grid_ds.to_netcdf(grid_tmp.name)
 
-        # CDO remapbic: remap to highres grid using bicubic interpolation
         cmd = [
             "cdo", f"remapbic,{grid_tmp.name}", coarse_tmp.name, interp_tmp.name
         ]
-        # Load result and save to out_path
+        try:
+            subprocess.check_call(cmd)
+        except subprocess.CalledProcessError as e:
+            print(f"CDO remapbic failed: {e}")
+            raise
+
         ds_interp = xr.open_dataset(interp_tmp.name)
-        ds_interp.to_netcdf(str(out_path), encoding={v: {"_FillValue": np.nan} for v in ds_interp.data_vars})
+        if varname in coarse_ds and varname in ds_interp:
+            ds_interp[varname].attrs.update(coarse_ds[varname].attrs)
+        ds_interp.to_netcdf(str(out_path))
         ds_interp.close()
 
 def rename_to_standard(ds):
