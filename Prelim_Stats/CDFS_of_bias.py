@@ -147,7 +147,7 @@ if __name__ == "__main__":
         chunks={"time": 100})
     print("unet_ds_1971 variables:", list(unet_ds_1971.data_vars))
     print("unet_ds_1771 variables:", list(unet_ds_1771.data_vars))
-    unet_combined = xr.open_dataset(str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Combined_Dataset" / "Combined_Dataset_Downscaled_Predictions_2011_2020.nc"),chunks={"time": 100})   
+    unet_combined = xr.open_dataset(str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Combined_Dataset" / "Combined_Downscaled_Predictions_2011_2020.nc"),chunks={"time": 100})   
     print("unet_combined variables:", list(unet_combined.data_vars))
     bicubic_paths = {
         "RhiresD": BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Chronological_Dataset" / "RhiresD_step3_interp.nc",

@@ -20,7 +20,6 @@ var_list = list(varnames.keys())
 var = var_list[args.var]
 file_var = varnames[var]
 
-unet_pretrain_path = f"{config.UNET_1771_DIR}/Pretraining_Dataset_Downscaled_Predictions_2011_2020.nc"
 unet_train_path = f"{config.UNET_1971_DIR}/Training_Dataset_Downscaled_Predictions_2011_2020.nc"
 unet_combined_path= f"{config.UNET_COMBINED_DIR}/Combined_Dataset_Downscaled_Predictions_2011_2020.nc"
 target_files = {
@@ -36,7 +35,6 @@ bicubic_files = {
     "TmaxD":   f"{config.DATASETS_TRAINING_DIR}/TmaxD_step3_interp.nc",
 }
 
-unet_pretrain_ds = xr.open_dataset(unet_pretrain_path)
 unet_train_ds = xr.open_dataset(unet_train_path)
 unet_combined_ds = xr.open_dataset(unet_combined_path)
 
@@ -46,14 +44,12 @@ bicubic = bicubic_ds[file_var].values
 target_ds_var = xr.open_dataset(target_files[file_var]).sel(time=slice("2011-01-01", "2020-12-31"))
 target = target_ds_var[file_var].values
 
-unet_pretrain = unet_pretrain_ds[var].sel(time=slice("2011-01-01", "2020-12-31")).values
 unet_train = unet_train_ds[file_var].sel(time=slice("2011-01-01", "2020-12-31")).values
 unet_combined = unet_combined_ds[var].sel(time=slice("2011-01-01", "2020-12-31")).values
 
-valid_mask = ~np.isnan(target) & ~np.isnan(bicubic) & ~np.isnan(unet_pretrain) & ~np.isnan(unet_train)
+valid_mask = ~np.isnan(target) & ~np.isnan(bicubic) & ~np.isnan(unet_train)
 target = np.where(valid_mask, target, np.nan)
 bicubic = np.where(valid_mask, bicubic, np.nan)
-unet_pretrain = np.where(valid_mask, unet_pretrain, np.nan)
 unet_train = np.where(valid_mask, unet_train, np.nan)
 unet_combined = np.where(valid_mask, unet_combined, np.nan)
 
@@ -75,7 +71,6 @@ for thresh in thresholds:
         squared_error_masked = np.where(mask, squared_error, np.nan)
         return np.nanmean(squared_error_masked)
     pooled_mse["Bicubic"].append(pooled(bicubic))
-    pooled_mse["UNet 1771"].append(pooled(unet_pretrain))
     pooled_mse["UNet 1971"].append(pooled(unet_train))
     pooled_mse["UNet Combined"].append(pooled(unet_combined))
 
