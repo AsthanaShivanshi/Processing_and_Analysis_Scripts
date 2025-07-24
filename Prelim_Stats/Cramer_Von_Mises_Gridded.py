@@ -112,10 +112,10 @@ if __name__ == "__main__":
             str(BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "data_1971_2023" / "HR_files_full" / f"{hr_var}_1971_2023.nc"),
             chunks={"time": 100}).sel(time=slice("2011-01-01", "2020-12-31"))
         unet_ds_1971 = xr.open_dataset(
-            str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Training_Dataset" / "Training_Dataset_Downscaled_Predictions_2011_2020.nc"),
+            str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Training_Dataset_Optim_Weights" / "Optim_Training_Downscaled_Predictions_2011_2020.nc"),
             chunks={"time": 100})
         unet_combined = xr.open_dataset(
-            str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Combined_Dataset" / "Combined_Dataset_Downscaled_Predictions_2011_2020.nc"),
+            str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Combined_Dataset" / "Combined_Downscaled_Predictions_2011_2020.nc"),
             chunks={"time": 100}
         )
         bicubic_path = bicubic_paths[hr_var]
