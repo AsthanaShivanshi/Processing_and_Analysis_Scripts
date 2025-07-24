@@ -58,7 +58,7 @@ unet_combined = np.where(valid_mask, unet_combined, np.nan)
 quantiles_to_plot = np.arange(0, 101, 10)  # 0 to 100 percentiles
 thresholds = [np.nanquantile(target, q/100) for q in quantiles_to_plot]
 
-pooled_rmse = {
+pooled_rmse_dict = {
     "Bicubic": [],
     "UNet 1971": [],
     "UNet Combined": []
@@ -71,13 +71,13 @@ def pooled_rmse(pred, mask):
 
 for thresh in thresholds:
     mask = (target <= thresh)
-    pooled_rmse["Bicubic"].append(pooled_rmse(bicubic, mask))
-    pooled_rmse["UNet 1971"].append(pooled_rmse(unet_train, mask))
-    pooled_rmse["UNet Combined"].append(pooled_rmse(unet_combined, mask))
+    pooled_rmse_dict["Bicubic"].append(pooled_rmse(bicubic, mask))
+    pooled_rmse_dict["UNet 1971"].append(pooled_rmse(unet_train, mask))
+    pooled_rmse_dict["UNet Combined"].append(pooled_rmse(unet_combined, mask))
 
 plt.figure(figsize=(8,6))
-for method, color in zip(pooled_rmse.keys(), ["orange", "red", "blue"]):
-    plt.plot(quantiles_to_plot, pooled_rmse[method], label=method, color=color, linewidth=2)
+for method, color in zip(pooled_rmse_dict.keys(), ["orange", "red", "blue"]):
+    plt.plot(quantiles_to_plot, pooled_rmse_dict[method], label=method, color=color, linewidth=2)
 plt.xlabel("Quantile threshold")
 plt.ylabel("Spatiotemporally pooled RMSE")
 plt.title(f"Spatiotemporally pooled RMSE vs Quantile threshold for {var} ({file_var})")

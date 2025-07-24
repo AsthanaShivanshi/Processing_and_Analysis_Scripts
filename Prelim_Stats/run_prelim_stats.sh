@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=Thresholded_RMSE
-#SBATCH --output=logs/thresh_rmse%j.out
-#SBATCH --error=logs/thresh_rmse%j.err
+#SBATCH --output=logs/thresholded_rmse%j.out
+#SBATCH --error=logs/thresholded_rmse%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=480G
-#SBATCH --time=3-00:00:00
+#SBATCH --mem=256G
+#SBATCH --time=08:00:00
 #SBATCH --array=0-3
 
 module load python 
