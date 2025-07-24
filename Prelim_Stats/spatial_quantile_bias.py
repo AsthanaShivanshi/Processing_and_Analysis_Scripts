@@ -19,9 +19,8 @@ var_list = list(varnames.keys())
 var = var_list[args.var]
 file_var = varnames[var]
 
-unet_pretrain_path = f"{config.UNET_1771_DIR}/Pretraining_Dataset_Downscaled_Predictions_2011_2020.nc"
-unet_train_path = f"{config.UNET_1971_DIR}/Training_Dataset_Downscaled_Predictions_2011_2020.nc"
-unet_combined_path = f"{config.UNET_COMBINED_DIR}/Combined_Dataset_Downscaled_Predictions_2011_2020.nc"
+unet_train_path = f"{config.UNET_1971_DIR}/Optim_Training_Downscaled_Predictions_2011_2020.nc"
+unet_combined_path = f"{config.UNET_COMBINED_DIR}/Combined_Downscaled_Predictions_2011_2020.nc"
 target_files = {
     "RhiresD": f"{config.TARGET_DIR}/RhiresD_1971_2023.nc",
     "TabsD": f"{config.TARGET_DIR}/TabsD_1971_2023.nc",
@@ -35,7 +34,6 @@ bicubic_files = {
     "TmaxD":   f"{config.DATASETS_TRAINING_DIR}/TmaxD_step3_interp.nc",
 }
 
-unet_pretrain_ds = xr.open_dataset(unet_pretrain_path)
 unet_train_ds = xr.open_dataset(unet_train_path)
 unet_combined_ds = xr.open_dataset(unet_combined_path)
 bicubic_ds = xr.open_dataset(bicubic_files[file_var]).sel(time=slice("2011-01-01", "2020-12-31"))
@@ -43,14 +41,12 @@ target_ds_var = xr.open_dataset(target_files[file_var]).sel(time=slice("2011-01-
 
 target = target_ds_var[file_var].values
 bicubic = bicubic_ds[file_var].values
-unet_pretrain = unet_pretrain_ds[var].sel(time=slice("2011-01-01", "2020-12-31")).values
 unet_train = unet_train_ds[file_var].sel(time=slice("2011-01-01", "2020-12-31")).values
 unet_combined = unet_combined_ds[var].sel(time=slice("2011-01-01", "2020-12-31")).values
 
-valid_mask = ~np.isnan(target) & ~np.isnan(bicubic) & ~np.isnan(unet_pretrain) & ~np.isnan(unet_train)
+valid_mask = ~np.isnan(target) & ~np.isnan(bicubic) & ~np.isnan(unet_train)
 target = np.where(valid_mask, target, np.nan)
 bicubic = np.where(valid_mask, bicubic, np.nan)
-unet_pretrain = np.where(valid_mask, unet_pretrain, np.nan)
 unet_train = np.where(valid_mask, unet_train, np.nan)
 unet_combined = np.where(valid_mask, unet_combined, np.nan)
 
@@ -69,30 +65,28 @@ for q in qvals:
         # Remove zeros for quantile calculation only
         target_masked = np.where(target == 0, np.nan, target)
         bicubic_masked = np.where(bicubic == 0, np.nan, bicubic)
-        unet_pretrain_masked = np.where(unet_pretrain == 0, np.nan, unet_pretrain)
         unet_train_masked = np.where(unet_train == 0, np.nan, unet_train)
         unet_combined_masked = np.where(unet_combined == 0, np.nan, unet_combined)
     else:
         target_masked = target
         bicubic_masked = bicubic
-        unet_pretrain_masked = unet_pretrain
+        unet_train_masked = unet_train
         unet_train_masked = unet_train
         unet_combined_masked = unet_combined
 
     # Compute quantile over time axis (axis=0)
     target_q = np.nanquantile(target_masked, q, axis=0)
     bicubic_q = np.nanquantile(bicubic_masked, q, axis=0)
-    unet_pretrain_q = np.nanquantile(unet_pretrain_masked, q, axis=0)
     unet_train_q = np.nanquantile(unet_train_masked, q, axis=0)
     unet_combined_q = np.nanquantile(unet_combined_masked, q, axis=0)
 
     bias_maps["Bicubic"].append(bicubic_q - target_q)
-    bias_maps["UNet 1771"].append(unet_pretrain_q - target_q)
+    bias_maps["UNet 1771"].append(unet_train_q - target_q)
     bias_maps["UNet 1971"].append(unet_train_q - target_q)
     bias_maps["UNet Combined"].append(unet_combined_q - target_q)
 
-# Plotting the spatial quantile bias maps
-method_names = ["Bicubic", "UNet 1771", "UNet 1971", "UNet Combined"]
+# Plotting the spatial quantile bias maps wrt observations
+method_names = ["Bicubic", "UNet 1971", "UNet Combined"]
 nrows = len(quantiles_to_plot)
 ncols = len(method_names)
 

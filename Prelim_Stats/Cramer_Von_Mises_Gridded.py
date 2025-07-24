@@ -114,9 +114,6 @@ if __name__ == "__main__":
         unet_ds_1971 = xr.open_dataset(
             str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Training_Dataset" / "Training_Dataset_Downscaled_Predictions_2011_2020.nc"),
             chunks={"time": 100})
-        unet_ds_1771 = xr.open_dataset(
-            str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Pretraining_Dataset" / "Pretraining_Dataset_Downscaled_Predictions_2011_2020.nc"),
-            chunks={"time": 100})
         unet_combined = xr.open_dataset(
             str(BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "models_UNet" / "UNet_Deterministic_Combined_Dataset" / "Combined_Dataset_Downscaled_Predictions_2011_2020.nc"),
             chunks={"time": 100}
@@ -127,7 +124,6 @@ if __name__ == "__main__":
         #For debugging
         print("obs_ds dims:", obs_ds[hr_var].dims)
         print("unet_1971 dims:", unet_ds_1971[hr_var].dims)
-        print("unet_1771 dims:", unet_ds_1771[model_var].dims)
         print("unet_comb dims:", unet_combined[model_var].dims)
         print("bicubic dims:", bicubic_ds[hr_var].dims)
 
@@ -135,18 +131,15 @@ if __name__ == "__main__":
         obs = ensure_latlon(obs_ds[hr_var])
         bicubic = ensure_latlon(bicubic_ds[hr_var])
         unet_1971 = unet_ds_1971[hr_var]
-        unet_1771 = unet_ds_1771[model_var]
         unet_comb = unet_combined[model_var]
 
         print("obs dims after ensure_latlon:", obs.dims)
         print("unet_1971 dims after ensure_latlon:", unet_1971.dims)
-        print("unet_1771 dims after ensure_latlon:", unet_1771.dims)
         print("unet_comb dims after ensure_latlon:", unet_comb.dims)
         print("bicubic dims after ensure_latlon:", bicubic.dims)
 
         baselines = {
             "UNet 1971": unet_1971,
-            "UNet 1771": unet_1771,
             "UNet Combined": unet_comb,
             "Bicubic": bicubic,
         }

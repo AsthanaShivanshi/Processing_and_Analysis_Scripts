@@ -20,8 +20,8 @@ var_list = list(varnames.keys())
 var = var_list[args.var]
 file_var = varnames[var]
 
-unet_train_path = f"{config.UNET_1971_DIR}/Training_Dataset_Downscaled_Predictions_2011_2020.nc"
-unet_combined_path = f"{config.UNET_COMBINED_DIR}/Combined_Dataset_Downscaled_Predictions_2011_2020.nc"
+unet_train_path = f"{config.UNET_1971_DIR}/Optim_Training_Downscaled_Predictions_2011_2020.nc"
+unet_combined_path = f"{config.UNET_COMBINED_DIR}/Combined_Downscaled_Predictions_2011_2020.nc"
 target_files = {
     "RhiresD": f"{config.TARGET_DIR}/RhiresD_1971_2023.nc",
     "TabsD": f"{config.TARGET_DIR}/TabsD_1971_2023.nc",
@@ -64,16 +64,16 @@ pooled_rmse = {
     "UNet Combined": []
 }
 
-def pooled_rmse_func(pred, mask):
+def pooled_rmse(pred, mask):
     squared_error = (pred - target) ** 2
     squared_error_masked = np.where(mask, squared_error, np.nan)
     return np.sqrt(np.nanmean(squared_error_masked))
 
 for thresh in thresholds:
     mask = (target <= thresh)
-    pooled_rmse["Bicubic"].append(pooled_rmse_func(bicubic, mask))
-    pooled_rmse["UNet 1971"].append(pooled_rmse_func(unet_train, mask))
-    pooled_rmse["UNet Combined"].append(pooled_rmse_func(unet_combined, mask))
+    pooled_rmse["Bicubic"].append(pooled_rmse(bicubic, mask))
+    pooled_rmse["UNet 1971"].append(pooled_rmse(unet_train, mask))
+    pooled_rmse["UNet Combined"].append(pooled_rmse(unet_combined, mask))
 
 plt.figure(figsize=(8,6))
 for method, color in zip(pooled_rmse.keys(), ["orange", "red", "blue"]):

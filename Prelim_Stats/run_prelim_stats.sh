@@ -1,10 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=Prelim_Stats
-#SBATCH --output=logs/prelim_stats%j.out
-#SBATCH --error=logs/prelim_stats%j.err
+#SBATCH --job-name=Spatial_Quantile_Bias
+#SBATCH --output=logs/spatial_quantile_bias%j.out
+#SBATCH --error=logs/spatial_quantile_bias%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=500G
+#SBATCH --mem=480G
 #SBATCH --time=3-00:00:00
 #SBATCH --array=0-3
 
@@ -12,4 +12,4 @@ module load python
 source environment.sh 
 
 
-python Prelim_Stats/Cramer_Von_Mises_Gridded.py #--var $SLURM_ARRAY_TASK_ID
+python Prelim_Stats/spatial_quantile_bias.py --var $SLURM_ARRAY_TASK_ID
