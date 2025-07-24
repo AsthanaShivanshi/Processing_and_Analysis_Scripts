@@ -42,11 +42,17 @@ unet_combined_ds = xr.open_dataset(unet_combined_path)
 bicubic_ds = xr.open_dataset(bicubic_files[file_var]).sel(time=slice("2011-01-01", "2020-12-31"))
 target_ds_var = xr.open_dataset(target_files[file_var]).sel(time=slice("2011-01-01", "2020-12-31"))
 
-# Find nearest grid cell to city coordinates
 lats = target_ds_var['lat'].values
 lons = target_ds_var['lon'].values
-lat_idx = np.argmin(np.abs(lats - args.lat))
-lon_idx = np.argmin(np.abs(lons - args.lon))
+
+if lats.ndim == 1 and lons.ndim == 1:
+    lat_idx = np.argmin(np.abs(lats - args.lat))
+    lon_idx = np.argmin(np.abs(lons - args.lon))
+elif lats.ndim == 2 and lons.ndim == 2:
+    dist = np.sqrt((lats - args.lat)**2 + (lons - args.lon)**2)
+    lat_idx, lon_idx = np.unravel_index(np.argmin(dist), lats.shape)
+else:
+    raise ValueError("Latitude/Longitude arrays have unexpected dimensions.")
 
 # Extract time series for the city grid cell
 target_city = target_ds_var[file_var].values[:, lat_idx, lon_idx]

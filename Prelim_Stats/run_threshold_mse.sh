@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Spatial_Quantile_Bias
-#SBATCH --output=logs/spatial_quantile_bias%j.out
-#SBATCH --error=logs/spatial_quantile_bias%j.err
+#SBATCH --job-name=Zurich_Thresh_MSE
+#SBATCH --output=logs/thresholded_rmse%j.out
+#SBATCH --error=logs/thresholded_rmse%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=256G
@@ -11,5 +11,4 @@
 module load python 
 source environment.sh 
 
-
-python Prelim_Stats/thresholded_mse.py --var $SLURM_ARRAY_TASK_ID --city "Zurich" --lat 47.3769 --lon 8.5417
+python Prelim_Stats/thresholded_rmse.py --var $SLURM_ARRAY_TASK_ID --city "Zurich" --lat 47.3769 --lon 8.5417
