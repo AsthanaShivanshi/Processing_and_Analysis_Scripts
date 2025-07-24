@@ -131,5 +131,5 @@ for j, method in enumerate(method_names):
         cbar.ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.2f}"))
 
 fig.suptitle(f"Spatial Quantile Bias Maps for {var} ({file_var})", fontsize=16)
-plt.savefig(f"{config.OUTPUTS_DIR}/spatial_quantile_bias_maps_{var}.png", dpi=2000)
+plt.savefig(f"{config.OUTPUTS_DIR}/spatial_quantile_bias_maps_{var}.png", dpi=1500)
 plt.close()
