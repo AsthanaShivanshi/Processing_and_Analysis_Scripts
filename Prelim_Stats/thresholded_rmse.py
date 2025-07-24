@@ -54,6 +54,15 @@ bicubic = np.where(valid_mask, bicubic, np.nan)
 unet_train = np.where(valid_mask, unet_train, np.nan)
 unet_combined = np.where(valid_mask, unet_combined, np.nan)
 
+
+#Considering only non zero precip
+if var == "precip" or var == "RhiresD":
+    nonzero_mask = target > 0
+    target = np.where(nonzero_mask, target, np.nan)
+    bicubic = np.where(nonzero_mask, bicubic, np.nan)
+    unet_train = np.where(nonzero_mask, unet_train, np.nan)
+    unet_combined = np.where(nonzero_mask, unet_combined, np.nan)
+
 # Quantile thresholds for pooling
 quantiles_to_plot = np.arange(0, 101, 10)  # 0 to 100 percentiles
 thresholds = [np.nanquantile(target, q/100) for q in quantiles_to_plot]

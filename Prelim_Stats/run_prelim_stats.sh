@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Thresholded_RMSE
-#SBATCH --output=logs/thresholded_rmse%j.out
-#SBATCH --error=logs/thresholded_rmse%j.err
+#SBATCH --job-name=CramerVonMises
+#SBATCH --output=logs/cramer_von_mises%j.out
+#SBATCH --error=logs/cramer_von_mises%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=256G
@@ -12,4 +12,4 @@ module load python
 source environment.sh 
 
 
-python Prelim_Stats/thresholded_rmse.py --var $SLURM_ARRAY_TASK_ID
+python Prelim_Stats/Cramer_Von_Mises_Gridded.py --var $SLURM_ARRAY_TASK_ID
