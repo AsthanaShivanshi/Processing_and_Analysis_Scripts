@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import config
 import argparse
 import os
+from matplotlib.ticker import MaxNLocator, FuncFormatter
 
 parser = argparse.ArgumentParser(description="Spatial Quantile Bias Spatial Maps")
 parser.add_argument("--var", type=int, required=True, help="Variable index (0-3)")
@@ -55,7 +56,6 @@ qvals = [q/100 for q in quantiles_to_plot]
 
 bias_maps = {
     "Bicubic": [],
-    "UNet 1771": [],
     "UNet 1971": [],
     "UNet Combined": []
 }
@@ -71,7 +71,6 @@ for q in qvals:
         target_masked = target
         bicubic_masked = bicubic
         unet_train_masked = unet_train
-        unet_train_masked = unet_train
         unet_combined_masked = unet_combined
 
     # Compute quantile over time axis (axis=0)
@@ -81,7 +80,6 @@ for q in qvals:
     unet_combined_q = np.nanquantile(unet_combined_masked, q, axis=0)
 
     bias_maps["Bicubic"].append(bicubic_q - target_q)
-    bias_maps["UNet 1771"].append(unet_train_q - target_q)
     bias_maps["UNet 1971"].append(unet_train_q - target_q)
     bias_maps["UNet Combined"].append(unet_combined_q - target_q)
 
@@ -95,18 +93,25 @@ all_maps = np.array(
 )
 if var == "precip":
     vmin, vmax = -20, 20
-    tick_step = 2
     cmap = "BrBG"
     title_label= "Non Zero Precipitation Quantile Bias"
 else:
     vmin = -15
     vmax = 15
-    tick_step=0.05
     cmap = "coolwarm"
+
 
 fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows), constrained_layout=True)
 
 for j, method in enumerate(method_names):
+    # Set colorbar range and colormap per method for temperature variables
+    if var != "precip":
+        if method == "Bicubic":
+            vmin, vmax, cmap, tick_step = -2, 2, "coolwarm", 0.2
+        elif method == "UNet 1971":
+            vmin, vmax, cmap, tick_step = -1, 1, "bwr", 0.1
+        elif method == "UNet Combined":
+            vmin, vmax, cmap, tick_step = -0.5, 0.5, "seismic", 0.05
     for i, q in enumerate(quantiles_to_plot):
         ax = axes[i, j]
         im = ax.imshow(bias_maps[method][i], origin='lower', aspect='auto', cmap=cmap, vmin=vmin, vmax=vmax)
@@ -117,9 +122,12 @@ for j, method in enumerate(method_names):
         ax.set_xticks([])
         ax.set_yticks([])
 
-cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.025, pad=0.02)
-cbar.set_label("Quantile Bias (Model - Obs)")
-cbar.set_ticks(np.arange(vmin, vmax + tick_step, tick_step))
+
+    if i == nrows - 1:
+        cbar = fig.colorbar(im, ax=[axes[k, j] for k in range(nrows)], orientation='vertical', fraction=0.025, pad=0.02)
+        cbar.set_label("Quantile Bias (Model - Obs)")
+        cbar.ax.yaxis.set_major_locator(MaxNLocator(nbins=6, prune='both'))
+        cbar.ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.2f}"))
 
 fig.suptitle(f"Spatial Quantile Bias Maps for {var} ({file_var})", fontsize=18)
 plt.savefig(f"{config.OUTPUTS_DIR}/spatial_quantile_bias_maps_{var}.png", dpi=1000)
