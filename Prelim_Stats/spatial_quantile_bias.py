@@ -96,9 +96,10 @@ if var == "precip":
     cmap = "BrBG"
     title_label= "Non Zero Precipitation Quantile Bias"
 else:
-    vmin = -15
-    vmax = 15
+    vmin = -10
+    vmax = 10
     cmap = "coolwarm"
+    title_label = f"{var.capitalize()} Quantile Bias"
 
 
 fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows), constrained_layout=True)
@@ -107,11 +108,11 @@ for j, method in enumerate(method_names):
     # Set colorbar range and colormap per method for temperature variables
     if var != "precip":
         if method == "Bicubic":
-            vmin, vmax, cmap, tick_step = -2, 2, "coolwarm", 0.2
+            vmin, vmax, cmap, tick_step = -10, 10, "coolwarm", 1
         elif method == "UNet 1971":
-            vmin, vmax, cmap, tick_step = -1, 1, "bwr", 0.1
+            vmin, vmax, cmap, tick_step = -1, 1, "coolwarm", 0.2
         elif method == "UNet Combined":
-            vmin, vmax, cmap, tick_step = -0.5, 0.5, "seismic", 0.05
+            vmin, vmax, cmap, tick_step = -10, 10, "coolwarm", 1
     for i, q in enumerate(quantiles_to_plot):
         ax = axes[i, j]
         im = ax.imshow(bias_maps[method][i], origin='lower', aspect='auto', cmap=cmap, vmin=vmin, vmax=vmax)
@@ -129,6 +130,6 @@ for j, method in enumerate(method_names):
         cbar.ax.yaxis.set_major_locator(MaxNLocator(nbins=6, prune='both'))
         cbar.ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.2f}"))
 
-fig.suptitle(f"Spatial Quantile Bias Maps for {var} ({file_var})", fontsize=18)
-plt.savefig(f"{config.OUTPUTS_DIR}/spatial_quantile_bias_maps_{var}.png", dpi=1000)
+fig.suptitle(f"Spatial Quantile Bias Maps for {var} ({file_var})", fontsize=16)
+plt.savefig(f"{config.OUTPUTS_DIR}/spatial_quantile_bias_maps_{var}.png", dpi=2000)
 plt.close()
