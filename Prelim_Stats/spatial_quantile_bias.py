@@ -51,7 +51,7 @@ bicubic = np.where(valid_mask, bicubic, np.nan)
 unet_train = np.where(valid_mask, unet_train, np.nan)
 unet_combined = np.where(valid_mask, unet_combined, np.nan)
 
-quantiles_to_plot = [5, 50, 95, 99]
+quantiles_to_plot = [5, 50, 75, 95, 99]
 qvals = [q/100 for q in quantiles_to_plot]
 
 bias_maps = {
