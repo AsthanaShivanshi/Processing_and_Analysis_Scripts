@@ -94,12 +94,14 @@ all_maps = np.array(
     [bias_maps[m][i] for m in method_names for i in range(nrows)]
 )
 if var == "precip":
-    vmin, vmax = -20, 20  # Adjust as needed for your precip units
+    vmin, vmax = -20, 20
+    tick_step = 2
     cmap = "BrBG"
-    title_label= "Non Zero Precipitation Quantile Bias (Model - Obs)"
+    title_label= "Non Zero Precipitation Quantile Bias"
 else:
-    vmin = -10
-    vmax = 10
+    vmin = -15
+    vmax = 15
+    tick_step=0.05
     cmap = "coolwarm"
 
 fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows), constrained_layout=True)
@@ -117,6 +119,7 @@ for j, method in enumerate(method_names):
 
 cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.025, pad=0.02)
 cbar.set_label("Quantile Bias (Model - Obs)")
+cbar.set_ticks(np.arange(vmin, vmax + tick_step, tick_step))
 
 fig.suptitle(f"Spatial Quantile Bias Maps for {var} ({file_var})", fontsize=18)
 plt.savefig(f"{config.OUTPUTS_DIR}/spatial_quantile_bias_maps_{var}.png", dpi=1000)
