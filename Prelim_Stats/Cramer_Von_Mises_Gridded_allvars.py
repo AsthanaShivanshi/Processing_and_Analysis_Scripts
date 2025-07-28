@@ -110,5 +110,5 @@ cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.0
 cbar.set_label("Cramer–von Mises Test Statistic", fontsize=14)
 
 fig.suptitle("Gridwise Cramer–von Mises Comparison\nBrown: Rejected at 99% confidence", fontsize=18)
-plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/gridwise_cvm_comparison_grid.png", dpi=300)
+plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/gridwise_cvm_gridded.png", dpi=300)
 plt.close()
