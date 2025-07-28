@@ -84,12 +84,12 @@ for row_idx, var in enumerate(var_list):
 vmin = np.nanmin(np.concatenate(all_stats_flat))
 vmax = np.nanmax(np.concatenate(all_stats_flat))
 
-viridis = plt.cm.get_cmap('viridis', 256)
-colors = ["#2d1206"] + [viridis(i) for i in range(viridis.N)]
+viridis = plt.colormaps['viridis']  # or plt.cm.get_cmap('viridis', 257)
+colors = ["#2d1206"] + [viridis(i/256) for i in range(257)]  # 1 brown + 257 viridis = 258 colors
 cmap = mcolors.ListedColormap(colors)
 cmap.set_bad(color="white")
 
-bounds = [-1.5, -0.5] + list(np.linspace(vmin, vmax, 257))
+bounds = [-1.5, -0.5] + list(np.linspace(vmin, vmax, 257))  # 259 bounds, 258 bins
 norm = mcolors.BoundaryNorm(bounds, cmap.N)
 
 fig, axes = plt.subplots(4, 3, figsize=(15, 18), constrained_layout=True)

@@ -61,12 +61,12 @@ for idx, var in enumerate(var_list):
     plot_map[green_mask] = 0    # Green
     plot_map[orange_mask] = 1   # Orange
 
-    cmap = mcolors.ListedColormap(["#16BE10", "#ff001e"])  # 0: green, 1: orange
+    cmap = mcolors.ListedColormap(["#040664", "#ff0000"])  # 0: green, 1: orange
     cmap.set_bad(color="white")  # White for NaN values
     bounds = [-0.5, 0.5, 1.5]
     norm = mcolors.BoundaryNorm(bounds, cmap.N)
     im = ax.imshow(plot_map, origin='lower', aspect='auto', cmap=cmap, norm=norm)
-    ax.set_title(f"{var.capitalize()} - Green: 1971 better, Orange: Combined better")
+    ax.set_title(f"{var.capitalize()} - Blue: 1971 better, Red: Combined better")
     ax.set_xticks([])
     ax.set_yticks([])
 
