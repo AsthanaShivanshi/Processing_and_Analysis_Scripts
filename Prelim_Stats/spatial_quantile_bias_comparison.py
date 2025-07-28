@@ -18,7 +18,7 @@ varnames = {
 }
 var_list = list(varnames.keys())
 
-quantiles_to_plot = [5, 50, 75, 95, 99]
+quantiles_to_plot = [5, 50, 75, 95]
 qvals = [q/100 for q in quantiles_to_plot]
 
 unet_train_path = f"{config.UNET_1971_DIR}/Optim_Training_Downscaled_Predictions_2011_2020.nc"
@@ -87,9 +87,9 @@ for var in var_list:
 
 winner_maps = np.array(winner_maps)  # shape (n_vars, n_quantiles, lat, lon)
 
-# Plotting: 5 rows (quantiles), 4 columns (variables)
-nrows = len(quantiles_to_plot)
-ncols = len(var_list)
+# Plotting: rows = variables, columns = percentiles
+nrows = len(var_list)
+ncols = len(quantiles_to_plot)
 fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows), constrained_layout=True)
 
 cmap = plt.matplotlib.colors.ListedColormap(["#009E73", "#CC79A7", "#FFFFFF"])  # Green, Purple, White
@@ -99,11 +99,11 @@ norm = plt.matplotlib.colors.BoundaryNorm(bounds, cmap.N)
 for i in range(nrows):
     for j in range(ncols):
         ax = axes[i, j]
-        im = ax.imshow(winner_maps[j, i], origin='lower', aspect='auto', cmap=cmap, norm=norm)
+        im = ax.imshow(winner_maps[i, j], origin='lower', aspect='auto', cmap=cmap, norm=norm)
         if i == 0:
-            ax.set_title(var_list[j].capitalize())
+            ax.set_title(f"{quantiles_to_plot[j]}th percentile")
         if j == 0:
-            ax.set_ylabel(f"{quantiles_to_plot[i]}th percentile")
+            ax.set_ylabel(var_list[i].capitalize())
         ax.set_xticks([])
         ax.set_yticks([])
 
