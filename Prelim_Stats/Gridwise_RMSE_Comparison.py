@@ -58,15 +58,16 @@ for idx, var in enumerate(var_list):
 
     ax = axes[idx]
     plot_map = np.full(diff_1971.shape, np.nan)
-    plot_map[green_mask] = 0    # Green
+    plot_map[green_mask] = 0    # Blue
     plot_map[orange_mask] = 1   # Orange
 
-    cmap = mcolors.ListedColormap(["#6A3DDAD8", "#ff0000a7"])  # 0: green, 1: red
-    cmap.set_bad(color="white")  # White for NaN values
+    # Colorblind safe cbar
+    cmap = mcolors.ListedColormap(["#0072B2", "#E69F00"]) 
+    cmap.set_bad(color="white")
     bounds = [-0.5, 0.5, 1.5]
     norm = mcolors.BoundaryNorm(bounds, cmap.N)
     im = ax.imshow(plot_map, origin='lower', aspect='auto', cmap=cmap, norm=norm)
-    ax.set_title(f"{var.capitalize()} - Purple: 1971 better, Red: Combined better")
+    ax.set_title(f"{var.capitalize()} - Blue: 1971 better, Orange: Combined better")
     ax.set_xticks([])
     ax.set_yticks([])
 
