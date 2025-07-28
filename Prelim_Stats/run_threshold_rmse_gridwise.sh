@@ -12,5 +12,5 @@ module load python
 source environment.sh 
 
 python Prelim_Stats/thresholded_rmse_gridwise.py --var $SLURM_ARRAY_TASK_ID --city "Zurich" --lat 47.3769 --lon 8.5417
-python Prelim_Stats/thresholded_rmse_gridwise.py --var $SLURM_ARRAY_TASK_ID --city "Locarno" --lat 46.6042 --lon 8.7969
-python Prelim_Stats/thresholded_rmse_gridwise.py --var $SLURM_ARRAY_TASK_ID --city "Geneva" --lat 46.2044 --lon 6.1432
+#python Prelim_Stats/thresholded_rmse_gridwise.py --var $SLURM_ARRAY_TASK_ID --city "Locarno" --lat 46.6042 --lon 8.7969
+#python Prelim_Stats/thresholded_rmse_gridwise.py --var $SLURM_ARRAY_TASK_ID --city "Geneva" --lat 46.2044 --lon 6.1432

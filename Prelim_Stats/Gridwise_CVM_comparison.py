@@ -77,7 +77,7 @@ for var in var_list:
     winner_maps.append(winner)
 
 fig, axes = plt.subplots(4, 1, figsize=(8, 16), constrained_layout=True)
-cmap = mcolors.ListedColormap(["#0072B2", "#E69F00"])  # Blue, Orange
+cmap = mcolors.ListedColormap(["#0072B2", "#E69F00", "#FFFFFF"])  # Blue, Orange, White
 bounds = [-0.5, 0.5, 1.5]
 norm = mcolors.BoundaryNorm(bounds, cmap.N)
 for idx, (ax, winner) in enumerate(zip(axes, winner_maps)):
@@ -87,7 +87,7 @@ for idx, (ax, winner) in enumerate(zip(axes, winner_maps)):
     ax.set_yticks([])
 
 cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.02, ticks=[0, 1])
-cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better"])
+cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Neither/tied"])
 cbar.set_label("Model with lower CvM statistic than Bicubic", fontsize=14)
 
 fig.suptitle("Gridwise: Which UNet is closer to target than Bicubic (Cramér–von Mises)", fontsize=16)

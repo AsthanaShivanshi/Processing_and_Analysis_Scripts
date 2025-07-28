@@ -74,8 +74,8 @@ if var == "precip":
     unet_combined_city = np.where(nonzero_mask, unet_combined_city, np.nan)
 
 # Quantile thresholds for pooling
-quantiles_to_plot = np.arange(0, 101, 10)  # 0 to 100 percentiles
-thresholds = [np.nanquantile(target_city, q/100) for q in quantiles_to_plot]
+quantiles_to_plot = np.linspace(0, 1, 11)  # 0.0, 0.1, ..., 1.0
+thresholds = [np.nanquantile(target_city, q) for q in quantiles_to_plot]
 
 pooled_rmse_dict = {
     "Bicubic": [],

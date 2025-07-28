@@ -60,12 +60,12 @@ for idx, var in enumerate(var_list):
     plot_map[is_combined_better] = 1
     plot_map[is_neither_better] = 2
 
-    cmap = mcolors.ListedColormap(["#009E73", "#CC79A7", "#FFFFFF"])  # Green, Purple, White
+    cmap = mcolors.ListedColormap([ "#FF7F50", "#003366", "#FFFFFF"])  # Coral, Blue, White
     cmap.set_bad(color="white")
     bounds = [-0.5, 0.5, 1.5, 2.5]
     norm = mcolors.BoundaryNorm(bounds, cmap.N)
     im = ax = axes[idx].imshow(plot_map, origin='lower', aspect='auto', cmap=cmap, norm=norm)
-    axes[idx].set_title(f"{var.capitalize()} - Green: 1971 better, Purple: Combined better, White: Bicubic best/tied")
+    axes[idx].set_title(f"{var.capitalize()} - Coral: 1971 better, Blue: Combined better, White: Bicubic best/tied")
     axes[idx].set_xticks([])
     axes[idx].set_yticks([])
 
