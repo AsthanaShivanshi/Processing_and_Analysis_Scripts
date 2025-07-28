@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=RMSE_Comparison
-#SBATCH --output=logs/rmse_comparison%j.out
-#SBATCH --error=logs/rmse_comparison%j.err
+#SBATCH --job-name=QB_Comparison
+#SBATCH --output=logs/qb_comparison%j.out
+#SBATCH --error=logs/qb_comparison%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=256G
@@ -11,4 +11,4 @@
 module load python
 source environment.sh
 
-python Prelim_Stats/Gridwise_RMSE_Comparison.py --var $SLURM_ARRAY_TASK_ID
+python Prelim_Stats/spatial_quantile_bias_comparison.py --var $SLURM_ARRAY_TASK_ID
