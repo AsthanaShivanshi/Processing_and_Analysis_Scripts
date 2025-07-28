@@ -84,8 +84,8 @@ for row_idx, var in enumerate(var_list):
 vmin = np.nanmin(np.concatenate(all_stats_flat))
 vmax = np.nanmax(np.concatenate(all_stats_flat))
 
-viridis = plt.colormaps['viridis']  # or plt.cm.get_cmap('viridis', 257)
-colors = ["#2d1206"] + [viridis(i/256) for i in range(257)]  # 1 brown + 257 viridis = 258 colors
+cividis = plt.colormaps['cividis']
+colors = ["#8B4513"] + [cividis(i/256) for i in range(257)]  # 1 brown + 257 cividis = 258 colors
 cmap = mcolors.ListedColormap(colors)
 cmap.set_bad(color="white")
 

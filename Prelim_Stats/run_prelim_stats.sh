@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Baselines_Comparison
-#SBATCH --output=logs/baselines_comparison%j.out
-#SBATCH --error=logs/baselines_comparison%j.err
+#SBATCH --job-name=RMSE_Comparison
+#SBATCH --output=logs/rmse_comparison%j.out
+#SBATCH --error=logs/rmse_comparison%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=256G
