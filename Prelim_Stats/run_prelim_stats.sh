@@ -11,4 +11,4 @@
 module load python
 source environment.sh
 
-python Prelim_Stats/Gridwise_CVM_comparison.py --var $SLURM_ARRAY_TASK_ID
+python Prelim_Stats/Gridwise_RMSE_Comparison.py --var $SLURM_ARRAY_TASK_ID

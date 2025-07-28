@@ -46,30 +46,33 @@ for idx, var in enumerate(var_list):
     unet_train = np.where(valid_mask, unet_train, np.nan)
     unet_combined = np.where(valid_mask, unet_combined, np.nan)
 
-    # RMSE for each grid cell over the entire time series
     bicubic_rmse = np.sqrt(np.nanmean((bicubic - target) ** 2, axis=0))
     unet_train_rmse = np.sqrt(np.nanmean((unet_train - target) ** 2, axis=0))
     unet_combined_rmse = np.sqrt(np.nanmean((unet_combined - target) ** 2, axis=0))
 
-    diff_1971 = bicubic_rmse - unet_train_rmse
-    diff_combined = bicubic_rmse - unet_combined_rmse
-    green_mask = diff_1971 > diff_combined      # 1971 is better
-    orange_mask = ~green_mask                   # Combined is better
+    # Tripartite logic
+    plot_map = np.full(bicubic_rmse.shape, np.nan)
+    # 0: UNet 1971 better, 1: UNet Combined, 2: Neither better (bicubic best or tied)
+    is_1971_better = (unet_train_rmse < bicubic_rmse) & (unet_train_rmse < unet_combined_rmse)
+    is_combined_better = (unet_combined_rmse < bicubic_rmse) & (unet_combined_rmse < unet_train_rmse)
+    is_neither_better = ~(is_1971_better | is_combined_better)
+    plot_map[is_1971_better] = 0
+    plot_map[is_combined_better] = 1
+    plot_map[is_neither_better] = 2
 
-    ax = axes[idx]
-    plot_map = np.full(diff_1971.shape, np.nan)
-    plot_map[green_mask] = 0    # Blue
-    plot_map[orange_mask] = 1   # Orange
-
-    # Colorblind safe cbar
-    cmap = mcolors.ListedColormap(["#0072B2", "#E69F00"]) 
+    cmap = mcolors.ListedColormap(["#009E73", "#CC79A7", "#FFFFFF"])  # Green, Purple, White
     cmap.set_bad(color="white")
-    bounds = [-0.5, 0.5, 1.5]
+    bounds = [-0.5, 0.5, 1.5, 2.5]
     norm = mcolors.BoundaryNorm(bounds, cmap.N)
-    im = ax.imshow(plot_map, origin='lower', aspect='auto', cmap=cmap, norm=norm)
-    ax.set_title(f"{var.capitalize()} - Blue: 1971 better, Orange: Combined better")
-    ax.set_xticks([])
-    ax.set_yticks([])
+    im = ax = axes[idx].imshow(plot_map, origin='lower', aspect='auto', cmap=cmap, norm=norm)
+    axes[idx].set_title(f"{var.capitalize()} - Green: 1971 better, Purple: Combined better, White: Bicubic best/tied")
+    axes[idx].set_xticks([])
+    axes[idx].set_yticks([])
 
-fig.suptitle("Gridwise RMSE Comparison between Models: 1971 vs Combined (Over bicubic baseline)", fontsize=18)
+cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.02, ticks=[0, 1, 2])
+cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Bicubic best/tied"])
+cbar.set_label("Model with lowest RMSE", fontsize=14)
+
+fig.suptitle("Gridwise RMSE Comparison: UNet 1971 vs Combined vs Bicubic", fontsize=18)
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/gridwise_rmse_comparison.png", dpi=1000)
+plt.close()
