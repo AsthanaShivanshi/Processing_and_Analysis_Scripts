@@ -49,7 +49,7 @@ bicubic_files = {
 
 bicubic = {var: xr.open_dataset(bicubic_files[varnames[var]])[varnames[var]].values for var in var_list}
 unet_train = {var: xr.open_dataset(unet_train_path)[varnames[var]].values for var in var_list}
-unet_combined = {var: xr.open_dataset(unet_combined_path)[varnames[var]].values for var in var_list}
+unet_combined = {var: xr.open_dataset(unet_combined_path)[var].values for var in var_list}
 target = {var: xr.open_dataset(target_files[varnames[var]])[varnames[var]].values for var in var_list}
 
 all_stats_flat = []
