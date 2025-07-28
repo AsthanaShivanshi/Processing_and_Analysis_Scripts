@@ -61,7 +61,7 @@ for idx, var in enumerate(var_list):
     plot_map[green_mask] = 0    # Green
     plot_map[orange_mask] = 1   # Orange
 
-    cmap = mcolors.ListedColormap(["#4daf4a", "#ff9900"])  # 0: green, 1: orange
+    cmap = mcolors.ListedColormap(["#16BE10", "#ff001e"])  # 0: green, 1: orange
     cmap.set_bad(color="white")  # White for NaN values
     bounds = [-0.5, 0.5, 1.5]
     norm = mcolors.BoundaryNorm(bounds, cmap.N)

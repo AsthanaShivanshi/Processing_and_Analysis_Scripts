@@ -56,14 +56,14 @@ bicubic = {
 }
 unet_train = {
     var: xr.open_dataset(unet_train_path)
-            [var]
+            [varnames[var]]
             .sel(time=slice("2011-01-01", "2020-12-31"))
             .values
     for var in var_list
 }
 unet_combined = {
     var: xr.open_dataset(unet_combined_path)
-            [var]
+            [varnames[var]]
             .sel(time=slice("2011-01-01", "2020-12-31"))
             .values
     for var in var_list
