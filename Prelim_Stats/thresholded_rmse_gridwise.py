@@ -36,7 +36,6 @@ bicubic_files = {
     "TmaxD":   f"{config.DATASETS_TRAINING_DIR}/TmaxD_step3_interp.nc",
 }
 
-# Load datasets
 unet_train_ds = xr.open_dataset(unet_train_path)
 unet_combined_ds = xr.open_dataset(unet_combined_path)
 bicubic_ds = xr.open_dataset(bicubic_files[file_var]).sel(time=slice("2011-01-01", "2020-12-31"))
@@ -54,20 +53,19 @@ elif lats.ndim == 2 and lons.ndim == 2:
 else:
     raise ValueError("Latitude/Longitude arrays have unexpected dimensions.")
 
-# Extract time series for the city grid cell
 target_city = target_ds_var[file_var].values[:, lat_idx, lon_idx]
 bicubic_city = bicubic_ds[file_var].values[:, lat_idx, lon_idx]
 unet_train_city = unet_train_ds[file_var].sel(time=slice("2011-01-01", "2020-12-31")).values[:, lat_idx, lon_idx]
 unet_combined_city = unet_combined_ds[var].sel(time=slice("2011-01-01", "2020-12-31")).values[:, lat_idx, lon_idx]
 
-# Mask invalid points
+# Invalid masking
 valid_mask = ~np.isnan(target_city) & ~np.isnan(bicubic_city) & ~np.isnan(unet_train_city) & ~np.isnan(unet_combined_city)
 target_city = np.where(valid_mask, target_city, np.nan)
 bicubic_city = np.where(valid_mask, bicubic_city, np.nan)
 unet_train_city = np.where(valid_mask, unet_train_city, np.nan)
 unet_combined_city = np.where(valid_mask, unet_combined_city, np.nan)
 
-# Only consider non-zero precipitation for RMSE calculation
+# Only consider non-zero precip for RMSE calculation
 if var == "precip":
     nonzero_mask = target_city > 0
     target_city = np.where(nonzero_mask, target_city, np.nan)
@@ -85,13 +83,15 @@ pooled_rmse_dict = {
     "UNet Combined": []
 }
 
+
 def pooled_rmse(pred, mask):
     squared_error = (pred - target_city) ** 2
     squared_error_masked = np.where(mask, squared_error, np.nan)
-    return np.sqrt(np.nanmean(squared_error_masked))
+    pooled_errors = squared_error_masked[~np.isnan(squared_error_masked)]
+    return np.sqrt(np.mean(pooled_errors)) if pooled_errors.size > 0 else np.nan
 
 for thresh in thresholds:
-    mask = (target_city <= thresh)
+    mask = (target_city <= thresh) #Only valid values for calculation of thresh RMSE
     pooled_rmse_dict["Bicubic"].append(pooled_rmse(bicubic_city, mask))
     pooled_rmse_dict["UNet 1971"].append(pooled_rmse(unet_train_city, mask))
     pooled_rmse_dict["UNet Combined"].append(pooled_rmse(unet_combined_city, mask))
