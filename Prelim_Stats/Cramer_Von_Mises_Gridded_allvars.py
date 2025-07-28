@@ -47,10 +47,10 @@ bicubic_files = {
     "TmaxD":   f"{config.DATASETS_TRAINING_DIR}/TmaxD_step3_interp.nc",
 }
 
-bicubic = {var: xr.open_dataset(bicubic_files[var])[varnames[var]].values for var in var_list}
+bicubic = {var: xr.open_dataset(bicubic_files[varnames[var]])[varnames[var]].values for var in var_list}
 unet_train = {var: xr.open_dataset(unet_train_path)[varnames[var]].values for var in var_list}
 unet_combined = {var: xr.open_dataset(unet_combined_path)[varnames[var]].values for var in var_list}
-target = {var: xr.open_dataset(target_files[var])[varnames[var]].values for var in var_list}
+target = {var: xr.open_dataset(target_files[varnames[var]])[varnames[var]].values for var in var_list}
 
 all_stats_flat = []
 for row_idx, var in enumerate(var_list):
