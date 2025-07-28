@@ -53,25 +53,22 @@ for idx, var in enumerate(var_list):
 
     diff_1971 = bicubic_rmse - unet_train_rmse
     diff_combined = bicubic_rmse - unet_combined_rmse
-    green_mask = diff_1971 > diff_combined  # 1971 is better
-    pink_mask = ~green_mask                  # Combined is better
-    color_map = np.full(diff_1971.shape, np.nan, dtype=object)
-    color_map[green_mask] = "green"
-    color_map[pink_mask] = "pink"
+    green_mask = diff_1971 > diff_combined      # 1971 is better
+    orange_mask = ~green_mask                   # Combined is better
 
     ax = axes[idx]
     plot_map = np.full(diff_1971.shape, np.nan)
-    plot_map[green_mask] = 1
-    plot_map[pink_mask] = 0
-    cmap = mcolors.ListedColormap(["pink", "green"])
-    cmap.set_bad(color="lightgray", alpha=0.0)  # Light gray for NaN values
+    plot_map[green_mask] = 0    # Green
+    plot_map[orange_mask] = 1   # Orange
+
+    cmap = mcolors.ListedColormap(["#4daf4a", "#ff9900"])  # 0: green, 1: orange
+    cmap.set_bad(color="white")  # White for NaN values
     bounds = [-0.5, 0.5, 1.5]
     norm = mcolors.BoundaryNorm(bounds, cmap.N)
     im = ax.imshow(plot_map, origin='lower', aspect='auto', cmap=cmap, norm=norm)
-    ax.set_title(f"{var.capitalize()} - Green: 1971 better, Pink: Combined better")
+    ax.set_title(f"{var.capitalize()} - Green: 1971 better, Orange: Combined better")
     ax.set_xticks([])
     ax.set_yticks([])
 
 fig.suptitle("Gridwise RMSE Comparison between Models: 1971 vs Combined (Over bicubic baseline)", fontsize=18)
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/gridwise_rmse_comparison.png", dpi=1000)
-plt.close()
