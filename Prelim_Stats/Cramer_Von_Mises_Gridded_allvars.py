@@ -47,40 +47,35 @@ bicubic_files = {
     "TmaxD":   f"{config.DATASETS_TRAINING_DIR}/TmaxD_step3_interp.nc",
 }
 
-fig, axes = plt.subplots(4, 3, figsize=(15, 18), constrained_layout=True)
-all_stats = []
+bicubic = {var: xr.open_dataset(bicubic_files[var])[varnames[var]].values for var in var_list}
+unet_train = {var: xr.open_dataset(unet_train_path)[varnames[var]].values for var in var_list}
+unet_combined = {var: xr.open_dataset(unet_combined_path)[varnames[var]].values for var in var_list}
+target = {var: xr.open_dataset(target_files[var])[varnames[var]].values for var in var_list}
 
+all_stats_flat = []
 for row_idx, var in enumerate(var_list):
-    file_var = varnames[var]
-    unet_train_ds = xr.open_dataset(unet_train_path)
-    unet_combined_ds = xr.open_dataset(unet_combined_path)
-    bicubic_ds = xr.open_dataset(bicubic_files[file_var]).sel(time=slice("2011-01-01", "2020-12-31"))
-    target_ds_var = xr.open_dataset(target_files[file_var]).sel(time=slice("2011-01-01", "2020-12-31"))
+    for model in [bicubic[var], unet_train[var], unet_combined[var]]:
+        stat, pval = gridwise_cvm_stat_p(model, target[var])
+        all_stats_flat.append(stat[(pval >= 0.05) & ~np.isnan(stat)])
+vmin = np.nanmin(np.concatenate(all_stats_flat))
+vmax = np.nanmax(np.concatenate(all_stats_flat))
 
-    target = target_ds_var[file_var].values
-    bicubic = bicubic_ds[file_var].values
-    unet_train = unet_train_ds[file_var].sel(time=slice("2011-01-01", "2020-12-31")).values
-    unet_combined = unet_combined_ds[var].sel(time=slice("2011-01-01", "2020-12-31")).values
+viridis = plt.cm.get_cmap('viridis', 256)
+colors = ["#2d1206"] + [viridis(i) for i in range(viridis.N)]
+cmap = mcolors.ListedColormap(colors)
+cmap.set_bad(color="white")
 
-    valid_mask = ~np.isnan(target) & ~np.isnan(bicubic) & ~np.isnan(unet_train) & ~np.isnan(unet_combined)
-    target = np.where(valid_mask, target, np.nan)
-    bicubic = np.where(valid_mask, bicubic, np.nan)
-    unet_train = np.where(valid_mask, unet_train, np.nan)
-    unet_combined = np.where(valid_mask, unet_combined, np.nan)
+bounds = [-1.5, -0.5] + list(np.linspace(vmin, vmax, 257))
+norm = mcolors.BoundaryNorm(bounds, cmap.N)
 
-    # CVM and p each baseline
-    for col_idx, model in enumerate([bicubic, unet_train, unet_combined]):
-        stat, pval = gridwise_cvm_stat_p(model, target)
-        all_stats.append(stat)
+fig, axes = plt.subplots(4, 3, figsize=(15, 18), constrained_layout=True)
+for row_idx, var in enumerate(var_list):
+    for col_idx, model in enumerate([bicubic[var], unet_train[var], unet_combined[var]]):
+        stat, pval = gridwise_cvm_stat_p(model, target[var])
+        stat_colored = stat.copy()
+        stat_colored[(pval < 0.01) & ~np.isnan(stat)] = -1
         ax = axes[row_idx, col_idx]
-        # Rejected cells (p < 0.05)
-        masked_stat = np.ma.masked_where(pval < 0.05, stat)
-        im = ax.imshow(masked_stat, origin='lower', aspect='auto', cmap='viridis')
-        # Overlaying rejected cells
-        reject_mask = (pval < 0.05) & ~np.isnan(stat)
-        if np.any(reject_mask):
-            ax.imshow(np.where(reject_mask, 1, np.nan), cmap=mcolors.ListedColormap(['red']), 
-                      origin='lower', aspect='auto', alpha=0.5, vmin=0, vmax=1)
+        im = ax.imshow(stat_colored, origin='lower', aspect='auto', cmap=cmap, norm=norm)
         ax.set_title(f"{baseline_names[col_idx]}")
         ax.set_xticks([])
         ax.set_yticks([])
@@ -90,6 +85,6 @@ for row_idx, var in enumerate(var_list):
 cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.02)
 cbar.set_label("Cramer–von Mises Test Statistic", fontsize=14)
 
-fig.suptitle("Gridwise Cramer–von Mises Comparison\nRed: Rejected at 95% confidence", fontsize=18)
+fig.suptitle("Gridwise Cramer–von Mises Comparison\nBrown: Rejected at 99% confidence", fontsize=18)
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/gridwise_cvm_comparison_grid.png", dpi=300)
 plt.close()
