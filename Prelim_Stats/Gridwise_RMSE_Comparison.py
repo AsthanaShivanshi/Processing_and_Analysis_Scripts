@@ -54,20 +54,20 @@ for idx, var in enumerate(var_list):
     diff_1971 = bicubic_rmse - unet_train_rmse
     diff_combined = bicubic_rmse - unet_combined_rmse
     green_mask = diff_1971 > diff_combined  # 1971 is better
-    red_mask = ~green_mask                  # Combined is better
+    blue_mask = ~green_mask                  # Combined is better
     color_map = np.full(diff_1971.shape, np.nan, dtype=object)
     color_map[green_mask] = "green"
-    color_map[red_mask] = "red"
+    color_map[blue_mask] = "blue"
 
     ax = axes[idx]
     plot_map = np.full(diff_1971.shape, np.nan)
     plot_map[green_mask] = 1
-    plot_map[red_mask] = 0
-    cmap = mcolors.ListedColormap(["red", "green"])
+    plot_map[blue_mask] = 0
+    cmap = mcolors.ListedColormap(["blue", "green"])
     bounds = [-0.5, 0.5, 1.5]
     norm = mcolors.BoundaryNorm(bounds, cmap.N)
     im = ax.imshow(plot_map, origin='lower', aspect='auto', cmap=cmap, norm=norm)
-    ax.set_title(f"{var.capitalize()} - Green: 1971 better, Red: Combined better")
+    ax.set_title(f"{var.capitalize()} - Green: 1971 better, Blue: Combined better")
     ax.set_xticks([])
     ax.set_yticks([])
 
