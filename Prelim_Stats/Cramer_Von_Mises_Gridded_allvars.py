@@ -85,21 +85,20 @@ vmin = np.nanmin(np.concatenate(all_stats_flat))
 vmax = np.nanmax(np.concatenate(all_stats_flat))
 
 cividis = plt.colormaps['cividis']
-colors = ["#8B4513"] + [cividis(i/256) for i in range(257)]  # 1 brown + 257 cividis = 258 colors
+colors = [cividis(i/256) for i in range(257)]  # 1 brown + 257 cividis = 258 colors
 cmap = mcolors.ListedColormap(colors)
-cmap.set_bad(color="white")
+cmap.set_bad(color="white")  # NaN handling
 
-bounds = [-1.5, -0.5] + list(np.linspace(vmin, vmax, 257))  # 259 bounds, 258 bins
+bounds = list(np.linspace(vmin, vmax, 257))  # 259 bounds, 258 bins
 norm = mcolors.BoundaryNorm(bounds, cmap.N)
 
 fig, axes = plt.subplots(4, 3, figsize=(15, 18), constrained_layout=True)
+
 for row_idx, var in enumerate(var_list):
     for col_idx, model in enumerate([bicubic[var], unet_train[var], unet_combined[var]]):
         stat, pval = gridwise_cvm_stat_p(model, target[var])
-        stat_colored = stat.copy()
-        stat_colored[(pval < 0.01) & ~np.isnan(stat)] = -1
         ax = axes[row_idx, col_idx]
-        im = ax.imshow(stat_colored, origin='lower', aspect='auto', cmap=cmap, norm=norm)
+        im = ax.imshow(stat, origin='lower', aspect='auto', cmap=cmap, norm=norm)
         ax.set_title(f"{baseline_names[col_idx]}")
         ax.set_xticks([])
         ax.set_yticks([])
@@ -109,6 +108,8 @@ for row_idx, var in enumerate(var_list):
 cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.02)
 cbar.set_label("Cramer–von Mises Test Statistic", fontsize=14)
 
-fig.suptitle("Gridwise Cramer–von Mises Comparison\nBrown: Rejected at 99% confidence", fontsize=18)
+print(f"CvM statistic range: {vmin:.4f} to {vmax:.4f}")
+
+fig.suptitle("Gridwise Cramer–von Mises Comparison", fontsize=20, fontweight='bold')
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/gridwise_cvm_gridded.png", dpi=300)
 plt.close()
