@@ -87,7 +87,7 @@ ncols = len(quantiles_to_plot)
 fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows), constrained_layout=True)
 
 # Colormaps for winner logic
-cmap = plt.matplotlib.colors.ListedColormap(["#003366", "#FF7F50", "#F0F0F0"])  
+cmap = plt.matplotlib.colors.ListedColormap(["#003366", "#FF7F50", "#FFFFFF"])  #Blue, Coral and White
 bounds = [-0.5, 0.5, 1.5, 2.5]
 norm = plt.matplotlib.colors.BoundaryNorm(bounds, cmap.N)
 
@@ -105,17 +105,11 @@ for i in range(nrows):
         ax.set_xticks([])
         ax.set_yticks([])
 
-cbar_precip = fig.colorbar(
-    plt.cm.ScalarMappable(norm=norm, cmap=cmap),
-    ax=axes[0, :], orientation='vertical', fraction=0.025, pad=0.02, ticks=[0, 1, 2]
-)
-cbar_precip.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Neither over bicubic"])
-
-cbar_temp = fig.colorbar(
+cbar= fig.colorbar(
     plt.cm.ScalarMappable(norm=norm, cmap=cmap),
     ax=axes[1:, :], orientation='vertical', fraction=0.025, pad=0.02, ticks=[0, 1, 2]
 )
-cbar_temp.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Neither over bicubic"])
+cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Neither over bicubic"])
 
 fig.suptitle("Gridwise Model Comparison: Thresholded RMSE (UNet 1971 vs Combined vs Bicubic)", fontsize=24, weight='bold')
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/spatial_thresholded_rmse_comparison.png", dpi=1000)
