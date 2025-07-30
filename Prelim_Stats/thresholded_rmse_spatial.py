@@ -60,25 +60,13 @@ rmse_maps = {
 }
 
 for q in qvals:
-    if var == "precip":
-        # Remove zeros for quantile calculation only
-        target_masked = np.where(target == 0, np.nan, target)
-        bicubic_masked = np.where(bicubic == 0, np.nan, bicubic)
-        unet_train_masked = np.where(unet_train == 0, np.nan, unet_train)
-        unet_combined_masked = np.where(unet_combined == 0, np.nan, unet_combined)
-    else:
-        target_masked = target
-        bicubic_masked = bicubic
-        unet_train_masked = unet_train
-        unet_combined_masked = unet_combined
-
     # Compute quantile threshold gridwise
-    target_q = np.nanquantile(target_masked, q, axis=0)
+    target_q = np.nanquantile(target, q, axis=0)
 
     # For each grid cell, mask values above quantile threshold and compute RMSE
-    bicubic_rmse = np.sqrt(np.nanmean((np.where(target_masked <= target_q, bicubic_masked - target_masked, np.nan))**2, axis=0))
-    unet_train_rmse = np.sqrt(np.nanmean((np.where(target_masked <= target_q, unet_train_masked - target_masked, np.nan))**2, axis=0))
-    unet_combined_rmse = np.sqrt(np.nanmean((np.where(target_masked <= target_q, unet_combined_masked - target_masked, np.nan))**2, axis=0))
+    bicubic_rmse = np.sqrt(np.nanmean((np.where(target <= target_q, bicubic - target, np.nan))**2, axis=0))
+    unet_train_rmse = np.sqrt(np.nanmean((np.where(target <= target_q, unet_train - target, np.nan))**2, axis=0))
+    unet_combined_rmse = np.sqrt(np.nanmean((np.where(target <= target_q, unet_combined - target, np.nan))**2, axis=0))
 
     rmse_maps["Bicubic"].append(bicubic_rmse)
     rmse_maps["UNet 1971"].append(unet_train_rmse)
@@ -92,7 +80,7 @@ ncols = len(method_names)
 if var == "precip":
     vmin, vmax = 0, 5
     cmap = "viridis"
-    title_label= "Non Zero Precipitation Threshold RMSE"
+    title_label= "Precip Thresholded RMSE"
 else:
     vmin = 0
     vmax = 5
@@ -127,5 +115,5 @@ for j, method in enumerate(method_names):
         cbar.ax.yaxis.set_major_locator(MaxNLocator(nbins=10, prune='both'))
         cbar.ax.yaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x:.2f}"))
 
-fig.suptitle(f"Spatial Threshold RMSE Maps for {var} ({file_var})", fontsize=16)
-plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/spatial_threshold_rmse_maps_{var}.png", dpi=1500)
+fig.suptitle(f"Spatial Threshold RMSE Maps for {var} ({file_var})", fontsize=24, fontweight='bold')
+plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/spatial_threshold_rmse_maps_{var}.png", dpi=1000)
