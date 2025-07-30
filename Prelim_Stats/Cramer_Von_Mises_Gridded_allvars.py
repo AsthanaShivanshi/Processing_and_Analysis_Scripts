@@ -63,7 +63,7 @@ unet_train = {
 }
 unet_combined = {
     var: xr.open_dataset(unet_combined_path)
-            [var]   # <-- use short name here!
+            [var] 
             .sel(time=slice("2011-01-01", "2020-12-31"))
             .values
     for var in var_list
