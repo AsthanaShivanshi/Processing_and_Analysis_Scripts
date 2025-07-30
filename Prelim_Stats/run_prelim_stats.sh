@@ -11,4 +11,4 @@
 module load python
 source environment.sh
 
-python Prelim_Stats/thresholded_rmse_spatial_comparison.py --var $SLURM_ARRAY_TASK_ID
+python Prelim_Stats/spatial_quantile_bias_comparison.py --var $SLURM_ARRAY_TASK_ID

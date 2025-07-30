@@ -18,7 +18,7 @@ varnames = {
 }
 var_list = list(varnames.keys())
 
-quantiles_to_plot = [5, 50, 75, 95]
+quantiles_to_plot = [5, 50, 95, 99]
 qvals = [q/100 for q in quantiles_to_plot]
 
 unet_train_path = f"{config.UNET_1971_DIR}/Optim_Training_Downscaled_Predictions_2011_2020.nc"
