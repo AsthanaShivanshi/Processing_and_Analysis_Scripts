@@ -99,9 +99,8 @@ vmin = 0
 vmax = 1
 
 # coolwarm colormap as requested
-coolwarm = plt.colormaps['coolwarm']
-colors = [coolwarm(i/256) for i in range(257)]
-cmap = mcolors.ListedColormap(colors)
+coolwarm = plt.colormaps['PiYG']
+cmap = mcolors.ListedColormap(coolwarm(np.linspace(0, 1, 256)))
 cmap.set_bad(color="white")  # NaN handling
 
 fig, axes = plt.subplots(4, 3, figsize=(15, 18), constrained_layout=True)
@@ -117,7 +116,11 @@ for row_idx, var in enumerate(var_list):
         if col_idx == 0:
             ax.set_ylabel(var.capitalize(), fontsize=14)
 
-cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.02)
+cbar = fig.colorbar(
+    im, ax=axes, orientation='vertical',
+    fraction=0.015, pad=0.02,
+    ticks=np.arange(0, 1.01, 0.1)
+)
 cbar.set_label("Perkins Skill Score", fontsize=14)
 
 print(f"PSS range: {vmin:.4f} to {vmax:.4f}")
