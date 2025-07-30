@@ -95,10 +95,9 @@ norm = plt.matplotlib.colors.BoundaryNorm(bounds, cmap.N)
 for i in range(nrows):
     for j in range(ncols):
         ax = axes[i, j]
-        if i == 0:
-            im = ax.imshow(winner_maps[i, j], origin='lower', aspect='auto', cmap=cmap, norm=norm)
-        else:
-            im = ax.imshow(winner_maps[i, j], origin='lower', aspect='auto', cmap=cmap, norm=norm)
+        data = winner_maps[i, j]
+        # Mask NaNs explicitly
+        im = ax.imshow(np.ma.masked_invalid(data), origin='lower', aspect='auto', cmap=cmap, norm=norm)
         if i == 0:
             ax.set_title(f"{quantiles_to_plot[j]}th percentile")
         if j == 0:
