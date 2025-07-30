@@ -63,7 +63,6 @@ target = {
 winner_maps = []
 
 for var in var_list:
-    # Compute CvM stats for each model vs target
     stat_bicubic = gridwise_cvm_stat(bicubic[var], target[var])
     stat_unet_train = gridwise_cvm_stat(unet_train[var], target[var])
     stat_unet_combined = gridwise_cvm_stat(unet_combined[var], target[var])
@@ -81,11 +80,9 @@ for var in var_list:
 
 fig, axes = plt.subplots(4, 1, figsize=(8, 16), constrained_layout=True)
 
-# High contrast colormap: Dark Blue, Orange, White
 cmap = mcolors.ListedColormap(["#003366", "#FF7F50", "#FFFFFF"])  # Dark Blue, Coral, White
 cmap.set_bad(color="lightgray")  # NaN handling
 
-# Proper bounds for 3 categories
 bounds = [-0.5, 0.5, 1.5, 2.5]
 norm = mcolors.BoundaryNorm(bounds, cmap.N)
 
@@ -95,7 +92,6 @@ for idx, (ax, winner) in enumerate(zip(axes, winner_maps)):
     ax.set_xticks([])
     ax.set_yticks([])
 
-# Correct colorbar with all 3 categories
 cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.02, ticks=[0, 1, 2])
 cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Bicubic best/tied"])
 cbar.set_label("Model with lowest CvM statistic", fontsize=14)
