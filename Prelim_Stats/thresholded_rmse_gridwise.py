@@ -23,6 +23,7 @@ file_var = varnames[var]
 
 unet_train_path = f"{config.UNET_1971_DIR}/Optim_Training_Downscaled_Predictions_2011_2020.nc"
 unet_combined_path = f"{config.UNET_COMBINED_DIR}/Combined_Downscaled_Predictions_2011_2020.nc"
+
 target_files = {
     "RhiresD": f"{config.TARGET_DIR}/RhiresD_1971_2023.nc",
     "TabsD": f"{config.TARGET_DIR}/TabsD_1971_2023.nc",
@@ -65,16 +66,8 @@ bicubic_city = np.where(valid_mask, bicubic_city, np.nan)
 unet_train_city = np.where(valid_mask, unet_train_city, np.nan)
 unet_combined_city = np.where(valid_mask, unet_combined_city, np.nan)
 
-# Only consider non-zero precip for RMSE calculation
-if var == "precip":
-    nonzero_mask = target_city > 0
-    target_city = np.where(nonzero_mask, target_city, np.nan)
-    bicubic_city = np.where(nonzero_mask, bicubic_city, np.nan)
-    unet_train_city = np.where(nonzero_mask, unet_train_city, np.nan)
-    unet_combined_city = np.where(nonzero_mask, unet_combined_city, np.nan)
-
 # Quantile thresholds for pooling
-quantiles_to_plot = np.linspace(0, 1, 11)  # 0.0, 0.1, ..., 1.0
+quantiles_to_plot = np.linspace(0, 1, 11)
 thresholds = [np.nanquantile(target_city, q) for q in quantiles_to_plot]
 
 pooled_rmse_dict = {
