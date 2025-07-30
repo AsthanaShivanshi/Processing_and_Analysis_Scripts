@@ -80,7 +80,7 @@ for i, var in enumerate(var_list):
         var_winner_maps.append(winner)
     winner_maps.append(var_winner_maps)
 
-winner_maps = np.array(winner_maps)  # shape (n_vars, n_percentiles, lat, lon)
+winner_maps = np.array(winner_maps)
 
 nrows = len(var_list)
 ncols = len(quantiles_to_plot)
@@ -96,8 +96,9 @@ for i in range(nrows):
     for j in range(ncols):
         ax = axes[i, j]
         data = winner_maps[i, j]
-        # Mask NaNs explicitly
-        im = ax.imshow(np.ma.masked_invalid(data), origin='lower', aspect='auto', cmap=cmap, norm=norm)
+        # Explicit nan masking to avoid greys on nan areas
+        masked_data = np.ma.masked_where(np.isnan(data), data)
+        im = ax.imshow(masked_data, origin='lower', aspect='auto', cmap=cmap, norm=norm)
         if i == 0:
             ax.set_title(f"{quantiles_to_plot[j]}th percentile")
         if j == 0:
