@@ -87,7 +87,7 @@ for row_idx, var in enumerate(var_list):
 vmin = 0
 vmax = 500
 
-cividis = plt.colormaps['plasma']
+cividis = plt.colormaps['inferno']
 colors = [cividis(i/256) for i in range(257)]
 cmap = mcolors.ListedColormap(colors)
 cmap.set_bad(color="white")  # NaN handling
