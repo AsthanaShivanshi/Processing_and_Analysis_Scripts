@@ -87,7 +87,8 @@ ncols = len(quantiles_to_plot)
 fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows), constrained_layout=True)
 
 # Colormaps for winner logic
-cmap = plt.matplotlib.colors.ListedColormap(["#003366", "#FF7F50", "#FFFFFF"])  #Blue, Coral and White
+cmap = plt.matplotlib.colors.ListedColormap(["#003366", "#FF7F50", "#A9A9A9"])  # Blue, Coral, Grey
+cmap.set_bad(color="#FFFFFF")  # NaNs are white
 bounds = [-0.5, 0.5, 1.5, 2.5]
 norm = plt.matplotlib.colors.BoundaryNorm(bounds, cmap.N)
 
