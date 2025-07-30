@@ -78,12 +78,9 @@ nrows = len(quantiles_to_plot)
 ncols = len(method_names)
 
 if var == "precip":
-    vmin, vmax = 0, 5
     cmap = "viridis"
     title_label= "Precip Thresholded RMSE"
 else:
-    vmin = 0
-    vmax = 5
     cmap = "coolwarm"
     title_label = f"{var.capitalize()} Threshold RMSE"
 
