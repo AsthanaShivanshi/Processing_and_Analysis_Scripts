@@ -68,28 +68,38 @@ for var in var_list:
     stat_unet_train = gridwise_cvm_stat(unet_train[var], target[var])
     stat_unet_combined = gridwise_cvm_stat(unet_combined[var], target[var])
 
-    # For each grid cell: 0 if UNet 1971 is closer to target than bicubic, 1 if UNet Combined is closer, np.nan if neither
+    # Tripartite logic: 0=UNet1971 better, 1=UNetCombined better, 2=Neither better
     winner = np.full(stat_bicubic.shape, np.nan)
     better_1971 = (stat_unet_train < stat_bicubic) & (stat_unet_train < stat_unet_combined)
     better_combined = (stat_unet_combined < stat_bicubic) & (stat_unet_combined < stat_unet_train)
+    neither_better = ~(better_1971 | better_combined)
+    
     winner[better_1971] = 0
     winner[better_combined] = 1
+    winner[neither_better] = 2
     winner_maps.append(winner)
 
 fig, axes = plt.subplots(4, 1, figsize=(8, 16), constrained_layout=True)
-cmap = mcolors.ListedColormap(["#0072B2", "#E69F00", "#FFFFFF"])  # Blue, Orange, White
-bounds = [-0.5, 0.5, 1.5]
+
+# High contrast colormap: Dark Blue, Orange, White
+cmap = mcolors.ListedColormap(["#003366", "#FF7F50", "#FFFFFF"])  # Dark Blue, Coral, White
+cmap.set_bad(color="lightgray")  # NaN handling
+
+# Proper bounds for 3 categories
+bounds = [-0.5, 0.5, 1.5, 2.5]
 norm = mcolors.BoundaryNorm(bounds, cmap.N)
+
 for idx, (ax, winner) in enumerate(zip(axes, winner_maps)):
     im = ax.imshow(winner, origin='lower', aspect='auto', cmap=cmap, norm=norm)
-    ax.set_title(var_list[idx].capitalize())
+    ax.set_title(f"{var_list[idx].capitalize()}", fontsize=14)
     ax.set_xticks([])
     ax.set_yticks([])
 
-cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.02, ticks=[0, 1])
-cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Neither/tied"])
-cbar.set_label("Model with lower CvM statistic than Bicubic", fontsize=14)
+# Correct colorbar with all 3 categories
+cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.02, ticks=[0, 1, 2])
+cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Bicubic best/tied"])
+cbar.set_label("Model with lowest CvM statistic", fontsize=14)
 
-fig.suptitle("Gridwise: Which UNet is closer to target than Bicubic (Cramér–von Mises)", fontsize=16)
+fig.suptitle("Gridwise CvM Comparison: UNet 1971 vs Combined vs Bicubic", fontsize=16, fontweight='bold')
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/gridwise_cvm_comparison.png", dpi=1000)
 plt.close()
