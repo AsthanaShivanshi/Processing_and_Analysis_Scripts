@@ -85,14 +85,14 @@ for var in var_list:
         var_winner_maps.append(winner)
     winner_maps.append(var_winner_maps)
 
-winner_maps = np.array(winner_maps)  # shape (n_vars, n_quantiles, lat, lon)
+winner_maps = np.array(winner_maps) 
 
 # Plotting: rows = variables, columns = percentiles
 nrows = len(var_list)
 ncols = len(quantiles_to_plot)
 fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows), constrained_layout=True)
 
-cmap = plt.matplotlib.colors.ListedColormap(["#009E73", "#CC79A7", "#FFFFFF"])  # Green, Purple, White
+cmap = plt.matplotlib.colors.ListedColormap(["#1f77b4", "#ff7f0e", "#FFFFFF"]) 
 bounds = [-0.5, 0.5, 1.5, 2.5]
 norm = plt.matplotlib.colors.BoundaryNorm(bounds, cmap.N)
 
@@ -109,9 +109,9 @@ for i in range(nrows):
 
 # Add a single colorbar for all
 cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.025, pad=0.02, ticks=[0, 1, 2])
-cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Tied/neither better"])
+cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Neither over Bicubic"])
 cbar.set_label("Model with lower Quantile Bias", fontsize=14)
 
-fig.suptitle("Gridwise Model Comparison: Absolute Quantile Bias (UNet 1971 vs Combined)", fontsize=16)
+fig.suptitle("Gridwise Model Comparison: Quantile Bias (UNet 1971 vs Combined)", fontsize=24, weight='bold')
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/spatial_quantile_bias_comparison.png", dpi=1000)
 plt.close()
