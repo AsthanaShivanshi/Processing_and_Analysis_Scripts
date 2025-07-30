@@ -73,31 +73,28 @@ for i, var in enumerate(var_list):
         unet_combined_rmse = np.sqrt(np.nanmean((np.where(target <= target_q, unet_combined - target, np.nan))**2, axis=0))
 
         winner = np.full(target_q.shape, np.nan)
-        winner[(unet_train_rmse < bicubic_rmse) & (unet_train_rmse < unet_combined_rmse)] = 0
-        winner[(unet_combined_rmse < bicubic_rmse) & (unet_combined_rmse < unet_train_rmse)] = 1
+        valid_grid = ~np.isnan(bicubic_rmse) & ~np.isnan(unet_train_rmse) & ~np.isnan(unet_combined_rmse)
+        winner[(unet_train_rmse < bicubic_rmse) & (unet_train_rmse < unet_combined_rmse) & valid_grid] = 0
+        winner[(unet_combined_rmse < bicubic_rmse) & (unet_combined_rmse < unet_train_rmse) & valid_grid] = 1
         winner[~((unet_train_rmse < bicubic_rmse) & (unet_train_rmse < unet_combined_rmse)) &
-               ~((unet_combined_rmse < bicubic_rmse) & (unet_combined_rmse < unet_train_rmse))] = 2
+               ~((unet_combined_rmse < bicubic_rmse) & (unet_combined_rmse < unet_train_rmse)) & valid_grid] = 2
         var_winner_maps.append(winner)
     winner_maps.append(var_winner_maps)
 
 winner_maps = np.array(winner_maps)
 
-nrows = len(var_list)
-ncols = len(quantiles_to_plot)
-fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows), constrained_layout=True)
-
-# Colormaps for winner logic
-cmap = plt.matplotlib.colors.ListedColormap(["#003366", "#FF7F50", "#A9A9A9"])  # Blue, Coral, Grey
-cmap.set_bad(color="#FFFFFF")  # NaNs are white
+cmap = plt.matplotlib.colors.ListedColormap(["#003366", "#FF7F50", "#A9A9A9"])
+cmap.set_bad(color="#FFFFFF")
 bounds = [-0.5, 0.5, 1.5, 2.5]
 norm = plt.matplotlib.colors.BoundaryNorm(bounds, cmap.N)
 
-for i in range(nrows):
-    for j in range(ncols):
+fig, axes = plt.subplots(len(var_list), len(quantiles_to_plot), figsize=(4*len(quantiles_to_plot), 3*len(var_list)), constrained_layout=True)
+for i in range(len(var_list)):
+    for j in range(len(quantiles_to_plot)):
         ax = axes[i, j]
         data = winner_maps[i, j]
-        # Explicit nan masking to avoid greys on nan areas
-        masked_data = np.ma.masked_where(np.isnan(data), data)
+        # Masking invalids before plotting : white v grey
+        masked_data = np.ma.masked_invalid(data)
         im = ax.imshow(masked_data, origin='lower', aspect='auto', cmap=cmap, norm=norm)
         if i == 0:
             ax.set_title(f"{quantiles_to_plot[j]}th percentile")
@@ -106,7 +103,7 @@ for i in range(nrows):
         ax.set_xticks([])
         ax.set_yticks([])
 
-cbar= fig.colorbar(
+cbar = fig.colorbar(
     plt.cm.ScalarMappable(norm=norm, cmap=cmap),
     ax=axes[1:, :], orientation='vertical', fraction=0.025, pad=0.02, ticks=[0, 1, 2]
 )
