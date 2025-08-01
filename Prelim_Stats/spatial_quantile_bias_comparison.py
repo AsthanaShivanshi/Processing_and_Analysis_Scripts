@@ -5,6 +5,7 @@ import config
 import argparse
 import os
 from matplotlib.ticker import MaxNLocator, FuncFormatter
+from skimage import measure
 
 parser = argparse.ArgumentParser(description="Spatial Quantile Bias Spatial Maps")
 parser.add_argument("--var", type=int, required=True, help="Variable index (0-3)")
@@ -36,9 +37,15 @@ bicubic_files = {
     "TmaxD":   f"{config.DATASETS_TRAINING_DIR}/TmaxD_step3_interp.nc",
 }
 
-# Prepare winner maps: shape (n_quantiles, n_vars, lat, lon)
+# Winner maps: shape (n_quantiles, n_vars, lat, lon)
 winner_maps = []
+tabsd_ds = xr.open_dataset(target_files["TabsD"]).sel(time=slice("2011-01-01", "2020-12-31"))
+tabsd_mask = ~np.isnan(tabsd_ds["TabsD"].isel(time=0).values)  # shape (lat, lon)
 
+contours = measure.find_contours(tabsd_mask.astype(float), 0.5)
+
+lats = tabsd_ds["lat"].values
+lons = tabsd_ds["lon"].values
 for var in var_list:
     file_var = varnames[var]
     unet_train_ds = xr.open_dataset(unet_train_path)
@@ -101,13 +108,19 @@ for i in range(nrows):
         ax = axes[i, j]
         im = ax.imshow(winner_maps[i, j], origin='lower', aspect='auto', cmap=cmap, norm=norm)
         if i == 0:
+            # Overlay Switzerland boundary
+            for contour in contours:
+                # contour is in (row, col) = (y, x) index space
+                ax.plot(
+                    lons[contour[:, 1]], lats[contour[:, 0]],
+                    color='red', linestyle=':', linewidth=2, zorder=10
+                )
             ax.set_title(f"{quantiles_to_plot[j]}th percentile")
         if j == 0:
             ax.set_ylabel(var_list[i].capitalize())
         ax.set_xticks([])
         ax.set_yticks([])
 
-# Add a single colorbar for all
 cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.025, pad=0.02, ticks=[0, 1, 2])
 cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Neither over Bicubic"])
 cbar.set_label("Model with lower Quantile Bias", fontsize=14)
