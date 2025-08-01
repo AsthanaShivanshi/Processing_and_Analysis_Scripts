@@ -125,12 +125,16 @@ for row_idx, var in enumerate(var_list):
         if col_idx == 0:
             ax.set_ylabel(var.capitalize(), fontsize=14)
 
-        # Annotate pooled PSS in top left
-        pooled_pss = pooled_perkins_skill_score(model, target[var])
+        # Annotate MEAN gridwise PSS in top left (sum over all grid cells divided by number of valid grid cells)
+        valid_vals = pss[~np.isnan(pss)]
+        if valid_vals.size > 0:
+            mean_gridwise_pss = np.sum(valid_vals) / valid_vals.size
+        else:
+            mean_gridwise_pss = np.nan
         ax.text(
             0.02, 0.98,
-            f"Pooled PSS: {pooled_pss:.3f}" if not np.isnan(pooled_pss) else "Pooled PSS: nan",
-            color="black", fontsize=11, fontweight="bold",
+            f"{mean_gridwise_pss:.3f}" if not np.isnan(mean_gridwise_pss) else "Mean gridwise PSS: nan",
+            color="black", fontsize=15, fontweight="bold",
             ha="left", va="top", transform=ax.transAxes,
             bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.2')
         )

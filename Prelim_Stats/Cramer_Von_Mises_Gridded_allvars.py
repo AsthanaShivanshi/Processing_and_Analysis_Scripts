@@ -97,6 +97,8 @@ tabsd_ds = xr.open_dataset(target_files["TabsD"]).sel(time=slice("2011-01-01", "
 tabsd_mask = ~np.isnan(tabsd_ds["TabsD"].isel(time=0).values)  # shape (lat, lon)
 
 fig, axes = plt.subplots(4, 3, figsize=(15, 18), constrained_layout=True)
+nlat, nlon = tabsd_mask.shape
+total_grid_cells = nlat * nlon
 
 for row_idx, var in enumerate(var_list):
     for col_idx, model in enumerate([bicubic[var], unet_train[var], unet_combined[var]]):
@@ -112,24 +114,15 @@ for row_idx, var in enumerate(var_list):
         if col_idx == 0:
             ax.set_ylabel(var.capitalize(), fontsize=14)
 
-        # Compute and annotate pooled CvM statistic
-        model_flat = model[~np.isnan(model) & ~np.isnan(target[var])]
-        target_flat = target[var][~np.isnan(model) & ~np.isnan(target[var])]
-        pooled_cvm = np.nan
-        if len(model_flat) > 1 and len(target_flat) > 1:
-            try:
-                pooled_cvm = cramervonmises_2samp(model_flat, target_flat).statistic
-            except Exception:
-                pooled_cvm = np.nan
+        sum_stat = np.nansum(stat)
+        mean_gridwise_cvm = sum_stat / total_grid_cells
         ax.text(
             0.02, 0.98,
-            f"Pooled CvM: {pooled_cvm:.3f}" if not np.isnan(pooled_cvm) else "Pooled CvM: nan",
-            color="black", fontsize=11, fontweight="bold",
+            f"{mean_gridwise_cvm:.3f}",
+            color="black", fontsize=15, fontweight="bold",
             ha="left", va="top", transform=ax.transAxes,
             bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.2')
         )
-cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.02)
-cbar.set_label("Cramer–von Mises Test Statistic", fontsize=14)
 
 print(f"CvM statistic range: {vmin:.4f} to {vmax:.4f}")
 
