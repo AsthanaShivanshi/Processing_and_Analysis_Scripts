@@ -3,9 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import config
 import argparse
-import os
-from matplotlib.ticker import MaxNLocator, FuncFormatter
 from skimage import measure
+from scipy.ndimage import map_coordinates
 
 parser = argparse.ArgumentParser(description="Spatial Quantile Bias Spatial Maps")
 parser.add_argument("--var", type=int, required=True, help="Variable index (0-3)")
@@ -37,15 +36,14 @@ bicubic_files = {
     "TmaxD":   f"{config.DATASETS_TRAINING_DIR}/TmaxD_step3_interp.nc",
 }
 
-# Winner maps: shape (n_quantiles, n_vars, lat, lon)
-winner_maps = []
 tabsd_ds = xr.open_dataset(target_files["TabsD"]).sel(time=slice("2011-01-01", "2020-12-31"))
-tabsd_mask = ~np.isnan(tabsd_ds["TabsD"].isel(time=0).values)  # shape (lat, lon)
-
+tabsd_mask = ~np.isnan(tabsd_ds["TabsD"].isel(time=0).values) 
 contours = measure.find_contours(tabsd_mask.astype(float), 0.5)
-
 lats = tabsd_ds["lat"].values
 lons = tabsd_ds["lon"].values
+lat_grid, lon_grid = np.meshgrid(lats, lons, indexing='ij')
+
+winner_maps = []
 for var in var_list:
     file_var = varnames[var]
     unet_train_ds = xr.open_dataset(unet_train_path)
@@ -67,7 +65,6 @@ for var in var_list:
     var_winner_maps = []
     for q in qvals:
         if var == "precip":
-            # Remove zeros for quantile calculation only
             target_masked = np.where(target == 0, np.nan, target)
             unet_train_masked = np.where(unet_train == 0, np.nan, unet_train)
             unet_combined_masked = np.where(unet_combined == 0, np.nan, unet_combined)
@@ -76,7 +73,6 @@ for var in var_list:
             unet_train_masked = unet_train
             unet_combined_masked = unet_combined
 
-        # Compute quantile over time axis (axis=0)
         target_q = np.nanquantile(target_masked, q, axis=0)
         unet_train_q = np.nanquantile(unet_train_masked, q, axis=0)
         unet_combined_q = np.nanquantile(unet_combined_masked, q, axis=0)
@@ -92,14 +88,13 @@ for var in var_list:
         var_winner_maps.append(winner)
     winner_maps.append(var_winner_maps)
 
-winner_maps = np.array(winner_maps) 
+winner_maps = np.array(winner_maps)
 
-# Plotting: rows = variables, columns = percentiles
 nrows = len(var_list)
 ncols = len(quantiles_to_plot)
 fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows), constrained_layout=True)
 
-cmap = plt.matplotlib.colors.ListedColormap(["#1f77b4", "#ff7f0e", "#FFFFFF"]) 
+cmap = plt.matplotlib.colors.ListedColormap(["#1f77b4", "#ff7f0e", "#FFFFFF"])
 bounds = [-0.5, 0.5, 1.5, 2.5]
 norm = plt.matplotlib.colors.BoundaryNorm(bounds, cmap.N)
 
@@ -108,13 +103,11 @@ for i in range(nrows):
         ax = axes[i, j]
         im = ax.imshow(winner_maps[i, j], origin='lower', aspect='auto', cmap=cmap, norm=norm)
         if i == 0:
-            # Overlay Switzerland boundary
+            # Overlay Switzerland boundary using interpolated coordinates
             for contour in contours:
-                # contour is in (row, col) = (y, x) index space
-                ax.plot(
-                    lons[contour[:, 1]], lats[contour[:, 0]],
-                    color='red', linestyle=':', linewidth=2, zorder=10
-                )
+                contour_lat = map_coordinates(lat_grid, [contour[:, 0], contour[:, 1]], order=1)
+                contour_lon = map_coordinates(lon_grid, [contour[:, 0], contour[:, 1]], order=1)
+                ax.plot(contour_lon, contour_lat, color='red', linestyle=':', linewidth=2, zorder=10)
             ax.set_title(f"{quantiles_to_plot[j]}th percentile")
         if j == 0:
             ax.set_ylabel(var_list[i].capitalize())
@@ -127,4 +120,3 @@ cbar.set_label("Model with lower Quantile Bias", fontsize=14)
 
 fig.suptitle("Gridwise Model Comparison: Quantile Bias (UNet 1971 vs Combined)", fontsize=24, weight='bold')
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/spatial_quantile_bias_comparison.png", dpi=1000)
-plt.close()
