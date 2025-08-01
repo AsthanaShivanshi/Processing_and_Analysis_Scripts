@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Perkins_gridded_allvars
-#SBATCH --output=logs/perkins_gridded%j.out
-#SBATCH --error=logs/perkins_gridded%j.err
+#SBATCH --job-name=POOLED_PSS
+#SBATCH --output=logs/pooled_pss%j.out
+#SBATCH --error=logs/pooled_pss%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=256G

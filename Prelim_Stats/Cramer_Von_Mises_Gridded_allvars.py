@@ -112,6 +112,22 @@ for row_idx, var in enumerate(var_list):
         if col_idx == 0:
             ax.set_ylabel(var.capitalize(), fontsize=14)
 
+        # Compute and annotate pooled CvM statistic
+        model_flat = model[~np.isnan(model) & ~np.isnan(target[var])]
+        target_flat = target[var][~np.isnan(model) & ~np.isnan(target[var])]
+        pooled_cvm = np.nan
+        if len(model_flat) > 1 and len(target_flat) > 1:
+            try:
+                pooled_cvm = cramervonmises_2samp(model_flat, target_flat).statistic
+            except Exception:
+                pooled_cvm = np.nan
+        ax.text(
+            0.02, 0.98,
+            f"Pooled CvM: {pooled_cvm:.3f}" if not np.isnan(pooled_cvm) else "Pooled CvM: nan",
+            color="black", fontsize=11, fontweight="bold",
+            ha="left", va="top", transform=ax.transAxes,
+            bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.2')
+        )
 cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.02)
 cbar.set_label("Cramer–von Mises Test Statistic", fontsize=14)
 
