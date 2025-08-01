@@ -3,8 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import config
 import argparse
-from skimage import measure
-from scipy.ndimage import map_coordinates
 
 parser = argparse.ArgumentParser(description="Spatial Quantile Bias Spatial Maps")
 parser.add_argument("--var", type=int, required=True, help="Variable index (0-3)")
@@ -36,12 +34,12 @@ bicubic_files = {
     "TmaxD":   f"{config.DATASETS_TRAINING_DIR}/TmaxD_step3_interp.nc",
 }
 
+# Load TabsD mask for Swiss domain
 tabsd_ds = xr.open_dataset(target_files["TabsD"]).sel(time=slice("2011-01-01", "2020-12-31"))
-tabsd_mask = ~np.isnan(tabsd_ds["TabsD"].isel(time=0).values) 
-contours = measure.find_contours(tabsd_mask.astype(float), 0.5)
+tabsd_mask = ~np.isnan(tabsd_ds["TabsD"].isel(time=0).values)  # shape (lat, lon)
 lats = tabsd_ds["lat"].values
 lons = tabsd_ds["lon"].values
-lat_grid, lon_grid = np.meshgrid(lats, lons, indexing='ij')
+lon_grid, lat_grid = np.meshgrid(lons, lats)  # shape (lat, lon)
 
 winner_maps = []
 for var in var_list:
@@ -88,7 +86,10 @@ for var in var_list:
         var_winner_maps.append(winner)
     winner_maps.append(var_winner_maps)
 
-winner_maps = np.array(winner_maps)
+winner_maps = np.array(winner_maps)  # shape (n_vars, n_quantiles, lat, lon)
+
+# Mask precipitation maps (top row, index 0) to TabsD domain only
+winner_maps[0, :, ~tabsd_mask] = np.nan
 
 nrows = len(var_list)
 ncols = len(quantiles_to_plot)
@@ -103,11 +104,6 @@ for i in range(nrows):
         ax = axes[i, j]
         im = ax.imshow(winner_maps[i, j], origin='lower', aspect='auto', cmap=cmap, norm=norm)
         if i == 0:
-            # Overlay Switzerland boundary using interpolated coordinates
-            for contour in contours:
-                contour_lat = map_coordinates(lat_grid, [contour[:, 0], contour[:, 1]], order=1)
-                contour_lon = map_coordinates(lon_grid, [contour[:, 0], contour[:, 1]], order=1)
-                ax.plot(contour_lon, contour_lat, color='red', linestyle=':', linewidth=2, zorder=10)
             ax.set_title(f"{quantiles_to_plot[j]}th percentile")
         if j == 0:
             ax.set_ylabel(var_list[i].capitalize())

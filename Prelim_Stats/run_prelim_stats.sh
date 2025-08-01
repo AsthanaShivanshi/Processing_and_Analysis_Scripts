@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=QuantileBiasComparison
+#SBATCH --job-name=QBComparison
 #SBATCH --output=logs/grid_quantile_bias_comparison%j.out
 #SBATCH --error=logs/grid_quantile_bias_comparison%j.err
 #SBATCH --ntasks=1

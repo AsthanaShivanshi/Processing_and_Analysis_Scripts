@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import config
 import argparse
 from matplotlib.ticker import MaxNLocator, FuncFormatter
+from skimage import measure
+from scipy.ndimage import map_coordinates
 
 parser = argparse.ArgumentParser(description="Spatial Threshold RMSE Maps")
 parser.add_argument("--var", type=int, required=True, help="Variable index (0-3)")
@@ -45,6 +47,13 @@ rmse_maps = {
     "UNet 1971": [],
     "UNet Combined": []
 }
+
+tabsd_ds = xr.open_dataset(target_files["TabsD"]).sel(time=slice("2011-01-01", "2020-12-31"))
+tabsd_mask = ~np.isnan(tabsd_ds["TabsD"].isel(time=0).values)
+contours = measure.find_contours(tabsd_mask.astype(float), 0.5)
+lats = tabsd_ds["lat"].values
+lons = tabsd_ds["lon"].values
+lon_grid, lat_grid = np.meshgrid(lons, lats)  # shape (lat, lon)
 
 plot_labels = ["Precip", "Temp", "Tmin", "Tmax"]
 winner_maps = []
@@ -89,13 +98,19 @@ bounds = [-0.5, 0.5, 1.5, 2.5]
 norm = plt.matplotlib.colors.BoundaryNorm(bounds, cmap.N)
 
 fig, axes = plt.subplots(len(var_list), len(quantiles_to_plot), figsize=(4*len(quantiles_to_plot), 3*len(var_list)), constrained_layout=True)
+
+
 for i in range(len(var_list)):
     for j in range(len(quantiles_to_plot)):
         ax = axes[i, j]
         data = winner_maps[i, j]
-        # Masking invalids before plotting : white v grey
         masked_data = np.ma.masked_invalid(data)
         im = ax.imshow(masked_data, origin='lower', aspect='auto', cmap=cmap, norm=norm)
+        # Draw Switzerland border on every plot
+        for contour in contours:
+            contour_lat = map_coordinates(lat_grid, [contour[:, 0], contour[:, 1]], order=1)
+            contour_lon = map_coordinates(lon_grid, [contour[:, 0], contour[:, 1]], order=1)
+            ax.plot(contour_lon, contour_lat, color='red', linestyle=':', linewidth=2, zorder=10)
         if i == 0:
             ax.set_title(f"{quantiles_to_plot[j]}th percentile")
         if j == 0:

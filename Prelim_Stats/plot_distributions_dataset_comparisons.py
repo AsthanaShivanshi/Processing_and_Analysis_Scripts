@@ -58,14 +58,6 @@ for i, case in enumerate(cases):
         all_obs.append(d)
     data_obs = np.concatenate(all_obs)
 
-    # Recon 1971–2010
-    all_rec_1971_2010 = []
-    for year in years_range_1:
-        d = ds2[case["rec_var"]].sel(time=slice(f'{year}-01-01', f'{year}-12-31')).values.flatten()
-        d = d[~np.isnan(d)]
-        all_rec_1971_2010.append(d)
-    data_rec_1971_2010 = np.concatenate(all_rec_1971_2010)
-
     # Reconstructed 1771–2010
     all_rec_1771_2010 = []
     for year in years_range_2:
@@ -74,14 +66,13 @@ for i, case in enumerate(cases):
         all_rec_1771_2010.append(d)
     data_rec_1771_2010 = np.concatenate(all_rec_1771_2010)
 
-    axs[i].hist(data_obs, bins=50, alpha=0.5, label='Observed 1971–2010', color="blue", density=True)
-    axs[i].hist(data_rec_1971_2010, bins=50, alpha=0.5, label='Reconstructed 1971–2010', color="red", density=True)
-    axs[i].hist(data_rec_1771_2010, bins=50, alpha=0.5, label='Reconstructed 1771–2010', color="green", density=True)
+    axs[i].hist(data_obs, bins=50, alpha=0.5, label='Observed 1971–2010', color="green", density=True)
+    axs[i].hist(data_rec_1771_2010, bins=50, alpha=0.5, label='Reconstructed 1771–2010', color="red", density=True)
     axs[i].set_title(f"Normalised Distribution Comparison for {case['title']}")
     axs[i].set_xlabel(f"{case['title']}")
     axs[i].set_ylabel("Frequency")
     axs[i].legend()
 
 plt.tight_layout()
-plt.savefig(OUTDIR / "Outputs/normalised_distribution_comparison.png", dpi=300)
+plt.savefig(OUTDIR / "Outputs/normalised_distribution_comparison.png", dpi=1000)
 plt.close()
