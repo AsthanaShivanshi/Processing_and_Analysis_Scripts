@@ -50,7 +50,6 @@ rmse_maps = {
 
 tabsd_ds = xr.open_dataset(target_files["TabsD"]).sel(time=slice("2011-01-01", "2020-12-31"))
 tabsd_mask = ~np.isnan(tabsd_ds["TabsD"].isel(time=0).values)
-contours = measure.find_contours(tabsd_mask.astype(float), 0.5)
 lats = tabsd_ds["lat"].values
 lons = tabsd_ds["lon"].values
 lon_grid, lat_grid = np.meshgrid(lons, lats)  # shape (lat, lon)
@@ -92,6 +91,9 @@ for i, var in enumerate(var_list):
 
 winner_maps = np.array(winner_maps)
 
+# Mask precipitation maps (top row, index 0) to TabsD domain only
+winner_maps[0, :, ~tabsd_mask] = np.nan
+
 cmap = plt.matplotlib.colors.ListedColormap(["#003366", "#FF7F50", "#A9A9A9"])
 cmap.set_bad(color="#FFFFFF")
 bounds = [-0.5, 0.5, 1.5, 2.5]
@@ -99,18 +101,12 @@ norm = plt.matplotlib.colors.BoundaryNorm(bounds, cmap.N)
 
 fig, axes = plt.subplots(len(var_list), len(quantiles_to_plot), figsize=(4*len(quantiles_to_plot), 3*len(var_list)), constrained_layout=True)
 
-
 for i in range(len(var_list)):
     for j in range(len(quantiles_to_plot)):
         ax = axes[i, j]
         data = winner_maps[i, j]
         masked_data = np.ma.masked_invalid(data)
         im = ax.imshow(masked_data, origin='lower', aspect='auto', cmap=cmap, norm=norm)
-        # Draw Switzerland border on every plot
-        for contour in contours:
-            contour_lat = map_coordinates(lat_grid, [contour[:, 0], contour[:, 1]], order=1)
-            contour_lon = map_coordinates(lon_grid, [contour[:, 0], contour[:, 1]], order=1)
-            ax.plot(contour_lon, contour_lat, color='red', linestyle=':', linewidth=2, zorder=10)
         if i == 0:
             ax.set_title(f"{quantiles_to_plot[j]}th percentile")
         if j == 0:
@@ -126,4 +122,3 @@ cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Neither ov
 
 fig.suptitle("Gridwise Model Comparison: Thresholded RMSE (UNet 1971 vs Combined vs Bicubic)", fontsize=24, weight='bold')
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/spatial_thresholded_rmse_comparison.png", dpi=1000)
-plt.close()

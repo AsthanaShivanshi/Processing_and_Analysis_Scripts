@@ -89,6 +89,10 @@ target = {
     for var in var_list
 }
 
+# TabsD mask for Swiss domain
+tabsd_ds = xr.open_dataset(target_files["TabsD"]).sel(time=slice("2011-01-01", "2020-12-31"))
+tabsd_mask = ~np.isnan(tabsd_ds["TabsD"].isel(time=0).values)  # shape (lat, lon)
+
 all_pss_flat = []
 for row_idx, var in enumerate(var_list):
     for model in [bicubic[var], unet_train[var], unet_combined[var]]:
@@ -108,6 +112,9 @@ fig, axes = plt.subplots(4, 3, figsize=(15, 18), constrained_layout=True)
 for row_idx, var in enumerate(var_list):
     for col_idx, model in enumerate([bicubic[var], unet_train[var], unet_combined[var]]):
         pss = gridwise_perkins_skill_score(model, target[var])
+        # Mask precipitation (top row, row_idx==0) to TabsD domain only
+        if row_idx == 0:
+            pss[~tabsd_mask] = np.nan
         ax = axes[row_idx, col_idx]
         im = ax.imshow(pss, origin='lower', aspect='auto', cmap=cmap, vmin=vmin, vmax=vmax)
         ax.set_title(f"{baseline_names[col_idx]}")

@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=QBComparison
-#SBATCH --output=logs/grid_quantile_bias_comparison%j.out
-#SBATCH --error=logs/grid_quantile_bias_comparison%j.err
+#SBATCH --job-name=Perkins_gridded_allvars
+#SBATCH --output=logs/perkins_gridded%j.out
+#SBATCH --error=logs/perkins_gridded%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=256G
@@ -11,4 +11,4 @@
 module load python
 source environment.sh
 
-python Prelim_Stats/spatial_quantile_bias_comparison.py --var $SLURM_ARRAY_TASK_ID
+python Prelim_Stats/gridwise_PSS.py --var $SLURM_ARRAY_TASK_ID
