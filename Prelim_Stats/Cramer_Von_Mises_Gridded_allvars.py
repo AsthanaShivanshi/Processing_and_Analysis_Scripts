@@ -81,18 +81,15 @@ for row_idx, var in enumerate(var_list):
     for model in [bicubic[var], unet_train[var], unet_combined[var]]:
         stat, pval = gridwise_cvm_stat_p(model, target[var])
         all_stats_flat.append(stat[~np.isnan(stat)])
-#vmin = np.nanmin(np.concatenate(all_stats_flat))
-#vmax = np.nanmax(np.concatenate(all_stats_flat))
 
 vmin = 0
 vmax = 500
 
-cividis = plt.colormaps['inferno']
+cividis = plt.colormaps['magma']
 colors = [cividis(i/256) for i in range(257)]
 cmap = mcolors.ListedColormap(colors)
 cmap.set_bad(color="white")  # NaN handling
 
-# Load TabsD mask for Swiss domain
 tabsd_ds = xr.open_dataset(target_files["TabsD"]).sel(time=slice("2011-01-01", "2020-12-31"))
 tabsd_mask = ~np.isnan(tabsd_ds["TabsD"].isel(time=0).values)  # shape (lat, lon)
 
@@ -103,7 +100,7 @@ total_grid_cells = nlat * nlon
 for row_idx, var in enumerate(var_list):
     for col_idx, model in enumerate([bicubic[var], unet_train[var], unet_combined[var]]):
         stat, pval = gridwise_cvm_stat_p(model, target[var])
-        # Mask precipitation (top row, row_idx==0) to TabsD domain only
+        # mask precip (top row, idx==0) to TabsD domain only
         if row_idx == 0:
             stat[~tabsd_mask] = np.nan
         ax = axes[row_idx, col_idx]
@@ -114,8 +111,11 @@ for row_idx, var in enumerate(var_list):
         if col_idx == 0:
             ax.set_ylabel(var.capitalize(), fontsize=14)
 
-        sum_stat = np.nansum(stat)
-        mean_gridwise_cvm = sum_stat / total_grid_cells
+        valid_vals = stat[~np.isnan(stat)]
+        if valid_vals.size > 0:
+            mean_gridwise_cvm = np.mean(valid_vals)
+        else:
+            mean_gridwise_cvm = np.nan
         ax.text(
             0.02, 0.98,
             f"{mean_gridwise_cvm:.3f}",
@@ -125,7 +125,7 @@ for row_idx, var in enumerate(var_list):
         )
 
 print(f"CvM statistic range: {vmin:.4f} to {vmax:.4f}")
-
+fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.02)
 fig.suptitle("Gridwise Cramer–von Mises Statistic on test set (2011-2020)", fontsize=24, fontweight='bold')
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/gridwise_cvm.png", dpi=1000)
 plt.close()
