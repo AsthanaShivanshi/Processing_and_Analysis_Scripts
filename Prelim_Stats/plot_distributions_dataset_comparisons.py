@@ -6,9 +6,7 @@ from pathlib import Path
 
 # Output directory for plots
 BASE_DIR= Path(os.environ["BASE_DIR"])
-OUTDIR = BASE_DIR / "sasthana"/"Downscaling"/"Processing_and_Analysis_Scripts"/"Prelim_Stats"
-OUTDIR.mkdir(parents=True, exist_ok=True)
-
+OUTDIR = BASE_DIR / "sasthana"/"Downscaling"/"Processing_and_Analysis_Scripts"/"Outputs"
 cases = [
     {
         "obs_path": BASE_DIR/"sasthana"/"Downscaling"/"Processing_and_Analysis_Scripts"/"data_1971_2023"/"HR_files_full"/"TmaxD_1971_2023.nc",
@@ -66,13 +64,20 @@ for i, case in enumerate(cases):
         all_rec_1771_2010.append(d)
     data_rec_1771_2010 = np.concatenate(all_rec_1771_2010)
 
+    
+    # Filled hist
     axs[i].hist(data_obs, bins=50, alpha=0.5, label='Observed 1971–2010', color="green", density=True)
     axs[i].hist(data_rec_1771_2010, bins=50, alpha=0.5, label='Reconstructed 1771–2010', color="red", density=True)
+
+    # step outlines
+    axs[i].hist(data_obs, bins=50, histtype='step', color="green", linewidth=2, density=True)
+    axs[i].hist(data_rec_1771_2010, bins=50, histtype='step', color="red", linewidth=2, density=True)
+    
     axs[i].set_title(f"Normalised Distribution Comparison for {case['title']}")
     axs[i].set_xlabel(f"{case['title']}")
     axs[i].set_ylabel("Frequency")
     axs[i].legend()
 
 plt.tight_layout()
-plt.savefig(OUTDIR / "Outputs/normalised_distribution_comparison.png", dpi=1000)
+plt.savefig(OUTDIR/"normalised_distribution_comparison.png", dpi=1000)
 plt.close()
