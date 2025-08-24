@@ -7,7 +7,7 @@ import argparse
 
 ## Code Citations
 
-## License: MIT for part of the code
+## License: MIT for part of the code about choosing and grouping into months for mean annual cycle
 #https://github.com/jbofill10/Hotel-Booking-Demand-EDA/tree/d91b9fc56693eef20837417f238687704edbce9d/booking_timespans/CityHotelBookingTimeSpan.py
 
 parser = argparse.ArgumentParser(description="City-specific RMSE vs Quantile")
@@ -53,20 +53,20 @@ start = "1981-01-01"
 end = "2010-12-31"
 
 #Calculating 30 year climatological mean annual cycle
-def get_annual_cycle(ds, var, lat_idx, lon_idx):
-    data = ds[var].sel(time=slice(start, end)).values[:, lat_idx, lon_idx]
+def get_annual_cycle(ds, var, lat, lon):
+    data = ds[var].sel(time=slice(start, end), lat=lat, lon=lon, method='nearest').values
     time = ds['time'].sel(time=slice(start, end)).values
     months = np.array([t.astype('datetime64[M]').astype(int) % 12 + 1 for t in time])
     cycle = np.array([np.nanmean(data[months == m]) for m in range(1, 13)])
     return cycle
 
 annual_cycles = {
-    "Observed": get_annual_cycle(obs_ds, "RhiresD", obs_lat_idx, obs_lon_idx),
-    "Bicubically interpolated model output": get_annual_cycle(bicubic_ds, "precip", bicubic_lat_idx, bicubic_lon_idx),
-    "Coarse model output": get_annual_cycle(coarse_ds, "precip", coarse_lat_idx, coarse_lon_idx),
-    "Bias Corrected using EQM": get_annual_cycle(bc_ds, "precip", bc_lat_idx, bc_lon_idx),
-    "BC+Downscaled with UNet 1971": get_annual_cycle(bc_unet1971_ds, "precip", bc_unet1971_lat_idx, bc_unet1971_lon_idx),
-    "BC+Downscaled with UNet 1771": get_annual_cycle(bc_unet1771_ds, "precip", bc_unet1771_lat_idx, bc_unet1771_lon_idx),
+    "Observed": get_annual_cycle(obs_ds, "RhiresD", lat, lon),
+    "Bicubically interpolated model output": get_annual_cycle(bicubic_ds, "precip", lat, lon),
+    "Coarse model output": get_annual_cycle(coarse_ds, "precip", lat, lon),
+    "Bias Corrected using EQM": get_annual_cycle(bc_ds, "precip", lat, lon),
+    "BC+Downscaled with UNet 1971": get_annual_cycle(bc_unet1971_ds, "precip", lat, lon),
+    "BC+Downscaled with UNet 1771": get_annual_cycle(bc_unet1771_ds, "precip", lat, lon),
 }
 
 plt.figure(figsize=(10, 6))
