@@ -35,19 +35,20 @@ bc_unet1771_ds = xr.open_dataset(bc_unet1771_path)
 lat = args.lat
 lon = args.lon
 
-def find_nearest_grid(ds, lat_target, lon_target):
+#Nearest grid fucn : because the ds had 2D latlon coords but the nearest function expects 1D in xarray
+def nearest_grid(ds, lat_target, lon_target):
     lat2d = ds['lat'].values
     lon2d = ds['lon'].values
     dist = np.sqrt((lat2d - lat_target)**2 + (lon2d - lon_target)**2)
     idx = np.unravel_index(np.argmin(dist), dist.shape)
     return idx  # returns (N_idx, E_idx)
 
-obs_lat_idx, obs_lon_idx = find_nearest_grid(obs_ds, lat, lon)
-bicubic_lat_idx, bicubic_lon_idx = find_nearest_grid(bicubic_ds, lat, lon)
-coarse_lat_idx, coarse_lon_idx = find_nearest_grid(coarse_ds, lat, lon)
-bc_lat_idx, bc_lon_idx = find_nearest_grid(bc_ds, lat, lon)
-bc_unet1971_lat_idx, bc_unet1971_lon_idx = find_nearest_grid(bc_unet1971_ds, lat, lon)
-bc_unet1771_lat_idx, bc_unet1771_lon_idx = find_nearest_grid(bc_unet1771_ds, lat, lon)
+obs_lat_idx, obs_lon_idx = nearest_grid(obs_ds, lat, lon)
+bicubic_lat_idx, bicubic_lon_idx = nearest_grid(bicubic_ds, lat, lon)
+coarse_lat_idx, coarse_lon_idx = nearest_grid(coarse_ds, lat, lon)
+bc_lat_idx, bc_lon_idx = nearest_grid(bc_ds, lat, lon)
+bc_unet1971_lat_idx, bc_unet1971_lon_idx = nearest_grid(bc_unet1971_ds, lat, lon)
+bc_unet1771_lat_idx, bc_unet1771_lon_idx = nearest_grid(bc_unet1771_ds, lat, lon)
 
 #Only for calibration period
 start = "1981-01-01"
@@ -56,7 +57,7 @@ end = "2010-12-31"
 
 #Calculating 30 year climatological mean annual cycle
 def get_annual_cycle(ds, var, lat, lon):
-    N_idx, E_idx = find_nearest_grid(ds, lat, lon)
+    N_idx, E_idx = nearest_grid(ds, lat, lon)
     data = ds[var].sel(time=slice(start, end)).isel(N=N_idx, E=E_idx).values
     time = ds['time'].sel(time=slice(start, end)).values
     months = np.array([t.astype('datetime64[M]').astype(int) % 12 + 1 for t in time])
