@@ -10,7 +10,6 @@ parser.add_argument("--lat", type=float, required=True, help="Latitude of city")
 parser.add_argument("--lon", type=float, required=True, help="Longitude of city")
 args = parser.parse_args()
 
-# File paths
 obs_temp_path = f"{config.TARGET_DIR}/TabsD_1971_2023.nc"
 obs_tmin_path = f"{config.TARGET_DIR}/TminD_1971_2023.nc"
 obs_tmax_path = f"{config.TARGET_DIR}/TmaxD_1971_2023.nc"
@@ -90,7 +89,7 @@ def nearest_grid(ds, lat_target, lon_target):
     lon2d = ds['lon'].values
     dist = np.sqrt((lat2d - lat_target)**2 + (lon2d - lon_target)**2)
     idx = np.unravel_index(np.argmin(dist), dist.shape)
-    return idx  # returns (N_idx, E_idx)
+    return idx  # (N_idx, E_idx)
 
 def get_series(ds, var, lat, lon):
     N_idx, E_idx = nearest_grid(ds, lat, lon)
@@ -101,7 +100,6 @@ def get_series(ds, var, lat, lon):
 results = {}
 
 for label, paths in datasets.items():
-    # Load datasets
     ds_temp = xr.open_dataset(paths["temp"][0])
     ds_tmin = xr.open_dataset(paths["tmin"][0])
     ds_tmax = xr.open_dataset(paths["tmax"][0])
@@ -121,7 +119,7 @@ for label, paths in datasets.items():
     # HD : Average over summer
     hot_days = np.mean(tmax[summer_mask] > 30)
 
-    # DTR: min and max over the calibration period
+    # DTR: min and max over the cal period
     dtr_series = tmax - tmin
     dtr_min = np.min(dtr_series)
     dtr_max = np.max(dtr_series)
