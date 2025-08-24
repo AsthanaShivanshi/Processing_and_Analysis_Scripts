@@ -31,6 +31,7 @@ bc_ds = xr.open_dataset(bc_path)
 bc_unet1971_ds = xr.open_dataset(bc_unet1971_path)
 bc_unet1771_ds = xr.open_dataset(bc_unet1771_path)
 
+
 lat = args.lat
 lon = args.lon
 
@@ -52,21 +53,31 @@ bc_unet1771_lat_idx, bc_unet1771_lon_idx = closest_idx(bc_unet1771_ds, lat, lon)
 start = "1981-01-01"
 end = "2010-12-31"
 
+
 #Calculating 30 year climatological mean annual cycle
 def get_annual_cycle(ds, var, lat, lon):
-    data = ds[var].sel(time=slice(start, end), lat=lat, lon=lon, method='nearest').values
+
+    #Covering cases where lat lon might not be cooridnates
+    if "lat" in ds.coords and "lon" in ds.coords:
+        data= ds[var].sel(time=slice(start, end), lat=lat, lon=lon, method='nearest').values
+    else:
+        lat_arr= ds["lat"].values
+        lon_arr= ds["lon"].values
+        lat_idx= np.abs(lat_arr - lat).argmin()
+        lon_idx= np.abs(lon_arr - lon).argmin()
+        data= ds[var].sel(time=slice(start, end)).isel(lat=lat_idx, lon=lon_idx).values
     time = ds['time'].sel(time=slice(start, end)).values
     months = np.array([t.astype('datetime64[M]').astype(int) % 12 + 1 for t in time])
     cycle = np.array([np.nanmean(data[months == m]) for m in range(1, 13)])
     return cycle
 
 annual_cycles = {
-    "Observed": get_annual_cycle(obs_ds, "RhiresD", lat, lon),
-    "Bicubically interpolated model output": get_annual_cycle(bicubic_ds, "precip", lat, lon),
-    "Coarse model output": get_annual_cycle(coarse_ds, "precip", lat, lon),
+    "Observed from Spatial Analysis": get_annual_cycle(obs_ds, "RhiresD", lat, lon),
+    "Coarse Model O/P": get_annual_cycle(coarse_ds, "precip", lat, lon),
+    "Bicubically Interpolated Model O/P": get_annual_cycle(bicubic_ds, "precip", lat, lon),
     "Bias Corrected using EQM": get_annual_cycle(bc_ds, "precip", lat, lon),
-    "BC+Downscaled with UNet 1971": get_annual_cycle(bc_unet1971_ds, "precip", lat, lon),
-    "BC+Downscaled with UNet 1771": get_annual_cycle(bc_unet1771_ds, "precip", lat, lon),
+    "BC+UNet1971 Downscaled": get_annual_cycle(bc_unet1971_ds, "precip", lat, lon),
+    "BC+UNet1771 Downscaled": get_annual_cycle(bc_unet1771_ds, "precip", lat, lon),
 }
 
 plt.figure(figsize=(10, 6))
@@ -75,8 +86,8 @@ for label, cycle in annual_cycles.items():
     plt.plot(months, cycle, marker='o', label=label)
 plt.xticks(months, ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
 plt.xlabel("Months")
-plt.ylabel("Mean Precip (mm/day)")
-plt.title(f"Climatological Mean Annual Cycle (1981-2010) at lat={lat:.3f}, lon={lon:.3f}")
+plt.ylabel("Daily Acc. Precip (mm)")
+plt.title(f"Climatological Mean Annual Cycle (1981-2010) for Zürich lat={lat:.3f}, lon={lon:.3f}")
 plt.legend()
 plt.tight_layout()
 plt.savefig(f"{config.OUTPUTS_DIR}/Mean_Annual_Cycle_Comparison_{lat:.3f}_{lon:.3f}.png", dpi=1000)
