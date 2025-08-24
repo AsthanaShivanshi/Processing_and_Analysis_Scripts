@@ -55,24 +55,22 @@ bc_unet1771_lat_idx, bc_unet1771_lon_idx = nearest_grid(bc_unet1771_ds, lat, lon
 start = "1981-01-01"
 end = "2010-12-31"
 
-def get_daily_wdf(ds, var, lat, lon, threshold=0.1):
+def monthly_wdf(ds, var, lat, lon, threshold=0.1):
     N_idx, E_idx = nearest_grid(ds, lat, lon)
     data = ds[var].sel(time=slice(start, end)).isel(N=N_idx, E=E_idx).values
     time = pd.to_datetime(ds['time'].sel(time=slice(start, end)).values)
-    doy = time.dayofyear
+    months = time.month
     years = time.year
-    unique_doy = np.arange(1, 367)  # 1 to 366 (leap years included)
     wdf = []
-    for d in unique_doy:
-        vals = data[doy == d]
-        # wet days (precip > threshold)
+    for m in range(1, 13):
+        vals = data[months == m]
         wet_days = np.sum(vals > threshold)
         total_days = len(vals)
         wdf.append(wet_days / total_days if total_days > 0 else np.nan)
-    return np.array(wdf), unique_doy
+    return np.array(wdf), np.arange(1, 13)
 
 annual_cycles = {}
-doy_axis = None
+month_axis = None
 for label, ds, var in [
     ("MeteoSwiss Spatial Analysis", obs_ds, "RhiresD"),
     ("Coarse Model O/P", coarse_ds, "precip"),
@@ -81,10 +79,10 @@ for label, ds, var in [
     ("BC+UNet1971 Downscaled", bc_unet1971_ds, "precip"),
     ("BC+UNet1771 Downscaled", bc_unet1771_ds, "precip"),
 ]:
-    clim, doy = get_daily_wdf(ds, var, lat, lon, threshold=0.1)
+    clim, months = monthly_wdf(ds, var, lat, lon, threshold=0.1)
     annual_cycles[label] = clim
-    if doy_axis is None:
-        doy_axis = doy
+    if month_axis is None:
+        month_axis = months
 
 
 def PSS(obs, model, nbins=12):
@@ -106,33 +104,20 @@ for label, cycle in annual_cycles.items():
     else:
         pss_scores[label] = None  # NAN
 
-plt.figure(figsize=(12, 8))
-
-def circular_rolling_mean(series, window):
-    pad = window // 2
-    padded = np.concatenate([series[-pad:], series, series[:pad]])
-    rolled = pd.Series(padded).rolling(window, center=True, min_periods=1).mean().values
-    return rolled[pad:-pad]
-window = 91
-
+plt.figure(figsize=(10, 6))
+month_labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 for label, cycle in annual_cycles.items():
-    cycle_smooth = circular_rolling_mean(cycle, window)
     if pss_scores[label] is not None:
         legend_label = f"{label} (PSS={pss_scores[label]:.4f})"
     else:
         legend_label = label
-    plt.plot(doy_axis, cycle_smooth, label=legend_label)
+    plt.plot(month_axis, cycle, marker='o', label=legend_label)
 
-# ref yr for month ticks
-ref_year = 2000  # leap, for Feb 29 cases, otherwise was giving some error
-month_starts = pd.date_range(f"{ref_year}-01-01", f"{ref_year}-12-31", freq='MS').dayofyear
-month_labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-plt.xticks(month_starts, month_labels)
-
+plt.xticks(month_axis, month_labels)
 plt.xlabel("Month")
-plt.ylabel(f"Wet Day Frequency for {args.city}")
-plt.title(f"Wet Day Frequency (WDF, >0.1 mm) climatological cycle (1981-2010) for {args.city} lat={lat:.3f}, lon={lon:.3f}")
+plt.ylabel(f"Monthly Wet Day Frequency for {args.city}")
+plt.title(f"Monthly Wet Day Frequency (>0.1 mm) climatological cycle (1981-2010) for {args.city} lat={lat:.3f}, lon={lon:.3f}")
 plt.legend()
 plt.tight_layout()
-plt.savefig(f"{config.OUTPUTS_DIR}/Precip_Daily_WDF_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_.png", dpi=1000)
+plt.savefig(f"{config.OUTPUTS_DIR}/Precip_Monthly_WDF_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_.png", dpi=1000)
 plt.close()
