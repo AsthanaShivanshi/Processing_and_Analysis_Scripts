@@ -4,7 +4,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 import pandas as pd
+import scipy.stats
 
+
+#Fontsize and name specs
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+    "font.size": 18,
+    "axes.labelsize": 22,
+    "axes.titlesize": 24,
+    "legend.fontsize": 18,
+    "xtick.labelsize": 18,
+    "ytick.labelsize": 18,
+})
 
 ## Code Citations
 
@@ -84,40 +97,37 @@ for label, ds, var in [
     if month_axis is None:
         month_axis = months
 
+def spearman(obs, model):
+    mask = ~np.isnan(obs) & ~np.isnan(model)
+    if np.sum(mask) < 2:
+        return np.nan
+    corr, _ = scipy.stats.spearmanr(obs[mask], model[mask])
+    return corr
 
-def PSS(obs, model, nbins=12):
-    combined = np.concatenate([obs, model])
-    bins = np.linspace(np.nanmin(combined), np.nanmax(combined), nbins + 1)
-    hist_obs, _ = np.histogram(obs, bins=bins, density=True)
-    hist_model, _ = np.histogram(model, bins=bins, density=True)
-    hist_obs = hist_obs / np.sum(hist_obs)
-    hist_model = hist_model / np.sum(hist_model)
-    return np.sum(np.minimum(hist_obs, hist_model))
-
-
-pss_scores = {}
+spearman_scores = {}
 obs_cycle = annual_cycles["MeteoSwiss Spatial Analysis"]
 for label, cycle in annual_cycles.items():
     if label != "MeteoSwiss Spatial Analysis":
-        pss = PSS(obs_cycle, cycle)
-        pss_scores[label] = pss
+        corr = spearman(obs_cycle, cycle)
+        spearman_scores[label] = corr
     else:
-        pss_scores[label] = None  # NAN
+        spearman_scores[label] = None  # NAN
 
 plt.figure(figsize=(10, 6))
 month_labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 for label, cycle in annual_cycles.items():
-    if pss_scores[label] is not None:
-        legend_label = f"{label} (PSS={pss_scores[label]:.4f})"
+    if spearman_scores[label] is not None:
+        legend_label = f"{label} (Spearman={spearman_scores[label]:.4f})"
     else:
         legend_label = label
     plt.plot(month_axis, cycle, marker='o', label=legend_label)
 
-plt.xticks(month_axis, month_labels)
-plt.xlabel("Month")
-plt.ylabel(f"Monthly Wet Day Frequency for {args.city}")
-plt.title(f"Monthly Wet Day Frequency (>0.1 mm) climatological cycle (1981-2010) for {args.city} lat={lat:.3f}, lon={lon:.3f}")
-plt.legend()
+
+plt.xticks(month_axis, month_labels, fontsize=18, fontname="Times New Roman")
+plt.xlabel("Month", fontsize=18, fontname="Times New Roman")
+plt.ylabel(f"Monthly Wet Day Frequency (threshold>0.1 mm)", fontsize=18, fontname="Times New Roman")
+plt.title(f"Climatology of Wet Day Frequency (1981-2010) for \n{args.city} (lat={lat:.3f}, lon={lon:.3f})", fontsize=22, fontname="Times New Roman")
+plt.legend(fontsize=15)
 plt.tight_layout()
 plt.savefig(f"{config.OUTPUTS_DIR}/Precip_Monthly_WDF_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_.png", dpi=1000)
 plt.close()

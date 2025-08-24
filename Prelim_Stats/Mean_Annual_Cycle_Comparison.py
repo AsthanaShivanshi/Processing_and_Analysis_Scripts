@@ -5,6 +5,17 @@ import matplotlib.pyplot as plt
 import argparse
 import pandas as pd
 
+#Fontsize and name specs
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+    "font.size": 18,
+    "axes.labelsize": 22,
+    "axes.titlesize": 24,
+    "legend.fontsize": 18,
+    "xtick.labelsize": 18,
+    "ytick.labelsize": 18,
+})
 
 ## Code Citations
 
@@ -18,12 +29,12 @@ parser.add_argument("--lat", type=float, required=True, help="Latitude of city")
 parser.add_argument("--lon", type=float, required=True, help="Longitude of city")
 args = parser.parse_args()
 
-obs_path = f"{config.TARGET_DIR}/TmaxD_1971_2023.nc"
-bicubic_path = f"{config.MODELS_DIR}/tmax_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/tmax_r01_HR_masked.nc"
-coarse_path = f"{config.MODELS_DIR}/tmax_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/tmax_r01_coarse_masked.nc"
-bc_path = f"{config.BIAS_CORRECTED_DIR}/EQM/eqm_tmax_r01_allcells.nc"
-bc_unet1971_path = f"{config.BIAS_CORRECTED_DIR}/EQM/TRAINING_EQM_tmax_downscaled_r01.nc"
-bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/COMBINED_EQM_tmax_downscaled_r01.nc"
+obs_path = f"{config.TARGET_DIR}/TabsD_1971_2023.nc"
+bicubic_path = f"{config.MODELS_DIR}/temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/temp_r01_HR_masked.nc"
+coarse_path = f"{config.MODELS_DIR}/temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/temp_r01_coarse_masked.nc"
+bc_path = f"{config.BIAS_CORRECTED_DIR}/EQM/eqm_temp_r01_allcells.nc"
+bc_unet1971_path = f"{config.BIAS_CORRECTED_DIR}/EQM/TRAINING_EQM_temp_downscaled_r01.nc"
+bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/COMBINED_EQM_temp_downscaled_r01.nc"
 
 obs_ds = xr.open_dataset(obs_path)
 bicubic_ds = xr.open_dataset(bicubic_path)
@@ -68,12 +79,12 @@ def get_daily_climatology(ds, var, lat, lon):
 annual_cycles = {}
 doy_axis = None
 for label, ds, var in [
-    ("MeteoSwiss Spatial Analysis", obs_ds, "TmaxD"),
-    ("Coarse Model O/P", coarse_ds, "tmax"),
-    ("Bicubically Interpolated Model O/P", bicubic_ds, "tmax"),
-    ("Bias Corrected using EQM", bc_ds, "tmax"),
-    ("BC+UNet1971 Downscaled", bc_unet1971_ds, "tmax"),
-    ("BC+UNet1771 Downscaled", bc_unet1771_ds, "tmax"),
+    ("MeteoSwiss Spatial Analysis", obs_ds, "TabsD"),
+    ("Coarse Model O/P", coarse_ds, "temp"),
+    ("Bicubically Interpolated Model O/P", bicubic_ds, "temp"),
+    ("Bias Corrected using EQM", bc_ds, "temp"),
+    ("BC+UNet1971 Downscaled", bc_unet1971_ds, "temp"),
+    ("BC+UNet1771 Downscaled", bc_unet1771_ds, "temp"),
 ]:
     clim, doy = get_daily_climatology(ds, var, lat, lon)
     annual_cycles[label] = clim
@@ -107,7 +118,7 @@ def circular_rolling_mean(series, window):
     padded = np.concatenate([series[-pad:], series, series[:pad]])
     rolled = pd.Series(padded).rolling(window, center=True, min_periods=1).mean().values
     return rolled[pad:-pad]
-window = 91
+window = 31
 
 for label, cycle in annual_cycles.items():
     cycle_smooth = circular_rolling_mean(cycle, window)
@@ -121,12 +132,12 @@ for label, cycle in annual_cycles.items():
 ref_year = 2000  # leap, for Feb 29 cases, otherwise was giving some error
 month_starts = pd.date_range(f"{ref_year}-01-01", f"{ref_year}-12-31", freq='MS').dayofyear
 month_labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-plt.xticks(month_starts, month_labels)
-
-plt.xlabel("Month")
-plt.ylabel(f"Daily Max Temp for {args.city}")
-plt.title(f"Seasonal rolling means of climatological cycle for {args.var} (1981-2010) for {args.city} lat={lat:.3f}, lon={lon:.3f}")
-plt.legend()
+plt.xticks(month_starts, month_labels, fontsize=18, fontname="Times New Roman")
+plt.yticks(fontsize=18, fontname="Times New Roman")
+plt.xlabel("Month", fontsize=18, fontname="Times New Roman")
+plt.ylabel(f"Daily Temperature (°C)", fontsize=18, fontname="Times New Roman")
+plt.title(f"Climatology of Temperature (1981-2010) for \n{args.city} (lat={lat:.3f}, lon={lon:.3f})", fontsize=22, fontname="Times New Roman")
+plt.legend(fontsize=15)
 plt.tight_layout()
-plt.savefig(f"{config.OUTPUTS_DIR}/Tmax_Daily_Climatology_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_.png", dpi=1000)
+plt.savefig(f"{config.OUTPUTS_DIR}/Temp_Daily_Climatology_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_.png", dpi=1000)
 plt.close()
