@@ -13,4 +13,5 @@ module load python
 source environment.sh
 
 python Prelim_Stats/Mean_Annual_Cycle_Comparison.py --var $SLURM_ARRAY_TASK_ID --city "Zurich" --lat 47.3769 --lon 8.5417
-
+python Prelim_Stats/Mean_Annual_Cycle_Comparison.py --var $SLURM_ARRAY_TASK_ID --city "Locarno" --lat 46.1670 --lon 8.7943
+python Prelim_Stats/Mean_Annual_Cycle_Comparison.py --var $SLURM_ARRAY_TASK_ID --city "Geneva" --lat 46.2044 --lon 6.1432

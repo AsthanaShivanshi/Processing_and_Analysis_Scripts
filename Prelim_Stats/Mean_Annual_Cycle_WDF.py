@@ -11,19 +11,19 @@ import pandas as pd
 ## License: MIT for part of the code about choosing and grouping into months for mean annual cycle
 #https://github.com/jbofill10/Hotel-Booking-Demand-EDA/tree/d91b9fc56693eef20837417f238687704edbce9d/booking_timespans/CityHotelBookingTimeSpan.py
 
-parser = argparse.ArgumentParser(description="Mean Annual Cycle Comparison")
+parser = argparse.ArgumentParser(description="WDF Comparison for Calibration period")
 parser.add_argument("--var", type=int, required=True, help="Variable index (0-3)")
 parser.add_argument("--city", type=str, required=True, help="City name")
 parser.add_argument("--lat", type=float, required=True, help="Latitude of city")
 parser.add_argument("--lon", type=float, required=True, help="Longitude of city")
 args = parser.parse_args()
 
-obs_path = f"{config.TARGET_DIR}/TmaxD_1971_2023.nc"
-bicubic_path = f"{config.MODELS_DIR}/tmax_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/tmax_r01_HR_masked.nc"
-coarse_path = f"{config.MODELS_DIR}/tmax_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/tmax_r01_coarse_masked.nc"
-bc_path = f"{config.BIAS_CORRECTED_DIR}/EQM/eqm_tmax_r01_allcells.nc"
-bc_unet1971_path = f"{config.BIAS_CORRECTED_DIR}/EQM/TRAINING_EQM_tmax_downscaled_r01.nc"
-bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/COMBINED_EQM_tmax_downscaled_r01.nc"
+obs_path = f"{config.TARGET_DIR}/RhiresD_1971_2023.nc"
+bicubic_path = f"{config.MODELS_DIR}/precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/precip_r01_HR_masked.nc"
+coarse_path = f"{config.MODELS_DIR}/precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/precip_r01_coarse_masked.nc"
+bc_path = f"{config.BIAS_CORRECTED_DIR}/EQM/eqm_precip_r01_allcells.nc"
+bc_unet1971_path = f"{config.BIAS_CORRECTED_DIR}/EQM/TRAINING_EQM_precip_downscaled_r01.nc"
+bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/COMBINED_EQM_precip_downscaled_r01.nc"
 
 obs_ds = xr.open_dataset(obs_path)
 bicubic_ds = xr.open_dataset(bicubic_path)
@@ -55,33 +55,39 @@ bc_unet1771_lat_idx, bc_unet1771_lon_idx = nearest_grid(bc_unet1771_ds, lat, lon
 start = "1981-01-01"
 end = "2010-12-31"
 
-
-def get_daily_climatology(ds, var, lat, lon):
+def get_daily_wdf(ds, var, lat, lon, threshold=0.1):
     N_idx, E_idx = nearest_grid(ds, lat, lon)
     data = ds[var].sel(time=slice(start, end)).isel(N=N_idx, E=E_idx).values
-    time = ds['time'].sel(time=slice(start, end)).values
-    doy = pd.to_datetime(time).dayofyear
+    time = pd.to_datetime(ds['time'].sel(time=slice(start, end)).values)
+    doy = time.dayofyear
+    years = time.year
     unique_doy = np.arange(1, 367)  # 1 to 366 (leap years included)
-    daily_clim = np.array([np.nanmean(data[doy == d]) for d in unique_doy])
-    return daily_clim, unique_doy
+    wdf = []
+    for d in unique_doy:
+        vals = data[doy == d]
+        # wet days (precip > threshold)
+        wet_days = np.sum(vals > threshold)
+        total_days = len(vals)
+        wdf.append(wet_days / total_days if total_days > 0 else np.nan)
+    return np.array(wdf), unique_doy
 
 annual_cycles = {}
 doy_axis = None
 for label, ds, var in [
-    ("MeteoSwiss Spatial Analysis", obs_ds, "TmaxD"),
-    ("Coarse Model O/P", coarse_ds, "tmax"),
-    ("Bicubically Interpolated Model O/P", bicubic_ds, "tmax"),
-    ("Bias Corrected using EQM", bc_ds, "tmax"),
-    ("BC+UNet1971 Downscaled", bc_unet1971_ds, "tmax"),
-    ("BC+UNet1771 Downscaled", bc_unet1771_ds, "tmax"),
+    ("MeteoSwiss Spatial Analysis", obs_ds, "RhiresD"),
+    ("Coarse Model O/P", coarse_ds, "precip"),
+    ("Bicubically Interpolated Model O/P", bicubic_ds, "precip"),
+    ("Bias Corrected using EQM", bc_ds, "precip"),
+    ("BC+UNet1971 Downscaled", bc_unet1971_ds, "precip"),
+    ("BC+UNet1771 Downscaled", bc_unet1771_ds, "precip"),
 ]:
-    clim, doy = get_daily_climatology(ds, var, lat, lon)
+    clim, doy = get_daily_wdf(ds, var, lat, lon, threshold=0.1)
     annual_cycles[label] = clim
     if doy_axis is None:
         doy_axis = doy
 
 
-def perkins_skill_score(obs, model, nbins=12):
+def PSS(obs, model, nbins=12):
     combined = np.concatenate([obs, model])
     bins = np.linspace(np.nanmin(combined), np.nanmax(combined), nbins + 1)
     hist_obs, _ = np.histogram(obs, bins=bins, density=True)
@@ -95,7 +101,7 @@ pss_scores = {}
 obs_cycle = annual_cycles["MeteoSwiss Spatial Analysis"]
 for label, cycle in annual_cycles.items():
     if label != "MeteoSwiss Spatial Analysis":
-        pss = perkins_skill_score(obs_cycle, cycle)
+        pss = PSS(obs_cycle, cycle)
         pss_scores[label] = pss
     else:
         pss_scores[label] = None  # NAN
@@ -124,9 +130,9 @@ month_labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 plt.xticks(month_starts, month_labels)
 
 plt.xlabel("Month")
-plt.ylabel(f"Daily Max Temp for {args.city}")
-plt.title(f"Seasonal rolling means of climatological cycle for {args.var} (1981-2010) for {args.city} lat={lat:.3f}, lon={lon:.3f}")
+plt.ylabel(f"Wet Day Frequency for {args.city}")
+plt.title(f"Wet Day Frequency (WDF, >0.1 mm) climatological cycle (1981-2010) for {args.city} lat={lat:.3f}, lon={lon:.3f}")
 plt.legend()
 plt.tight_layout()
-plt.savefig(f"{config.OUTPUTS_DIR}/Tmax_Daily_Climatology_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_.png", dpi=1000)
+plt.savefig(f"{config.OUTPUTS_DIR}/Precip_Daily_WDF_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_.png", dpi=1000)
 plt.close()
