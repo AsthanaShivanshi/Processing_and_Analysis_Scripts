@@ -35,19 +35,19 @@ bc_unet1771_ds = xr.open_dataset(bc_unet1771_path)
 lat = args.lat
 lon = args.lon
 
-def closest_idx(ds, lat, lon):
-    lat_arr = ds['lat'].values
-    lon_arr = ds['lon'].values
-    lat_idx = np.abs(lat_arr - lat).argmin()
-    lon_idx = np.abs(lon_arr - lon).argmin()
-    return lat_idx, lon_idx
+def find_nearest_grid(ds, lat_target, lon_target):
+    lat2d = ds['lat'].values
+    lon2d = ds['lon'].values
+    dist = np.sqrt((lat2d - lat_target)**2 + (lon2d - lon_target)**2)
+    idx = np.unravel_index(np.argmin(dist), dist.shape)
+    return idx  # returns (N_idx, E_idx)
 
-obs_lat_idx, obs_lon_idx = closest_idx(obs_ds, lat, lon)
-bicubic_lat_idx, bicubic_lon_idx = closest_idx(bicubic_ds, lat, lon)
-coarse_lat_idx, coarse_lon_idx = closest_idx(coarse_ds, lat, lon)
-bc_lat_idx, bc_lon_idx = closest_idx(bc_ds, lat, lon)
-bc_unet1971_lat_idx, bc_unet1971_lon_idx = closest_idx(bc_unet1971_ds, lat, lon)
-bc_unet1771_lat_idx, bc_unet1771_lon_idx = closest_idx(bc_unet1771_ds, lat, lon)
+obs_lat_idx, obs_lon_idx = find_nearest_grid(obs_ds, lat, lon)
+bicubic_lat_idx, bicubic_lon_idx = find_nearest_grid(bicubic_ds, lat, lon)
+coarse_lat_idx, coarse_lon_idx = find_nearest_grid(coarse_ds, lat, lon)
+bc_lat_idx, bc_lon_idx = find_nearest_grid(bc_ds, lat, lon)
+bc_unet1971_lat_idx, bc_unet1971_lon_idx = find_nearest_grid(bc_unet1971_ds, lat, lon)
+bc_unet1771_lat_idx, bc_unet1771_lon_idx = find_nearest_grid(bc_unet1771_ds, lat, lon)
 
 #Only for calibration period
 start = "1981-01-01"
@@ -56,16 +56,8 @@ end = "2010-12-31"
 
 #Calculating 30 year climatological mean annual cycle
 def get_annual_cycle(ds, var, lat, lon):
-
-    #Covering cases where lat lon might not be cooridnates
-    if "lat" in ds.coords and "lon" in ds.coords:
-        data= ds[var].sel(time=slice(start, end), lat=lat, lon=lon, method='nearest').values
-    else:
-        lat_arr= ds["lat"].values
-        lon_arr= ds["lon"].values
-        lat_idx= np.abs(lat_arr - lat).argmin()
-        lon_idx= np.abs(lon_arr - lon).argmin()
-        data= ds[var].sel(time=slice(start, end)).isel(lat=lat_idx, lon=lon_idx).values
+    N_idx, E_idx = find_nearest_grid(ds, lat, lon)
+    data = ds[var].sel(time=slice(start, end)).isel(N=N_idx, E=E_idx).values
     time = ds['time'].sel(time=slice(start, end)).values
     months = np.array([t.astype('datetime64[M]').astype(int) % 12 + 1 for t in time])
     cycle = np.array([np.nanmean(data[months == m]) for m in range(1, 13)])
