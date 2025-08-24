@@ -125,9 +125,9 @@ for label, cycle in annual_cycles.items():
 
 plt.xticks(month_axis, month_labels, fontsize=18, fontname="Times New Roman")
 plt.xlabel("Month", fontsize=18, fontname="Times New Roman")
-plt.ylabel(f"Monthly Wet Day Frequency (threshold>0.1 mm)", fontsize=18, fontname="Times New Roman")
-plt.title(f"Climatology of Wet Day Frequency (1981-2010) for \n{args.city} (lat={lat:.3f}, lon={lon:.3f})", fontsize=22, fontname="Times New Roman")
-plt.legend(fontsize=15)
+plt.ylabel(f"WDF (threshold>0.1 mm)", fontsize=18, fontname="Times New Roman")
+plt.title(f"Climatology of Monthly WDF (1981-2010) for \n{args.city} (lat={lat:.3f}, lon={lon:.3f})", fontsize=22, fontname="Times New Roman")
+plt.legend(fontsize=10)
 plt.tight_layout()
 plt.savefig(f"{config.OUTPUTS_DIR}/Precip_Monthly_WDF_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_.png", dpi=1000)
 plt.close()
