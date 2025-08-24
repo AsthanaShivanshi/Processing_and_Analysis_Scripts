@@ -4,16 +4,14 @@ import numpy as np
 import pandas as pd
 import argparse
 
-parser = argparse.ArgumentParser(description="Indices Comparison for Calib Period (1981-2010)")
+
+#2085 : means the future scenario period is 2070-2099 period for thirty years , centered around 2085
+
+parser = argparse.ArgumentParser(description="Indices Comparison (2070-2099)")
 parser.add_argument("--city", type=str, required=True, help="City name")
 parser.add_argument("--lat", type=float, required=True, help="Latitude of city")
 parser.add_argument("--lon", type=float, required=True, help="Longitude of city")
 args = parser.parse_args()
-
-obs_temp_path = f"{config.TARGET_DIR}/TabsD_1971_2023.nc"
-obs_tmin_path = f"{config.TARGET_DIR}/TminD_1971_2023.nc"
-obs_tmax_path = f"{config.TARGET_DIR}/TmaxD_1971_2023.nc"
-obs_precip_path = f"{config.TARGET_DIR}/RhiresD_1971_2023.nc"
 
 bicubic_temp_path = f"{config.MODELS_DIR}/temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/temp_r01_HR_masked.nc"
 bicubic_tmin_path = f"{config.MODELS_DIR}/tmin_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/tmin_r01_HR_masked.nc"
@@ -41,12 +39,6 @@ bc_unet1771_tmax_path = f"{config.BIAS_CORRECTED_DIR}/EQM/COMBINED_EQM_tmax_down
 bc_unet1771_precip_path = f"{config.BIAS_CORRECTED_DIR}/EQM/COMBINED_EQM_precip_downscaled_r01.nc"
 
 datasets = {
-    "MeteoSwiss Spatial Analysis": {
-        "temp": (obs_temp_path, "TabsD"),
-        "tmin": (obs_tmin_path, "TminD"),
-        "tmax": (obs_tmax_path, "TmaxD"),
-        "precip": (obs_precip_path, "RhiresD"),
-    },
     "Coarse Model O/P": {
         "temp": (coarse_temp_path, "temp"),
         "tmin": (coarse_tmin_path, "tmin"),
@@ -81,8 +73,10 @@ datasets = {
 
 lat = args.lat
 lon = args.lon
-start = "1981-01-01"
-end = "2010-12-31"
+start = "2070-01-01"
+end = "2099-12-31"
+
+#Centred around 2085
 
 def nearest_grid(ds, lat_target, lon_target):
     lat2d = ds['lat'].values
@@ -110,26 +104,26 @@ for label, paths in datasets.items():
     tmax, _ = get_series(ds_tmax, paths["tmax"][1], lat, lon)
     precip, _ = get_series(ds_precip, paths["precip"][1], lat, lon)
 
-    # Summer mask for summer indices
+    # Summer mask for JJA
     summer_mask = (time.month >= 6) & (time.month <= 8)
 
-    # TN : Fraction of tropical nights in JJA
+    # TN 
     tropical_nights_bool = tmin[summer_mask] > 20
     tropical_nights = np.mean(tropical_nights_bool)
     tropical_nights_95 = np.percentile(tropical_nights_bool.astype(float), 95)
 
-    # HD : Fraction of hot days in JJA
+    # HD
     hot_days_bool = tmax[summer_mask] > 30
     hot_days = np.mean(hot_days_bool)
     hot_days_95 = np.percentile(hot_days_bool.astype(float), 95)
 
-    # DTR: min, max, and 95th percentile over the cal period
+    # DTR: min, max, and 95th pctl
     dtr_series = tmax - tmin
     dtr_min = np.min(dtr_series)
     dtr_max = np.max(dtr_series)
     dtr_95 = np.percentile(dtr_series, 95)
 
-    # Rolling window of 5 days, max sum() and 95th percentile over cal period
+    # Rolling window of 5 days, max sum() and 95th percentile over future period
     precip_5day_series = pd.Series(precip).rolling(window=5).sum().dropna().values
     precip_5day_max = np.max(precip_5day_series)
     precip_5day_95 = np.percentile(precip_5day_series, 95)
@@ -147,14 +141,14 @@ for label, paths in datasets.items():
 indices = [
     "Tropical Nights (JJA, Tmin>20°C) 95th Percentile",
     "Hot Days (JJA, Tmax>30°C) 95th Percentile",
-    "Min Diurnal Temperature Range (°C) over Cal Period",
-    "Max Diurnal Temperature Range (°C) over Cal Period",
+    "Min Diurnal Temperature Range (°C) over Future Period",
+    "Max Diurnal Temperature Range (°C) over Future Period",
     "95th Percentile Diurnal Temperature Range (°C)",
-    "Max Consecutive 5-Day Precipitation (mm) over Cal Period",
+    "Max Consecutive 5-Day Precipitation (mm) over Future Period",
     "95th Percentile Consecutive 5-Day Precipitation (mm)"
 ]
 df = pd.DataFrame(results, index=indices)
 
-csv_path = f"{config.OUTPUTS_DIR}/Indices_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_1981_2010.csv"
+csv_path = f"{config.OUTPUTS_DIR}/Indices_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_2070_2099.csv"
 df.to_csv(csv_path)
 print(f"Saved indices to {csv_path}")
