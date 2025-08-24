@@ -149,6 +149,6 @@ indices = [
 ]
 df = pd.DataFrame(results, index=indices)
 
-csv_path = f"{config.OUTPUTS_DIR}/Indices_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_2070_2099.csv"
+csv_path = f"{config.OUTPUTS_DIR}/FUTURE_Indices_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_2070_2099.csv"
 df.to_csv(csv_path)
 print(f"Saved indices to {csv_path}")
