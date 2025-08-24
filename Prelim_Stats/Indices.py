@@ -113,34 +113,45 @@ for label, paths in datasets.items():
     # Summer mask for summer indices
     summer_mask = (time.month >= 6) & (time.month <= 8)
 
-    # TN : Average over summer
-    tropical_nights = np.mean(tmin[summer_mask] > 20)
+    # TN : Fraction of tropical nights in JJA
+    tropical_nights_bool = tmin[summer_mask] > 20
+    tropical_nights = np.mean(tropical_nights_bool)
+    tropical_nights_95 = np.percentile(tropical_nights_bool.astype(float), 95)
 
-    # HD : Average over summer
-    hot_days = np.mean(tmax[summer_mask] > 30)
+    # HD : Fraction of hot days in JJA
+    hot_days_bool = tmax[summer_mask] > 30
+    hot_days = np.mean(hot_days_bool)
+    hot_days_95 = np.percentile(hot_days_bool.astype(float), 95)
 
-    # DTR: min and max over the cal period
+    # DTR: min, max, and 95th percentile over the cal period
     dtr_series = tmax - tmin
     dtr_min = np.min(dtr_series)
     dtr_max = np.max(dtr_series)
+    dtr_95 = np.percentile(dtr_series, 95)
 
-    # Rolling window of 5 days, max sum() over cal period
-    precip_5day = pd.Series(precip).rolling(window=5).sum().max()
+    # Rolling window of 5 days, max sum() and 95th percentile over cal period
+    precip_5day_series = pd.Series(precip).rolling(window=5).sum().dropna().values
+    precip_5day_max = np.max(precip_5day_series)
+    precip_5day_95 = np.percentile(precip_5day_series, 95)
 
     results[label] = [
-        tropical_nights,
-        hot_days,
-        dtr_min, 
+        tropical_nights_95,
+        hot_days_95,
+        dtr_min,
         dtr_max,
-        precip_5day
+        dtr_95,
+        precip_5day_max,
+        precip_5day_95
     ]
 
 indices = [
-    "Tropical Nights (JJA, Tmin>20°C) Cal period Mean",
-    "Hot Days (JJA, Tmax>30°C) Cal period Mean",
+    "Tropical Nights (JJA, Tmin>20°C) 95th Percentile",
+    "Hot Days (JJA, Tmax>30°C) 95th Percentile",
     "Min Diurnal Temperature Range (°C) over Cal Period",
     "Max Diurnal Temperature Range (°C) over Cal Period",
-    "Max Consecutive 5-Day Precipitation (mm) over Cal Period"
+    "95th Percentile Diurnal Temperature Range (°C)",
+    "Max Consecutive 5-Day Precipitation (mm) over Cal Period",
+    "95th Percentile Consecutive 5-Day Precipitation (mm)"
 ]
 df = pd.DataFrame(results, index=indices)
 
