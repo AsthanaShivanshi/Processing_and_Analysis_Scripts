@@ -39,7 +39,7 @@ varnames = {
     "tmin": "TminD",
     "tmax": "TmaxD"
 }
-var_list = list(varnames.keys())
+var_list = ["precip", "temp"]
 baseline_names = ["UNet 1971 better", "UNet Combined better"]
 
 unet_train_path = f"{config.UNET_1971_DIR}/Optim_Training_Downscaled_Predictions_2011_2020.nc"
@@ -92,7 +92,7 @@ for var in var_list:
     winner[neither_better] = 2
     winner_maps.append(winner)
 
-fig, axes = plt.subplots(4, 1, figsize=(8, 16), constrained_layout=True)
+fig, axes = plt.subplots(2, 1, figsize=(8, 8), constrained_layout=True)
 
 cmap = mcolors.ListedColormap(["#003366", "#FF7F50", "#FFFFFF"])  # Dark Blue, Coral, White
 cmap.set_bad(color="lightgray")  # NaN handling
@@ -102,14 +102,14 @@ norm = mcolors.BoundaryNorm(bounds, cmap.N)
 
 for idx, (ax, winner) in enumerate(zip(axes, winner_maps)):
     im = ax.imshow(winner, origin='lower', aspect='auto', cmap=cmap, norm=norm)
-    ax.set_title(f"{var_list[idx].capitalize()}", fontsize=14)
+    ax.set_title(f"{var_list[idx].capitalize()}", fontsize=22, fontname="Times New Roman")
     ax.set_xticks([])
     ax.set_yticks([])
 
 cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.02, ticks=[0, 1, 2])
-cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Bicubic best/tied"])
-cbar.set_label("Model with lowest CvM statistic", fontsize=18)
+cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Bicubic best/tied"], fontsize=18, fontname="Times New Roman")
+cbar.set_label("Model with lowest CvM statistic", fontsize=22, fontname="Times New Roman")
 
-fig.suptitle("Gridwise CvM Comparison: UNet 1971 vs Combined vs Bicubic", fontsize=18, fontweight='bold')
+fig.suptitle("Gridwise CvM Comparison: UNet 1971 vs Combined vs Bicubic", fontsize=22, fontname="Times New Roman")
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/gridwise_cvm_comparison.png", dpi=1000)
 plt.close()
