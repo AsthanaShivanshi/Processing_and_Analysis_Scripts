@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import config
 import argparse
 
-#Fontsize and name specs
+# Fontsize and name specs
 plt.rcParams.update({
     "font.family": "serif",
     "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
@@ -26,9 +26,9 @@ varnames = {
     "tmin": "TminD",
     "tmax": "TmaxD"
 }
-var_list = list(varnames.keys())
+var_list = ["precip", "temp"]  
 
-quantiles_to_plot = [5, 50, 95, 99]
+quantiles_to_plot = [5, 50, 95]
 qvals = [q/100 for q in quantiles_to_plot]
 
 unet_train_path = f"{config.UNET_1971_DIR}/Optim_Training_Downscaled_Predictions_2011_2020.nc"
@@ -46,12 +46,11 @@ bicubic_files = {
     "TmaxD":   f"{config.DATASETS_TRAINING_DIR}/TmaxD_step3_interp.nc",
 }
 
-# Load TabsD mask for Swiss domain
 tabsd_ds = xr.open_dataset(target_files["TabsD"]).sel(time=slice("2011-01-01", "2020-12-31"))
-tabsd_mask = ~np.isnan(tabsd_ds["TabsD"].isel(time=0).values)  # shape (lat, lon)
+tabsd_mask = ~np.isnan(tabsd_ds["TabsD"].isel(time=0).values)  
 lats = tabsd_ds["lat"].values
 lons = tabsd_ds["lon"].values
-lon_grid, lat_grid = np.meshgrid(lons, lats)  # shape (lat, lon)
+lon_grid, lat_grid = np.meshgrid(lons, lats) 
 
 winner_maps = []
 for var in var_list:
@@ -116,15 +115,39 @@ for i in range(nrows):
         ax = axes[i, j]
         im = ax.imshow(winner_maps[i, j], origin='lower', aspect='auto', cmap=cmap, norm=norm)
         if i == 0:
-            ax.set_title(f"{quantiles_to_plot[j]}th percentile")
+            ax.set_title(f"{quantiles_to_plot[j]}th percentile", fontsize=26, fontname="Times New Roman")
         if j == 0:
-            ax.set_ylabel(var_list[i].capitalize())
+            ax.set_ylabel(var_list[i].capitalize(), fontsize=24, fontname="Times New Roman")
         ax.set_xticks([])
         ax.set_yticks([])
 
-cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.025, pad=0.02, ticks=[0, 1, 2])
-cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Neither over Bicubic"])
-cbar.set_label("Model with lower Quantile Bias", fontsize=14)
+        # %of non-NaN cells where UNet Combined wins
+        winner_map = winner_maps[i, j]
+        valid_mask = ~np.isnan(winner_map)
+        combined_wins = (winner_map == 1) & valid_mask
+        percent_combined_wins = 100 * np.sum(combined_wins) / np.sum(valid_mask) if np.sum(valid_mask) > 0 else np.nan
+        ax.text(
+            0.02, 0.98,
+            f"{percent_combined_wins:.1f}% UNet Combined wins",
+            transform=ax.transAxes,
+            fontsize=18,
+            fontname="Times New Roman",
+            color="black",
+            va="top",
+            ha="left",
+            bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.2')
+        )
 
-fig.suptitle("Gridwise Model Comparison: Quantile Bias (UNet 1971 vs Combined)", fontsize=24, weight='bold')
+cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.025, pad=0.02, ticks=[0, 1, 2])
+cbar.ax.set_yticklabels(
+    ["UNet 1971 better", "UNet Combined better", "Neither over Bicubic"],
+    fontsize=22, fontname="Times New Roman"
+)
+cbar.set_label("Model with lower Quantile Bias", fontsize=22, fontname="Times New Roman")
+
+fig.suptitle(
+    "Gridwise Model Comparison: Quantile Bias (UNet 1971 vs Combined)",
+    fontsize=24, fontname="Times New Roman", weight='bold'
+)
+
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/spatial_quantile_bias_comparison.png", dpi=1000)
