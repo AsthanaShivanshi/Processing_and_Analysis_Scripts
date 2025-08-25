@@ -7,8 +7,6 @@ from matplotlib.ticker import MaxNLocator, FuncFormatter
 from skimage import measure
 from scipy.ndimage import map_coordinates
 
-
-
 # Fontsize and name specs
 plt.rcParams.update({
     "font.family": "serif",
@@ -21,7 +19,6 @@ plt.rcParams.update({
     "ytick.labelsize": 18,
 })
 
-
 parser = argparse.ArgumentParser(description="Spatial Threshold RMSE Maps")
 parser.add_argument("--var", type=int, required=True, help="Variable index (0-3)")
 args = parser.parse_args()
@@ -32,9 +29,9 @@ varnames = {
     "tmin": "TminD",
     "tmax": "TmaxD"
 }
-var_list = list(varnames.keys())
-var = var_list[args.var]
-file_var = varnames[var]
+#var_list = list(varnames.keys())  # Commented out: we only want TabsD and precip
+var_list = ["precip", "temp"]     # Only keep TabsD and precip
+plot_labels = ["Precip", "Temp"]  # Only keep labels for TabsD and precip
 
 unet_train_path = f"{config.UNET_1971_DIR}/Optim_Training_Downscaled_Predictions_2011_2020.nc"
 unet_combined_path = f"{config.UNET_COMBINED_DIR}/Combined_Downscaled_Predictions_2011_2020.nc"
@@ -57,19 +54,12 @@ unet_combined_ds = xr.open_dataset(unet_combined_path)
 quantiles_to_plot = [5, 50, 95]
 qvals = [q/100 for q in quantiles_to_plot]
 
-rmse_maps = {
-    "Bicubic": [],
-    "UNet 1971": [],
-    "UNet Combined": []
-}
-
 tabsd_ds = xr.open_dataset(target_files["TabsD"]).sel(time=slice("2011-01-01", "2020-12-31"))
 tabsd_mask = ~np.isnan(tabsd_ds["TabsD"].isel(time=0).values)
 lats = tabsd_ds["lat"].values
 lons = tabsd_ds["lon"].values
 lon_grid, lat_grid = np.meshgrid(lons, lats)  # shape (lat, lon)
 
-plot_labels = ["Precip", "Temp", "Tmin", "Tmax"]
 winner_maps = []
 
 for i, var in enumerate(var_list):
@@ -123,17 +113,35 @@ for i in range(len(var_list)):
         masked_data = np.ma.masked_invalid(data)
         im = ax.imshow(masked_data, origin='lower', aspect='auto', cmap=cmap, norm=norm)
         if i == 0:
-            ax.set_title(f"{quantiles_to_plot[j]}th percentile")
+            ax.set_title(f"{quantiles_to_plot[j]}th percentile", fontsize=26, fontname="Times New Roman")
         if j == 0:
-            ax.set_ylabel(plot_labels[i])
+            ax.set_ylabel(plot_labels[i], fontsize=24, fontname="Times New Roman")
         ax.set_xticks([])
         ax.set_yticks([])
 
+        # Annotate percentage of non-NaN grid cells where UNet Combined wins
+        winner_map = winner_maps[i, j]
+        valid_mask = ~np.isnan(winner_map)
+        combined_wins = (winner_map == 1) & valid_mask
+        percent_combined_wins = 100 * np.sum(combined_wins) / np.sum(valid_mask) if np.sum(valid_mask) > 0 else np.nan
+        ax.text(
+            0.02, 0.98,
+            f"{percent_combined_wins:.1f}%",
+            transform=ax.transAxes,
+            fontsize=10,
+            fontname="Times New Roman",
+            color="black",
+            va="top",
+            ha="left",
+            bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.2')
+        )
+
 cbar = fig.colorbar(
     plt.cm.ScalarMappable(norm=norm, cmap=cmap),
-    ax=axes[1:, :], orientation='vertical', fraction=0.025, pad=0.02, ticks=[0, 1, 2]
+    ax=axes, orientation='vertical', fraction=0.025, pad=0.02, ticks=[0, 1, 2]
 )
-cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Neither over bicubic"])
+cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Neither over bicubic"], fontsize=20, fontname="Times New Roman")
+cbar.set_label("Model with lower Thresholded RMSE", fontsize=20, fontname="Times New Roman")
 
-fig.suptitle("Gridwise Model Comparison: Thresholded RMSE (UNet 1971 vs Combined vs Bicubic)", fontsize=24, weight='bold')
+fig.suptitle("Baselines Comparison: Thresholded RMSE (UNet 1971 vs Combined vs Bicubic)", fontsize=24, fontname="Times New Roman")
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/spatial_thresholded_rmse_comparison.png", dpi=1000)

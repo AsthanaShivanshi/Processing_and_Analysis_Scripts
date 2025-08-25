@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Spatial_quantile_bias_comparison
-#SBATCH --output=logs/spatial_quantile_bias_comparison%j.out
-#SBATCH --error=logs/spatial_quantile_bias_comparison%j.err
+#SBATCH --job-name=Spatial_thresholded_RMSE
+#SBATCH --output=logs/spatial_thresholded_RMSE%j.out
+#SBATCH --error=logs/spatial_thresholded_RMSE%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=512G
@@ -17,4 +17,5 @@ source environment.sh
 #python Prelim_Stats/Indices_future_scenarios.py --city "Geneva" --lat 46.2044 --lon 6.1432 #--var $SLURM_ARRAY_TASK_ID
 
 #python Prelim_Stats/plot_distributions_dataset_comparisons.py
-python Prelim_Stats/spatial_quantile_bias_comparison.py --var $SLURM_ARRAY_TASK_ID
+#python Prelim_Stats/spatial_quantile_bias_comparison.py --var $SLURM_ARRAY_TASK_ID
+python Prelim_Stats/thresholded_rmse_spatial_comparison.py --var $SLURM_ARRAY_TASK_ID

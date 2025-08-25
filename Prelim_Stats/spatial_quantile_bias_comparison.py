@@ -128,9 +128,9 @@ for i in range(nrows):
         percent_combined_wins = 100 * np.sum(combined_wins) / np.sum(valid_mask) if np.sum(valid_mask) > 0 else np.nan
         ax.text(
             0.02, 0.98,
-            f"{percent_combined_wins:.1f}% UNet Combined wins",
+            f"{percent_combined_wins:.1f}%",
             transform=ax.transAxes,
-            fontsize=18,
+            fontsize=10,
             fontname="Times New Roman",
             color="black",
             va="top",
@@ -141,13 +141,13 @@ for i in range(nrows):
 cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.025, pad=0.02, ticks=[0, 1, 2])
 cbar.ax.set_yticklabels(
     ["UNet 1971 better", "UNet Combined better", "Neither over Bicubic"],
-    fontsize=22, fontname="Times New Roman"
+    fontsize=20, fontname="Times New Roman"
 )
-cbar.set_label("Model with lower Quantile Bias", fontsize=22, fontname="Times New Roman")
+cbar.set_label("Model with lower Quantile Bias", fontsize=20, fontname="Times New Roman")
 
 fig.suptitle(
-    "Gridwise Model Comparison: Quantile Bias (UNet 1971 vs Combined)",
-    fontsize=24, fontname="Times New Roman", weight='bold'
+    "Baselines Comparison: Quantile Bias",
+    fontsize=24, fontname="Times New Roman"
 )
 
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/spatial_quantile_bias_comparison.png", dpi=1000)
