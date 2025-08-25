@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Thresholded_RMSE
-#SBATCH --output=logs/thresholded_rmse%j.out
-#SBATCH --error=logs/thresholded_rmse%j.err
+#SBATCH --job-name=Gridwise_PSS
+#SBATCH --output=logs/gridwise_pss%j.out
+#SBATCH --error=logs/gridwise_pss%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=512G
@@ -16,6 +16,7 @@ source environment.sh
 #python Prelim_Stats/Indices_future_scenarios.py --city "Locarno" --lat 46.1670 --lon 8.7943 #--var $SLURM_ARRAY_TASK_ID
 #python Prelim_Stats/Indices_future_scenarios.py --city "Geneva" --lat 46.2044 --lon 6.1432 #--var $SLURM_ARRAY_TASK_ID
 
-python Prelim_Stats/plot_distributions_dataset_comparisons.py
+#python Prelim_Stats/plot_distributions_dataset_comparisons.py
 #python Prelim_Stats/spatial_quantile_bias_comparison.py --var $SLURM_ARRAY_TASK_ID
 #python Prelim_Stats/thresholded_rmse_spatial_comparison.py --var $SLURM_ARRAY_TASK_ID
+python Prelim_Stats/gridwise_PSS.py --var $SLURM_ARRAY_TASK_ID

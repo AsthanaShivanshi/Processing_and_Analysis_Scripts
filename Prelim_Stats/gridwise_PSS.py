@@ -5,6 +5,17 @@ import matplotlib.pyplot as plt
 import config
 import matplotlib.colors as mcolors
 
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+    "font.size": 18,
+    "axes.labelsize": 22,
+    "axes.titlesize": 24,
+    "legend.fontsize": 18,
+    "xtick.labelsize": 18,
+    "ytick.labelsize": 18,
+})
+
 def gridwise_perkins_skill_score(a, b, nbins=50):
     pss = np.full(a.shape[1:], np.nan)
     for i in range(a.shape[1]):
@@ -51,7 +62,8 @@ varnames = {
     "tmin": "TminD",
     "tmax": "TmaxD"
 }
-var_list = list(varnames.keys())
+var_list = ["precip", "temp"]
+plot_labels = ["Precip", "Temp"]
 baseline_names = ["Bicubic", "UNet 1971", "UNet Combined"]
 
 unet_train_path = f"{config.UNET_1971_DIR}/Optim_Training_Downscaled_Predictions_2011_2020.nc"
@@ -109,7 +121,7 @@ coolwarm = plt.colormaps['PiYG']
 cmap = mcolors.ListedColormap(coolwarm(np.linspace(0, 1, 256)))
 cmap.set_bad(color="white")  # NaN handling
 
-fig, axes = plt.subplots(4, 3, figsize=(15, 18), constrained_layout=True)
+fig, axes = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
 
 for row_idx, var in enumerate(var_list):
     for col_idx, model in enumerate([bicubic[var], unet_train[var], unet_combined[var]]):
@@ -119,13 +131,12 @@ for row_idx, var in enumerate(var_list):
             pss[~tabsd_mask] = np.nan
         ax = axes[row_idx, col_idx]
         im = ax.imshow(pss, origin='lower', aspect='auto', cmap=cmap, vmin=vmin, vmax=vmax)
-        ax.set_title(f"{baseline_names[col_idx]}")
+        ax.set_title(f"{baseline_names[col_idx]}", fontsize=22, fontname="Times New Roman")
         ax.set_xticks([])
         ax.set_yticks([])
         if col_idx == 0:
-            ax.set_ylabel(var.capitalize(), fontsize=14)
+            ax.set_ylabel(plot_labels[row_idx], fontsize=22, fontname="Times New Roman")
 
-        # Annotate MEAN gridwise PSS in top left (sum over all grid cells divided by number of valid grid cells)
         valid_vals = pss[~np.isnan(pss)]
         if valid_vals.size > 0:
             mean_gridwise_pss = np.sum(valid_vals) / valid_vals.size
@@ -134,7 +145,7 @@ for row_idx, var in enumerate(var_list):
         ax.text(
             0.02, 0.98,
             f"{mean_gridwise_pss:.3f}" if not np.isnan(mean_gridwise_pss) else "Mean gridwise PSS: nan",
-            color="black", fontsize=15, fontweight="bold",
+            color="black", fontsize=18, fontweight="bold",
             ha="left", va="top", transform=ax.transAxes,
             bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.2')
         )
@@ -144,9 +155,9 @@ cbar = fig.colorbar(
     fraction=0.015, pad=0.02,
     ticks=np.arange(0, 1.01, 0.1)
 )
-cbar.set_label("Perkins Skill Score", fontsize=14)
+cbar.set_label("Perkins Skill Score", fontsize=20, fontname="Times New Roman")
 
 print(f"PSS range: {vmin:.4f} to {vmax:.4f}")
 
-fig.suptitle("Gridwise Perkins Skill Score on test set (2011-2020)", fontsize=24, fontweight='bold')
+fig.suptitle("Gridwise Perkins Skill Score on test set (2011-2020)", fontsize=22, fontname="Times New Roman")
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/gridwise_perkins_skill_score.png", dpi=1000)

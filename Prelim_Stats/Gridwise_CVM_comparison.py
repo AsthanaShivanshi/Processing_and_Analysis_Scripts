@@ -5,6 +5,20 @@ import config
 import matplotlib.colors as mcolors
 from scipy.stats import cramervonmises_2samp
 
+
+# Fontsize and name specs
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+    "font.size": 18,
+    "axes.labelsize": 22,
+    "axes.titlesize": 24,
+    "legend.fontsize": 18,
+    "xtick.labelsize": 18,
+    "ytick.labelsize": 18,
+})
+
+
 def gridwise_cvm_stat(a, b):
     stat = np.full(a.shape[1:], np.nan)
     for i in range(a.shape[1]):
@@ -94,8 +108,8 @@ for idx, (ax, winner) in enumerate(zip(axes, winner_maps)):
 
 cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.015, pad=0.02, ticks=[0, 1, 2])
 cbar.ax.set_yticklabels(["UNet 1971 better", "UNet Combined better", "Bicubic best/tied"])
-cbar.set_label("Model with lowest CvM statistic", fontsize=14)
+cbar.set_label("Model with lowest CvM statistic", fontsize=18)
 
-fig.suptitle("Gridwise CvM Comparison: UNet 1971 vs Combined vs Bicubic", fontsize=16, fontweight='bold')
+fig.suptitle("Gridwise CvM Comparison: UNet 1971 vs Combined vs Bicubic", fontsize=18, fontweight='bold')
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/gridwise_cvm_comparison.png", dpi=1000)
 plt.close()
