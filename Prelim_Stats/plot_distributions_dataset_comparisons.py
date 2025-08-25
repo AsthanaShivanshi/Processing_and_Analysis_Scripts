@@ -4,6 +4,20 @@ import numpy as np
 import os
 from pathlib import Path
 
+
+#Fontsize and name specs
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+    "font.size": 18,
+    "axes.labelsize": 22,
+    "axes.titlesize": 24,
+    "legend.fontsize": 18,
+    "xtick.labelsize": 18,
+    "ytick.labelsize": 18,
+})
+
+
 # Output directory for plots
 BASE_DIR= Path(os.environ["BASE_DIR"])
 OUTDIR = BASE_DIR / "sasthana"/"Downscaling"/"Processing_and_Analysis_Scripts"/"Outputs"
@@ -72,11 +86,11 @@ for i, case in enumerate(cases):
     # step outlines
     axs[i].hist(data_obs, bins=50, histtype='step', color="green", linewidth=2, density=True)
     axs[i].hist(data_rec_1771_2010, bins=50, histtype='step', color="red", linewidth=2, density=True)
-    
-    axs[i].set_title(f"Normalised Distribution Comparison for {case['title']}")
-    axs[i].set_xlabel(f"{case['title']}")
-    axs[i].set_ylabel("Frequency")
-    axs[i].legend()
+
+    axs[i].set_title(f"Normalised Distribution Comparison for {case['title']}", fontsize=24, fontname="Times New Roman")
+    axs[i].set_xlabel(f"{case['title']}", fontsize=22, fontname="Times New Roman")
+    axs[i].set_ylabel("Frequency", fontsize=22, fontname="Times New Roman")
+    axs[i].legend(fontsize=18)
 
 plt.tight_layout()
 plt.savefig(OUTDIR/"normalised_distribution_comparison.png", dpi=1000)
