@@ -7,6 +7,21 @@ from matplotlib.ticker import MaxNLocator, FuncFormatter
 from skimage import measure
 from scipy.ndimage import map_coordinates
 
+
+
+# Fontsize and name specs
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+    "font.size": 18,
+    "axes.labelsize": 22,
+    "axes.titlesize": 24,
+    "legend.fontsize": 18,
+    "xtick.labelsize": 18,
+    "ytick.labelsize": 18,
+})
+
+
 parser = argparse.ArgumentParser(description="Spatial Threshold RMSE Maps")
 parser.add_argument("--var", type=int, required=True, help="Variable index (0-3)")
 args = parser.parse_args()
@@ -39,7 +54,7 @@ bicubic_files = {
 unet_train_ds = xr.open_dataset(unet_train_path)
 unet_combined_ds = xr.open_dataset(unet_combined_path)
 
-quantiles_to_plot = [5, 50, 95, 99]
+quantiles_to_plot = [5, 50, 95]
 qvals = [q/100 for q in quantiles_to_plot]
 
 rmse_maps = {

@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=512G
 #SBATCH --time=16:00:00
-##SBATCH --array=0-3
+#SBATCH --array=0-3
 
 
 module load python
@@ -17,4 +17,4 @@ source environment.sh
 #python Prelim_Stats/Indices_future_scenarios.py --city "Geneva" --lat 46.2044 --lon 6.1432 #--var $SLURM_ARRAY_TASK_ID
 
 #python Prelim_Stats/plot_distributions_dataset_comparisons.py
-python Prelim_Stats/spatial_quantile_bias_comparison.py
+python Prelim_Stats/spatial_quantile_bias_comparison.py --var $SLURM_ARRAY_TASK_ID

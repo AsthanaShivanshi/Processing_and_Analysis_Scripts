@@ -4,6 +4,19 @@ import matplotlib.pyplot as plt
 import config
 import argparse
 
+# Fontsize and name specs
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+    "font.size": 18,
+    "axes.labelsize": 22,
+    "axes.titlesize": 24,
+    "legend.fontsize": 18,
+    "xtick.labelsize": 18,
+    "ytick.labelsize": 18,
+})
+
+
 parser = argparse.ArgumentParser(description="City-specific RMSE vs Quantile")
 parser.add_argument("--var", type=int, required=True, help="Variable index (0-3)")
 parser.add_argument("--city", type=str, required=True, help="City name")
