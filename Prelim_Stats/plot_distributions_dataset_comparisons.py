@@ -87,9 +87,9 @@ for i, case in enumerate(cases):
     axs[i].hist(data_obs, bins=50, histtype='step', color="green", linewidth=2, density=True)
     axs[i].hist(data_rec_1771_2010, bins=50, histtype='step', color="red", linewidth=2, density=True)
 
-    axs[i].set_title(f"Normalised Distribution Comparison for {case['title']}", fontsize=24, fontname="Times New Roman")
-    axs[i].set_xlabel(f"{case['title']}", fontsize=22, fontname="Times New Roman")
-    axs[i].set_ylabel("Frequency", fontsize=22, fontname="Times New Roman")
+    axs[i].set_title(f"{case['title']}", fontsize=18, fontname="Times New Roman")
+    axs[i].set_xlabel(f"{case['title']}", fontsize=18, fontname="Times New Roman")
+    axs[i].set_ylabel("Frequency", fontsize=18, fontname="Times New Roman")
     axs[i].legend(fontsize=18)
 
 plt.tight_layout()

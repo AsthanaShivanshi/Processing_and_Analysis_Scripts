@@ -115,7 +115,7 @@ for i in range(nrows):
         ax = axes[i, j]
         im = ax.imshow(winner_maps[i, j], origin='lower', aspect='auto', cmap=cmap, norm=norm)
         if i == 0:
-            ax.set_title(f"{quantiles_to_plot[j]}th percentile", fontsize=26, fontname="Times New Roman")
+            ax.set_title(f"{quantiles_to_plot[j]}th percentile", fontsize=24, fontname="Times New Roman")
         if j == 0:
             ax.set_ylabel(var_list[i].capitalize(), fontsize=24, fontname="Times New Roman")
         ax.set_xticks([])
@@ -130,7 +130,7 @@ for i in range(nrows):
             0.02, 0.98,
             f"{percent_combined_wins:.1f}%",
             transform=ax.transAxes,
-            fontsize=10,
+            fontsize=8,
             fontname="Times New Roman",
             color="black",
             va="top",
@@ -140,14 +140,9 @@ for i in range(nrows):
 
 cbar = fig.colorbar(im, ax=axes, orientation='vertical', fraction=0.025, pad=0.02, ticks=[0, 1, 2])
 cbar.ax.set_yticklabels(
-    ["UNet 1971 better", "UNet Combined better", "Neither over Bicubic"],
-    fontsize=20, fontname="Times New Roman"
+    ["UNet 1971 better", "UNet Combined better", "Bicubic tied"],
+    fontsize=18, fontname="Times New Roman"
 )
-cbar.set_label("Model with lower Quantile Bias", fontsize=20, fontname="Times New Roman")
-
-fig.suptitle(
-    "Baselines Comparison: Quantile Bias",
-    fontsize=24, fontname="Times New Roman"
-)
+cbar.set_label("Model with lower Quantile Bias", fontsize=18, fontname="Times New Roman")
 
 plt.savefig(f"{config.OUTPUTS_DIR}/Spatial/spatial_quantile_bias_comparison.png", dpi=1000)
