@@ -47,21 +47,12 @@ lat = args.lat
 lon = args.lon
 
 
-if 'lat' in obs_ds and 'lon' in obs_ds:
-    lat_vals = obs_ds['lat'].values
-    lon_vals = obs_ds['lon'].values
-    for ds in [bicubic_ds, coarse_ds, bc_ds, bc_unet1971_ds, bc_unet1771_ds]:
-        if 'lat' not in ds.coords:
-            ds = ds.assign_coords(lat=("N", lat_vals))
-        if 'lon' not in ds.coords:
-            ds = ds.assign_coords(lon=("E", lon_vals))
-
 def nearest_grid(ds, lat_target, lon_target):
-    lat2d = ds['lat'].values
-    lon2d = ds['lon'].values
-    dist = np.sqrt((lat2d - lat_target)**2 + (lon2d - lon_target)**2)
-    idx = np.unravel_index(np.argmin(dist), dist.shape)
-    return idx
+    lat_vals = ds['lat'].values
+    lon_vals = ds['lon'].values
+    lat_idx = np.argmin(np.abs(lat_vals - lat_target))
+    lon_idx = np.argmin(np.abs(lon_vals - lon_target))
+    return lat_idx, lon_idx
 
 obs_lat_idx, obs_lon_idx = nearest_grid(obs_ds, lat, lon)
 bicubic_lat_idx, bicubic_lon_idx = nearest_grid(bicubic_ds, lat, lon)
