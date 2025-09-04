@@ -34,8 +34,8 @@ coarse_path = f"{config.MODELS_DIR}/precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp
 bc_path = f"{config.BIAS_CORRECTED_DIR}/EQM/precip_QM_BC_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_r01.nc" #BC at coarse resolution (12kms)
 
 bicubic_path = f"{config.BIAS_CORRECTED_DIR}/EQM/precip_BC_bicubic_r01.nc" #BC+Bicubic at high res(1 km)
-bc_unet1971_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_TRAINING_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc" #No latlon <t present
-bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc" #No latlon <t present
+bc_unet1971_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_TRAINING_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc" #No latlon <t present#bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc" #No latlon <t present
+bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc"
 
 obs_ds = xr.open_dataset(obs_path)
 bicubic_ds = xr.open_dataset(bicubic_path)
