@@ -32,7 +32,7 @@ obs_path = f"{config.TARGET_DIR}/TabsD_1971_2023.nc" #Spatial analysis
 coarse_path = f"{config.MODELS_DIR}/temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/temp_r01_coarse_masked.nc" #Without BC or bicubic, plain RCM run
 bc_path = f"{config.BIAS_CORRECTED_DIR}/EQM/temp_QM_BC_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_r01.nc" #BC at coarse resolution (12kms)
 
-bicubic_path = f"{config.BIAS_CORRECTED_DIR}/temp_BC_bicubic_r01.nc"
+bicubic_path = f"{config.BIAS_CORRECTED_DIR}/EQM/temp_BC_bicubic_r01.nc"
 bc_unet1971_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_TRAINING_QM_BC_temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc"
 bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc"
 
@@ -46,13 +46,22 @@ bc_unet1771_ds = xr.open_dataset(bc_unet1771_path)
 lat = args.lat
 lon = args.lon
 
-#Nearest grid fucn : nearest func expects 1D in xarray
+
+if 'lat' in obs_ds and 'lon' in obs_ds:
+    lat_vals = obs_ds['lat'].values
+    lon_vals = obs_ds['lon'].values
+    for ds in [bicubic_ds, coarse_ds, bc_ds, bc_unet1971_ds, bc_unet1771_ds]:
+        if 'lat' not in ds.coords:
+            ds = ds.assign_coords(lat=("N", lat_vals))
+        if 'lon' not in ds.coords:
+            ds = ds.assign_coords(lon=("E", lon_vals))
+
 def nearest_grid(ds, lat_target, lon_target):
     lat2d = ds['lat'].values
     lon2d = ds['lon'].values
     dist = np.sqrt((lat2d - lat_target)**2 + (lon2d - lon_target)**2)
     idx = np.unravel_index(np.argmin(dist), dist.shape)
-    return idx  # returns (N_idx, E_idx)
+    return idx
 
 obs_lat_idx, obs_lon_idx = nearest_grid(obs_ds, lat, lon)
 bicubic_lat_idx, bicubic_lon_idx = nearest_grid(bicubic_ds, lat, lon)
