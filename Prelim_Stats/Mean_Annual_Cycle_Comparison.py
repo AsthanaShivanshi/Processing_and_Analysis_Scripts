@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 import pandas as pd
+import subprocess
 
 plt.rcParams.update({
     "font.family": "serif",
@@ -32,9 +33,9 @@ obs_path = f"{config.TARGET_DIR}/TabsD_1971_2023.nc" #Spatial analysis
 coarse_path = f"{config.MODELS_DIR}/temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/temp_r01_coarse_masked.nc" #Without BC or bicubic, plain RCM run
 bc_path = f"{config.BIAS_CORRECTED_DIR}/EQM/temp_QM_BC_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_r01.nc" #BC at coarse resolution (12kms)
 
-bicubic_path = f"{config.BIAS_CORRECTED_DIR}/EQM/temp_BC_bicubic_r01.nc"
-bc_unet1971_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_TRAINING_QM_BC_temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc"
-bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc"
+bicubic_path = f"{config.BIAS_CORRECTED_DIR}/EQM/temp_BC_bicubic_r01.nc" #BC+Bicubic at high res(1 km)
+bc_unet1971_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_TRAINING_QM_BC_temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc" #No latlon <t present
+bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc" #No latlon <t present
 
 obs_ds = xr.open_dataset(obs_path)
 bicubic_ds = xr.open_dataset(bicubic_path)
@@ -43,16 +44,32 @@ bc_ds = xr.open_dataset(bc_path)
 bc_unet1971_ds = xr.open_dataset(bc_unet1971_path)
 bc_unet1771_ds = xr.open_dataset(bc_unet1771_path)
 
+#need setgrid from cdo for UNet downscaled files
+
+def set_grid_with_cdo(input_path, output_path):
+    subprocess.run([
+        "cdo", f"setgrid,{config.HR_GRID_FILE}", input_path, output_path
+    ], check=True)
+
+bc_unet1971_gridset_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_TRAINING_QM_BC_temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01_gridset.nc"
+bc_unet1771_gridset_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01_gridset.nc"
+
+set_grid_with_cdo(bc_unet1971_path, bc_unet1971_gridset_path)
+set_grid_with_cdo(bc_unet1771_path, bc_unet1771_gridset_path)
+
+bc_unet1971_ds = xr.open_dataset(bc_unet1971_gridset_path)
+bc_unet1771_ds = xr.open_dataset(bc_unet1771_gridset_path)
+
 lat = args.lat
 lon = args.lon
 
-
 def nearest_grid(ds, lat_target, lon_target):
-    lat_vals = ds['lat'].values
-    lon_vals = ds['lon'].values
-    lat_idx = np.argmin(np.abs(lat_vals - lat_target))
-    lon_idx = np.argmin(np.abs(lon_vals - lon_target))
-    return lat_idx, lon_idx
+    lat2d = ds['lat'].values
+    lon2d = ds['lon'].values
+    dist = np.sqrt((lat2d - lat_target)**2 + (lon2d - lon_target)**2)
+    idx = np.unravel_index(np.argmin(dist), dist.shape)
+    return idx
+
 
 obs_lat_idx, obs_lon_idx = nearest_grid(obs_ds, lat, lon)
 bicubic_lat_idx, bicubic_lon_idx = nearest_grid(bicubic_ds, lat, lon)

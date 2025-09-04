@@ -21,3 +21,4 @@ source environment.sh
 #python Prelim_Stats/thresholded_rmse_spatial_comparison.py --var $SLURM_ARRAY_TASK_ID
 #python Prelim_Stats/gridwise_PSS.py --var $SLURM_ARRAY_TASK_ID
 python Prelim_Stats/Mean_Annual_Cycle_Comparison.py --city "Zurich" --lat 47.3769 --lon 8.5417 --var $SLURM_ARRAY_TASK_ID
+python Prelim_Stats/Mean_Annual_Cycle_Comparison.py --city "Locarno" --lat 46.1670 --lon 8.7943 --var $SLURM_ARRAY_TASK_ID
