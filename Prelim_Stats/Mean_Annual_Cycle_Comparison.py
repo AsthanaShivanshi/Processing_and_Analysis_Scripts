@@ -108,7 +108,7 @@ for label, cycle in annual_cycles.items():
         pss = perkins_skill_score(obs_cycle, cycle)
         pss_scores[label] = pss
     else:
-        pss_scores[label] = None  # NAN
+        pss_scores[label] = None  # NaN
 
 plt.figure(figsize=(12, 8))
 
