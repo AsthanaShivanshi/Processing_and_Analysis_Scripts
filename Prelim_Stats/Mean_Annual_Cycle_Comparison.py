@@ -29,13 +29,13 @@ parser.add_argument("--lat", type=float, required=True, help="Latitude of city")
 parser.add_argument("--lon", type=float, required=True, help="Longitude of city")
 args = parser.parse_args()
 
-obs_path = f"{config.TARGET_DIR}/RhiresD_1971_2023.nc" #Spatial analysis
-coarse_path = f"{config.MODELS_DIR}/precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/precip_r01_coarse_masked.nc" #Without BC or bicubic, plain RCM run
-bc_path = f"{config.BIAS_CORRECTED_DIR}/EQM/precip_QM_BC_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_r01.nc" #BC at coarse resolution (12kms)
+obs_path = f"{config.TARGET_DIR}/TabsD_1971_2023.nc" #Spatial analysis
+coarse_path = f"{config.MODELS_DIR}/temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/temp_r01_coarse_masked.nc" #Without BC or bicubic, plain RCM run
+bc_path = f"{config.BIAS_CORRECTED_DIR}/EQM/temp_QM_BC_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_r01.nc" #BC at coarse resolution (12kms)
 
-bicubic_path = f"{config.BIAS_CORRECTED_DIR}/EQM/precip_BC_bicubic_r01.nc" #BC+Bicubic at high res(1 km)
-bc_unet1971_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_TRAINING_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc" #No latlon <t present#bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc" #No latlon <t present
-bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc"
+bicubic_path = f"{config.BIAS_CORRECTED_DIR}/EQM/temp_BC_bicubic_r01.nc" #BC+Bicubic at high res(1 km)
+bc_unet1971_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_TRAINING_QM_BC_temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc" #No latlon <t present#bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc" #No latlon <t present
+bc_unet1771_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01.nc"
 
 obs_ds = xr.open_dataset(obs_path)
 bicubic_ds = xr.open_dataset(bicubic_path)
@@ -51,8 +51,8 @@ bc_unet1771_ds = xr.open_dataset(bc_unet1771_path)
         #"cdo", f"setgrid,{config.HR_GRID_FILE}", input_path, output_path
     #], check=True)
 
-bc_unet1971_gridset_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_TRAINING_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_gridset_r01.nc"
-bc_unet1771_gridset_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_gridset_r01.nc"
+bc_unet1971_gridset_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_TRAINING_QM_BC_temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_gridset_r01.nc"
+bc_unet1771_gridset_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_gridset_r01.nc"
 
 #set_grid_with_cdo(bc_unet1971_path, bc_unet1971_gridset_path)
 #set_grid_with_cdo(bc_unet1771_path, bc_unet1771_gridset_path)
@@ -95,12 +95,12 @@ def get_daily_climatology(ds, var, lat, lon):
 annual_cycles = {}
 doy_axis = None
 for label, ds, var in [
-    ("MeteoSwiss Spatial Analysis", obs_ds, "RhiresD"),
-    ("Coarse non-BC Model O/P", coarse_ds, "precip"),
-    ("Bias Corrected using EQM", bc_ds, "precip"),
-    ("BC+ Bicubic Model O/P", bicubic_ds, "precip"),
-    ("BC+Bicubic+UNet1771 Downscaled", bc_unet1771_ds, "precip"),
-    ("BC+Bicubic+UNet1971 Downscaled", bc_unet1971_ds, "precip"),
+    ("MeteoSwiss Spatial Analysis", obs_ds, "TabsD"),
+    ("Coarse non-BC Model O/P", coarse_ds, "temp"),
+    ("Bias Corrected using EQM", bc_ds, "temp"),
+    ("BC+ Bicubic Model O/P", bicubic_ds, "temp"),
+    ("BC+Bicubic+UNet1771 Downscaled", bc_unet1771_ds, "temp"),
+    ("BC+Bicubic+UNet1971 Downscaled", bc_unet1971_ds, "temp"),
 ]:
     clim, doy = get_daily_climatology(ds, var, lat, lon)
     annual_cycles[label] = clim
@@ -151,9 +151,9 @@ month_labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 plt.xticks(month_starts, month_labels, fontsize=18, fontname="Times New Roman")
 plt.yticks(fontsize=18, fontname="Times New Roman")
 plt.xlabel("Month", fontsize=18, fontname="Times New Roman")
-plt.ylabel(f"Daily Precipitation (mm)", fontsize=18, fontname="Times New Roman")
-plt.title(f"Climatology of Daily Precipitation (1981-2010) for \n{args.city} (lat={lat:.3f}, lon={lon:.3f})", fontsize=22, fontname="Times New Roman")
+plt.ylabel(f"Mean Temperature (°C)", fontsize=18, fontname="Times New Roman")
+plt.title(f"Climatology of Daily Temperature (1981-2010) for \n{args.city} (lat={lat:.3f}, lon={lon:.3f})", fontsize=22, fontname="Times New Roman")
 plt.legend(fontsize=15)
 plt.tight_layout()
-plt.savefig(f"{config.OUTPUTS_DIR}/Precip_Daily_Climatology_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_.png", dpi=1000)
+plt.savefig(f"{config.OUTPUTS_DIR}/Temp_Daily_Climatology_Comparison_{args.city}_{lat:.3f}_{lon:.3f}_.png", dpi=1000)
 plt.close()
