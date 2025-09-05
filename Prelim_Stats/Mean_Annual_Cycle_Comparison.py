@@ -44,18 +44,18 @@ bc_ds = xr.open_dataset(bc_path)
 bc_unet1971_ds = xr.open_dataset(bc_unet1971_path)
 bc_unet1771_ds = xr.open_dataset(bc_unet1771_path)
 
-#need setgrid from cdo for UNet downscaled files
+#need setgrid from cdo for UNet downscaled files, processing slow, hence setgrid was done via the terminal and saved in advance
 
-def set_grid_with_cdo(input_path, output_path):
-    subprocess.run([
-        "cdo", f"setgrid,{config.HR_GRID_FILE}", input_path, output_path
-    ], check=True)
+#def set_grid_with_cdo(input_path, output_path):
+    #subprocess.run([
+        #"cdo", f"setgrid,{config.HR_GRID_FILE}", input_path, output_path
+    #], check=True)
 
-bc_unet1971_gridset_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_TRAINING_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01_gridset.nc"
-bc_unet1771_gridset_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_r01_gridset.nc"
+bc_unet1971_gridset_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_TRAINING_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_gridset_r01.nc"
+bc_unet1771_gridset_path = f"{config.BIAS_CORRECTED_DIR}/EQM/DOWNSCALED_COMBINED_QM_BC_precip_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_downscaled_gridset_r01.nc"
 
-set_grid_with_cdo(bc_unet1971_path, bc_unet1971_gridset_path)
-set_grid_with_cdo(bc_unet1771_path, bc_unet1771_gridset_path)
+#set_grid_with_cdo(bc_unet1971_path, bc_unet1971_gridset_path)
+#set_grid_with_cdo(bc_unet1771_path, bc_unet1771_gridset_path)
 
 bc_unet1971_ds = xr.open_dataset(bc_unet1971_gridset_path)
 bc_unet1771_ds = xr.open_dataset(bc_unet1771_gridset_path)
