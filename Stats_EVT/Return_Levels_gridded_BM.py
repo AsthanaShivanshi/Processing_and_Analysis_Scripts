@@ -12,6 +12,8 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from sklearn.metrics import root_mean_squared_error
 
+
+
 def gridcell(ds):
     if 'lat' in ds and 'lon' in ds:
         lats = ds['lat'].values
@@ -161,6 +163,8 @@ for rp in return_periods:
     if len(axes) > len(grids):
         for ax in axes[len(grids):]:
             ax.axis('off')
+
+
     plt.suptitle(f"{rp}-year Return Level (Tmax),1981-2010, in Celsius",fontsize=16)
     plt.tight_layout()
     fig.savefig(f"tmax_return_levels_{rp}yr.png")
