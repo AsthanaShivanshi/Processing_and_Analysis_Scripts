@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=512G
 #SBATCH --time=20:00:00
-#SBATCH --array=0-3
+
 
 source environment.sh
 module load python
