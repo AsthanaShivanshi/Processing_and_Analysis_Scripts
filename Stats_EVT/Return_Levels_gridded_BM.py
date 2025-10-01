@@ -3,25 +3,35 @@ import pandas as pd
 import sys
 import os
 import xarray as xr
+import pyextremes
 from major_return_levels_bm import get_extreme_return_levels_bm
 sys.path.append('../Prelim_Stats')
 import config
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+from sklearn.metrics import root_mean_squared_error
 
 def gridcell(ds):
-    lats = ds['lat'].values
-    lons = ds['lon'].values
+    if 'lat' in ds and 'lon' in ds:
+        lats = ds['lat'].values
+        lons = ds['lon'].values
+    elif 'N' in ds and 'E' in ds:
+        lats = ds['N'].values
+        lons = ds['E'].values
     grid_cells = []
     for lat in lats:
         for lon in lons:
             grid_cells.append((float(lat), float(lon)))
     return grid_cells
 
+
+
 def rmse(errors):
     errors = np.array(errors).flatten()
-    return np.sqrt(np.mean(errors ** 2))
+    return root_mean_squared_error(np.zeros_like(errors), errors)
+
+
 
 def pooled_rmse(
     obs_file, obs_var, baseline_files, baseline_vars, return_periods, block_size, time_slice
@@ -67,8 +77,9 @@ def pooled_rmse(
 
     return rmse_table
 
+
 if __name__ == "__main__":
-    return_periods = [10, 20, 50, 100]
+    return_periods = [5,10, 20, 50, 100]
     block_size = '365D'
     time_slice = ('1981-01-01', '2010-12-31') #Cal period
 
@@ -138,11 +149,11 @@ for rp in return_periods:
             file, var, rp, block_size, time_slice
         )
         grids.append(grid)
-    fig, axes = plt.subplots(4, 2, figsize=(16, 20), subplot_kw={'projection': ccrs.PlateCarree()})
+    fig, axes = plt.subplots(5, 2, figsize=(16, 20), subplot_kw={'projection': ccrs.PlateCarree()})
     axes = axes.flatten()
     for ax, title, grid in zip(axes, titles, grids):
         im = ax.pcolormesh(lons, lats, grid, cmap='coolwarm', shading='auto')
-        ax.set_title(title)
+        ax.set_title(f"{title} ({rp} year return level in degrees Celsius)", fontsize=14)
         ax.add_feature(cfeature.BORDERS, linewidth=0.5)
         ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
         ax.set_extent([5.5, 10.5, 45.5, 47.9])
@@ -150,7 +161,7 @@ for rp in return_periods:
     if len(axes) > len(grids):
         for ax in axes[len(grids):]:
             ax.axis('off')
-    plt.suptitle(f"{rp}-year Return Level (Tmax),1981-2010",fontsize=16)
+    plt.suptitle(f"{rp}-year Return Level (Tmax),1981-2010, in Celsius",fontsize=16)
     plt.tight_layout()
     fig.savefig(f"tmax_return_levels_{rp}yr.png")
     plt.close(fig)
