@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import sys
-import os
 import xarray as xr
 import pyextremes
 from major_return_levels_bm import get_extreme_return_levels_bm
