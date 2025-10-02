@@ -9,7 +9,7 @@ def get_extreme_return_levels_bm(
     lat: float,
     lon: float,
     block_size: str = "365D",  # block size for maxima, e.g. "365D" for annual
-    return_periods=[5,10,20,50,100],
+    return_periods=[20,50,100],
     time_slice=('1981-01-01', '2010-12-31'),
     return_all_periods=False
 ):
