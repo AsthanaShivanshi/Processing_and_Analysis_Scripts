@@ -61,14 +61,12 @@ baseline_info_hr = {
 ds_hr_baselines = {name: xr.open_dataset(info["nc_file"]) for name, info in baseline_info_hr.items()}
 
 for rp in return_periods:
+    # COARSE : single file only for model run
     coarse_rl = []
     for i, lat in enumerate(lat_vals_coarse):
         for j, lon in enumerate(lon_vals_coarse):
-            if region_mask_coarse.values[i, j]:
-                ts = ds_coarse['tmax'][:, i, j].values
-                if np.isnan(ts).all():
-                    coarse_rl.append(np.nan)
-                    continue
+            ts = ds_coarse['tmax'][:, i, j].values
+            if region_mask_coarse.values[i, j] and ts.size > 0 and not np.isnan(ts).all():
                 rl = get_extreme_return_levels_bm(
                     nc_file=f"{config.MODELS_DIR}/tmax_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/tmax_r01_coarse_masked.nc",
                     variable_name="tmax",
@@ -81,24 +79,23 @@ for rp in return_periods:
                 coarse_rl.append(rl)
             else:
                 coarse_rl.append(np.nan)
+
+    # COARSE df
+    lat_grid_coarse, lon_grid_coarse = np.meshgrid(lat_vals_coarse, lon_vals_coarse, indexing='ij')
     df_coarse = pd.DataFrame({
-        "lat": [lat for lat in lat_vals_coarse for _ in lon_vals_coarse],
-        "lon": [lon for _ in lat_vals_coarse for lon in lon_vals_coarse],
+        "lat": lat_grid_coarse.flatten(),
+        "lon": lon_grid_coarse.flatten(),
         "COARSE": coarse_rl
     })
     df_coarse_masked = df_coarse[region_mask_coarse.values.flatten()]
 
-    # HR grid , except coarse
+    # HR 
     results_hr = {name: [] for name in baseline_info_hr}
     for i, lat in enumerate(lat_vals_hr):
         for j, lon in enumerate(lon_vals_hr):
-            if region_mask_hr.values[i, j]:
-                for name, info in baseline_info_hr.items():
-                    ds_hr_baseline = ds_hr_baselines[name]  
-                    ts_hr = ds_hr_baseline[info["variable_name"]][:, i, j].values
-                    if np.isnan(ts_hr).all():
-                        results_hr[name].append(np.nan)
-                        continue
+            for name, info in baseline_info_hr.items():
+                ts_hr = ds_hr_baselines[name][info["variable_name"]][:, i, j].values
+                if region_mask_hr.values[i, j] and ts_hr.size > 0 and not np.isnan(ts_hr).all():
                     rl = get_extreme_return_levels_bm(
                         nc_file=info["nc_file"],
                         variable_name=info["variable_name"],
@@ -109,12 +106,14 @@ for rp in return_periods:
                         return_all_periods=False
                     )["return value"].values[0]
                     results_hr[name].append(rl)
-            else:
-                for name in results_hr:
+                else:
                     results_hr[name].append(np.nan)
+
+    # HR df
+    lat_grid_hr, lon_grid_hr = np.meshgrid(lat_vals_hr, lon_vals_hr, indexing='ij')
     df_hr = pd.DataFrame({
-        "lat": [lat for lat in lat_vals_hr for _ in lon_vals_hr],
-        "lon": [lon for _ in lat_vals_hr for lon in lon_vals_hr],
+        "lat": lat_grid_hr.flatten(),
+        "lon": lon_grid_hr.flatten(),
         **results_hr
     })
     df_hr_masked = df_hr[region_mask_hr.values.flatten()]
@@ -125,10 +124,9 @@ for rp in return_periods:
         rmse = ((df_hr_masked.loc[valid_mask, "OBS"] - df_hr_masked.loc[valid_mask, baseline]) ** 2).mean() ** 0.5
         rmse_table.loc[rp, baseline] = rmse
 
-    # RMSE
+    # RMSE for coarse field : pooled
     valid_mask_coarse = (~df_hr_masked["OBS"].isna()) & (~df_coarse_masked["COARSE"].isna())
     rmse_table.loc[rp, "COARSE"] = ((df_hr_masked.loc[valid_mask_coarse, "OBS"] - df_coarse_masked.loc[valid_mask_coarse, "COARSE"]) ** 2).mean() ** 0.5
-
 print(f"Pooled RMSE table for Swiss region {region_num}:")
 rmse_table.to_csv(f"swiss_region{region_num}_rmse_table_tmax.csv")
 
