@@ -94,7 +94,7 @@ for rp in return_periods:
         for j, lon in enumerate(lon_vals_hr):
             if region_mask_hr.values[i, j]:
                 for name, info in baseline_info_hr.items():
-                    ds_hr_baseline = ds_hr_baselines[name]  # Use already opened dataset
+                    ds_hr_baseline = ds_hr_baselines[name]  
                     ts_hr = ds_hr_baseline[info["variable_name"]][:, i, j].values
                     if np.isnan(ts_hr).all():
                         results_hr[name].append(np.nan)
