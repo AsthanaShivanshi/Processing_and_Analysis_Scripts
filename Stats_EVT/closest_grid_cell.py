@@ -95,11 +95,6 @@ def select_nearest_grid_cell(dataset, target_lat, target_lon, var_name=None):
         
         result['data'] = data_series
     
-    print(f"Target: ({target_lat:.4f}, {target_lon:.4f})")
-    print(f"Closest grid cell: ({closest_lat:.4f}, {closest_lon:.4f})")
-    print(f"Distance: {min_distance:.4f} degrees")
-    print(f"Grid indices: lat_idx={lat_idx}, lon_idx={lon_idx}")
-    
     if var_name:
         print(f"Variable '{var_name}' extracted")
         print(f"Time series shape: {result['data'].shape}")
