@@ -9,7 +9,7 @@ import cdsapi
 # --- Configuration for CDS API ---
 CDS_CLIENT = cdsapi.Client()
 REFERENCE_DIR = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/"
-OUTPUT_ROOT_DIR = os.path.join(REFERENCE_DIR, "ERA5_daily_selected_vars_EUR")
+OUTPUT_ROOT_DIR = os.path.join(REFERENCE_DIR, "ERA5_daily_EUR")
 os.makedirs(OUTPUT_ROOT_DIR, exist_ok=True)
 os.chdir(REFERENCE_DIR)
 
