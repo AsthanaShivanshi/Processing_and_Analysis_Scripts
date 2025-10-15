@@ -16,7 +16,7 @@ os.chdir(REFERENCE_DIR)
 # European domain
 EUROPE_BBOX = [70,-30,37,50]  # [N, W, S, E] - European continental domain
 
-# List of variables to download
+# List of vars
 ERA5_VARIABLES = [
     "2m_temperature",
     "total_precipitation",
@@ -86,7 +86,7 @@ def download_era5_daily_data_europe(start_date, end_date):
                 hourly_ds = xr.open_dataset(temp_hourly_file)
                 daily_ds = convert_hourly_to_daily(hourly_ds)
                 
-                # Save daily data
+                # Daily: save
                 daily_ds.to_netcdf(output_filename)
                 print(f"Converted to daily averages and saved to {output_filename}")
                 
