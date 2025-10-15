@@ -8,8 +8,10 @@ import cdsapi
 
 # --- Configuration for CDS API ---
 CDS_CLIENT = cdsapi.Client()
-OUTPUT_ROOT_DIR = "/reference/era5_daily_data_europe"
+REFERENCE_DIR = "/reference"
+OUTPUT_ROOT_DIR = os.path.join(REFERENCE_DIR, "era5_daily_data_europe")
 os.makedirs(OUTPUT_ROOT_DIR, exist_ok=True)
+os.chdir(REFERENCE_DIR)
 
 # European domain
 EUROPE_BBOX = [70,-30,37,50]  # [N, W, S, E] - European continental domain
