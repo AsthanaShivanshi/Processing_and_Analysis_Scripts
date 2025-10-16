@@ -73,8 +73,13 @@ def get_remote_dataset_info(dataset_name):
         base = base_url.rstrip("/")
 
     resource_url = f"{base}/api/v2/resources/{dataset_name}"
+
     try:
-        uid, apikey = creds["key"].split(":", 1)
+        keyval = creds["key"]
+        if ":" not in keyval:
+            print("Malformed CDS API key in ~/.cdsapirc. Should be 'uid:apikey'.")
+            return None
+        uid, apikey = keyval.split(":", 1)
         resp = requests.get(resource_url, auth=HTTPBasicAuth(uid, apikey), timeout=30)
         if resp.status_code != 200:
             print(f"Remote catalogue lookup for {dataset_name} failed: HTTP {resp.status_code}")
@@ -426,7 +431,7 @@ def standardize_dataset(ds):
     return ds
 
 if __name__ == "__main__":
-    for year in range(1981, 2011): #Validation period
+    for year in range(1971, 2021): #Entire period for training, testing and validation. 
         start_date = datetime.datetime(year, 1, 1)
         end_date = datetime.datetime(year, 12, 31)
         print(f"Processing year {year}...")
