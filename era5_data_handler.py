@@ -25,6 +25,7 @@ ERA5_SINGLE_LEVEL_VARS = [
     "2m_temperature",
     "total_precipitation",
     "surface_pressure",
+    "total_precipitation"
 ]
 
 # Pressure-level variables
@@ -144,7 +145,7 @@ def file_has_all_vars(path):
         return False
 
     # Required base vars
-    required = {"t2m", "tp", "sp"}
+    required = {"t2m", "tp", "sp","precipitation"}
     present = set(ds.data_vars)
 
     # For pressure-levels, check for level-specific names (e.g., u850) or presence of u/v/q/z with level dim
