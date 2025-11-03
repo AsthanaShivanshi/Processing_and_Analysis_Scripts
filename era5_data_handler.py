@@ -431,7 +431,7 @@ def standardize_dataset(ds):
     return ds
 
 if __name__ == "__main__":
-    for year in range(2011, 2021): #Entire period for training, testing and validation. 
+    for year in range(2001, 2011): #Entire period for training, testing and validation. 
         start_date = datetime.datetime(year, 1, 1)
         end_date = datetime.datetime(year, 12, 31)
         print(f"Processing year {year}...")
