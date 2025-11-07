@@ -97,16 +97,24 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
         return xr.open_dataset(output_file)[[varname]]
 
 
-def get_cdo_stats(file_path, method):
+def get_cdo_stats(file_path, method,varname):
     stats = {}
     if method == "standard":
         stats['mean'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timmean", str(file_path)]).decode().strip())
         stats['std'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timstd", str(file_path)]).decode().strip())
-    elif method == "minmax": #for precip
+    elif method == "minmax":
         stats['min'] = float(subprocess.check_output(["cdo", "output", "-fldmin", "-timmin", str(file_path)]).decode().strip())
         stats['max'] = float(subprocess.check_output(["cdo", "output", "-fldmax", "-timmax", str(file_path)]).decode().strip())
-    elif method== "log": #LAternative for precip
-        stats["epsilon"]= 10**-3. #For log scaling of precip
+    elif method == "log":
+        # mean and std dev after transform
+        epsilon = 1e-3
+        stats["epsilon"] = epsilon
+        # Use cdo expr to log-transform and then standardise
+        log_file = file_path + "_logtmp.nc"
+        subprocess.run(["cdo", f"expr,{varname}=log({varname}+{epsilon})", str(file_path), log_file], check=True)
+        stats['mean'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timmean", log_file]).decode().strip())
+        stats['std'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timstd", log_file]).decode().strip())
+        os.remove(log_file)
     else:
         raise ValueError(f"Unsupported method: {method}")
     return stats
@@ -117,7 +125,8 @@ def apply_cdo_scaling(ds, stats, method):
     elif method == "minmax":
         return (ds - stats['min']) / (stats['max'] - stats['min'])
     elif method == "log":
-        return np.log(ds + stats["epsilon"])
+        log_ds = np.log(ds + stats["epsilon"])
+        return (log_ds - stats['mean']) / stats['std']
     else:
         raise ValueError(f"Unknown method: {method}")
     
@@ -198,7 +207,7 @@ def main():
     # Scaling params
     with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
         y_train.to_netcdf(tmpfile.name)
-        stats = get_cdo_stats(tmpfile.name, scale_type)
+        stats = get_cdo_stats(tmpfile.name, scale_type,varname_in_file)
 
     x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
     x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
