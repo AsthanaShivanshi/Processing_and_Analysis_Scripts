@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=observational_ds_dask
+#SBATCH --job-name=preprocessing_obs_data
 #SBATCH --chdir=/work/FAC/FGSE/IDYST/tbeucler/downscaling
 #SBATCH --output=sasthana/Downscaling/Processing_and_Analysis_Scripts/logs/chron_split_observational_%A_%a.log
 #SBATCH --error=sasthana/Downscaling/Processing_and_Analysis_Scripts/logs/chron_split_observational_%A_%a.log

@@ -102,9 +102,11 @@ def get_cdo_stats(file_path, method):
     if method == "standard":
         stats['mean'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timmean", str(file_path)]).decode().strip())
         stats['std'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timstd", str(file_path)]).decode().strip())
-    elif method == "minmax":
+    elif method == "minmax": #for precip
         stats['min'] = float(subprocess.check_output(["cdo", "output", "-fldmin", "-timmin", str(file_path)]).decode().strip())
         stats['max'] = float(subprocess.check_output(["cdo", "output", "-fldmax", "-timmax", str(file_path)]).decode().strip())
+    elif method== "log":
+        stats["epsilon"]= 10**-3. #For log scaling of precip
     else:
         raise ValueError(f"Unsupported method: {method}")
     return stats
@@ -114,11 +116,11 @@ def apply_cdo_scaling(ds, stats, method):
         return (ds - stats['mean']) / stats['std']
     elif method == "minmax":
         return (ds - stats['min']) / (stats['max'] - stats['min'])
+    elif method == "log":
+        return np.log(ds + stats["epsilon"])
     else:
         raise ValueError(f"Unknown method: {method}")
     
-
-
 
 
 def main():
@@ -128,7 +130,7 @@ def main():
     varname = args.var
 
     dataset_map = {
-        "RhiresD": ("RhiresD_1971_2023.nc", "minmax", "RhiresD"),
+        "RhiresD": ("RhiresD_1971_2023.nc", "log", "RhiresD"), #Changed from minmax here 
         "TabsD":   ("TabsD_1971_2023.nc", "standard", "TabsD"),
         "TminD":   ("TminD_1971_2023.nc", "standard", "TminD"),
         "TmaxD":   ("TmaxD_1971_2023.nc", "standard", "TmaxD"),
@@ -182,9 +184,9 @@ def main():
     upsampled = interp_ds[varname_in_file].sel(time=slice("1971-01-01", "2020-12-31"))
     years = upsampled['time.year'].values
 
-    train_mask = (years >= 1971) & (years <= 2000)
-    val_mask   = (years >= 2001) & (years <= 2010)
-    test_mask  = (years >= 2011) & (years <= 2020)
+    train_mask = (years >= 1971) & (years <= 2005)
+    val_mask   = (years >= 2006) & (years <= 2015)
+    test_mask  = (years >= 2016) & (years <= 2020)
 
     x_train = upsampled.isel(time=train_mask)
     y_train = highres.isel(time=train_mask)
