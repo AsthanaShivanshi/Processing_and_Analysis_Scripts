@@ -57,7 +57,7 @@ def promote_latlon(infile, varname):
 
 
 
-def conservative_coarsening(ds, varname, block_size):
+def conservative_coarsening(ds, varname, block_size):  #Gives conservative coarsening depending on the block size
     da = ds[varname]
     if 'time' not in da.dims:
         da = da.expand_dims('time')
@@ -105,7 +105,7 @@ def get_cdo_stats(file_path, method):
     elif method == "minmax": #for precip
         stats['min'] = float(subprocess.check_output(["cdo", "output", "-fldmin", "-timmin", str(file_path)]).decode().strip())
         stats['max'] = float(subprocess.check_output(["cdo", "output", "-fldmax", "-timmax", str(file_path)]).decode().strip())
-    elif method== "log":
+    elif method== "log": #LAternative for precip
         stats["epsilon"]= 10**-3. #For log scaling of precip
     else:
         raise ValueError(f"Unsupported method: {method}")
@@ -146,7 +146,7 @@ def main():
 
     step1_path = OUTPUT_DIR / f"{varname}_step1_latlon.nc"
     if not step1_path.exists() or not {'lat', 'lon'}.issubset(xr.open_dataset(step1_path).coords):
-        print(f"[INFO] Step 1: Preparing dataset for '{varname}'...")
+        print(f"[INFO] Step 1: Preparing dataset for '{varname}'")
         ds = xr.open_dataset(infile_path)
         ds = ds.chunk(get_chunk_dict(ds))
         if 'lat' in ds.coords and 'lon' in ds.coords:
@@ -166,7 +166,7 @@ def main():
 
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
-        coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
+        coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11) #EUR44, otherwise EUR11, depending on training setup of SR
         coarse_ds.to_netcdf(step2_path)
         coarse_ds.close()
     coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
@@ -179,14 +179,14 @@ def main():
         interp_ds.close()
     interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
 
-    # Chron split: 1971–2000 train, 2001–2010 val, 2011–2020 test
-    highres = highres_ds[varname_in_file].sel(time=slice("1971-01-01", "2020-12-31"))
-    upsampled = interp_ds[varname_in_file].sel(time=slice("1971-01-01", "2020-12-31"))
+    # Chron split: 1971–2010 train, 2011–2020 val, 2021–2023 test
+    highres = highres_ds[varname_in_file].sel(time=slice("1971-01-01", "2023-12-31"))
+    upsampled = interp_ds[varname_in_file].sel(time=slice("1971-01-01", "2023-12-31"))
     years = upsampled['time.year'].values
 
-    train_mask = (years >= 1971) & (years <= 2005)
-    val_mask   = (years >= 2006) & (years <= 2015)
-    test_mask  = (years >= 2016) & (years <= 2020)
+    train_mask = (years >= 1971) & (years <= 2010)
+    val_mask   = (years >= 2011) & (years <= 2020)
+    test_mask  = (years >= 2021) & (years <= 2023)
 
     x_train = upsampled.isel(time=train_mask)
     y_train = highres.isel(time=train_mask)
