@@ -83,12 +83,45 @@ def conservative_coarsening(ds, varname, block_size):  #Gives conservative coars
     return ds_out
 
 
+#For 44 km coarsening, the edge values have to be padded, to overcome the nan problem , the grid becomes too coarse at low res
+def coarsening_padding(ds, varname, pad_width=2):
+    arr = ds[varname]
+    arr_padded = arr.pad(
+        N=(pad_width, pad_width), E=(pad_width, pad_width), 
+        mode='edge')
+    # Remaining nans : non nan nearest value filling
+    arr_padded = arr_padded.interpolate_na(dim="N", method="nearest", fill_value="extrapolate")
+    arr_padded = arr_padded.interpolate_na(dim="E", method="nearest", fill_value="extrapolate")
+    lat_padded = ds['lat'].pad(
+        N=(pad_width, pad_width), E=(pad_width, pad_width), 
+        mode='edge')
+    lon_padded = ds['lon'].pad(
+        N=(pad_width, pad_width), E=(pad_width, pad_width), 
+        mode='edge')
+    arr_padded = arr_padded.assign_coords(lat=lat_padded, lon=lon_padded)
+    arr_padded.name = varname
+    return arr_padded.to_dataset().set_coords(["lat", "lon"])
+
+
+
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
+
+    n_size = coarse_ds.dims.get('N', None)
+    e_size = coarse_ds.dims.get('E', None)
+    pad = False
+    if n_size is not None and e_size is not None:
+        # Coarse grid: padding applied, else not
+        if n_size < 10 and e_size < 10:
+            pad = True
     with tempfile.TemporaryDirectory() as tmpdir:
         coarse_file = Path(tmpdir) / "coarse.nc"
         target_file = Path(tmpdir) / "target.nc"
         output_file = Path(tmpdir) / "interp.nc"
-        coarse_ds[[varname]].transpose("time", "N", "E").to_netcdf(coarse_file)
+        if pad:
+            coarse_to_write = coarsening_padding(coarse_ds, varname, pad_width=4)
+        else:
+            coarse_to_write = coarse_ds
+        coarse_to_write[[varname]].transpose("time", "N", "E").to_netcdf(coarse_file)
         target_ds[[varname]].transpose("time", "N", "E").to_netcdf(target_file)
         script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
         subprocess.run([
@@ -130,6 +163,7 @@ def apply_cdo_scaling(ds, stats, method):
     else:
         raise ValueError(f"Unknown method: {method}")
     
+
 
 
 def main():
@@ -225,13 +259,6 @@ def main():
 
     with open(OUTPUT_DIR / f"{varname}_scaling_params_chronological.json", "w") as f:
         json.dump(stats, f, indent=2)
-
-    # Cleaning up intermed files
-    #for step_path in [step1_path, step2_path, step3_path]:
-        #try:
-            #os.remove(step_path)
-        #except FileNotFoundError:
-            #pass
 
 if __name__ == "__main__":
     client = Client(processes=False)
