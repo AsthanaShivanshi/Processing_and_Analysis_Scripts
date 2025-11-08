@@ -22,7 +22,7 @@ CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
  
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/"Processing_and_Analysis_Scripts" / "data_1971_2023" / "HR_files_full"
-OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Dataset_50km_SR_1971_2023"
+OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Chronological_Dataset"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 def get_chunk_dict(ds):
@@ -83,15 +83,12 @@ def conservative_coarsening(ds, varname, block_size):  #Gives conservative coars
     return ds_out
 
 
-#For 44 km coarsening, the edge values have to be padded, to overcome the nan problem , the grid becomes too coarse at low res
 def coarsening_padding(ds, varname, pad_width=2):
     arr = ds[varname]
     arr_padded = arr.pad(
         N=(pad_width, pad_width), E=(pad_width, pad_width), 
         mode='edge')
-    # Removing interp.na(), padding with 'edge' fills all NaNs ,,DEBUG STEP
-    # arr_padded = arr_padded.interpolate_na(dim="N", method="nearest", fill_value="extrapolate")
-    # arr_padded = arr_padded.interpolate_na(dim="E", method="nearest", fill_value="extrapolate")
+
     lat_padded = ds['lat'].pad(
         N=(pad_width, pad_width), E=(pad_width, pad_width), 
         mode='edge')
@@ -207,12 +204,23 @@ def main():
 
     highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
 
+
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
-        coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=44) #EUR44, otherwise EUR11, depending on training setup of SR
+        coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11) #EUR11
         coarse_ds.to_netcdf(step2_path)
         coarse_ds.close()
     coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
+
+    step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
+    if not step3_path.exists():
+        interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
+        interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
+        interp_ds.to_netcdf(step3_path)
+        interp_ds.close()
+    interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
+
+
 
     step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
     if not step3_path.exists():
