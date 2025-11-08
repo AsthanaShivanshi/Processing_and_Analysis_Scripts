@@ -79,10 +79,11 @@ def conservative_coarsening(ds, varname, block_size):  #Gives conservative coars
     weighted_sum = weighted.coarsen(**coarsen_dims, boundary='trim').sum()
     area_sum = valid_area.coarsen(**coarsen_dims, boundary='trim').sum()
     data_coarse = (weighted_sum / area_sum).where(area_sum != 0)
-    lat_coarse = lat.coarsen(N=block_size, boundary='trim').mean()
-    lon_coarse = lon.coarsen(E=block_size, boundary='trim').mean()
-    lon2d, lat2d = xr.broadcast(lon_coarse, lat_coarse)
-    data_coarse = data_coarse.assign_coords(lat=lat2d, lon=lon2d)
+
+    
+    lat2d_coarse = lat.coarsen(N=block_size, E=block_size, boundary='trim').mean()
+    lon2d_coarse = lon.coarsen(N=block_size, E=block_size, boundary='trim').mean()
+    data_coarse = data_coarse.assign_coords(lat=lat2d_coarse, lon=lon2d_coarse)
     data_coarse.name = varname
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
     return ds_out
