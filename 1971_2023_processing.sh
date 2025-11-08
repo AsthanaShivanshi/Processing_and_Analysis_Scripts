@@ -19,7 +19,7 @@ cd "$BASE_DIR" || { echo "[ERROR] Failed to cd into BASE_DIR"; exit 1; }
 VARS=(RhiresD TabsD TminD TmaxD)
 VAR=${VARS[$SLURM_ARRAY_TASK_ID]}
 
-SCRIPT_PATH="sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/processing_dataset_1971_2023_44km.py"
+SCRIPT_PATH="sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/processing_dataset_1971_2023.py"
 
 if [ ! -f "$SCRIPT_PATH" ]; then
   echo "[ERROR] Python script not found: $SCRIPT_PATH"

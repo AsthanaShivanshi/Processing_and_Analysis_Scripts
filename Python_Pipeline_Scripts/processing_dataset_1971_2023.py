@@ -22,7 +22,7 @@ CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
  
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/"Processing_and_Analysis_Scripts" / "data_1971_2023" / "HR_files_full"
-OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Chronological_Dataset"
+OUTPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Dataset_50km_SR_1971_2023"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 def get_chunk_dict(ds):
@@ -33,6 +33,9 @@ def get_chunk_dict(ds):
         return CHUNK_DICT_RAW
     else:
         raise ValueError(f"Dataset has unknown dimensions: {ds.dims}")
+    
+
+
 
 def promote_latlon(infile, varname):
     ds = xr.open_dataset(infile).chunk({"time": 50, "N": 100, "E": 100})
@@ -54,6 +57,8 @@ def promote_latlon(infile, varname):
     lon.name, lat.name = "lon", "lat"
     ds = ds.assign_coords(lat=lat, lon=lon).set_coords(["lat", "lon"])
     return ds
+
+
 
 
 
@@ -83,6 +88,8 @@ def conservative_coarsening(ds, varname, block_size):  #Gives conservative coars
     return ds_out
 
 
+
+
 def coarsening_padding(ds, varname, pad_width=2):
     arr = ds[varname]
     arr_padded = arr.pad(
@@ -98,6 +105,7 @@ def coarsening_padding(ds, varname, pad_width=2):
     arr_padded = arr_padded.assign_coords(lat=lat_padded, lon=lon_padded)
     arr_padded.name = varname
     return arr_padded.to_dataset().set_coords(["lat", "lon"])
+
 
 
 
@@ -148,6 +156,9 @@ def get_cdo_stats(file_path, method,varname):
     else:
         raise ValueError(f"Unsupported method: {method}")
     return stats
+
+
+
 
 def apply_cdo_scaling(ds, stats, method):
     if method == "standard":
@@ -207,7 +218,7 @@ def main():
 
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
-        coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11) #EUR11
+        coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=44) #EUR44
         coarse_ds.to_netcdf(step2_path)
         coarse_ds.close()
     coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
