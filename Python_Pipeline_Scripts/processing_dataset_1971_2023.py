@@ -89,9 +89,9 @@ def coarsening_padding(ds, varname, pad_width=2):
     arr_padded = arr.pad(
         N=(pad_width, pad_width), E=(pad_width, pad_width), 
         mode='edge')
-    # Remaining nans : non nan nearest value filling
-    arr_padded = arr_padded.interpolate_na(dim="N", method="nearest", fill_value="extrapolate")
-    arr_padded = arr_padded.interpolate_na(dim="E", method="nearest", fill_value="extrapolate")
+    # Removing interp.na(), padding with 'edge' fills all NaNs ,,DEBUG STEP
+    # arr_padded = arr_padded.interpolate_na(dim="N", method="nearest", fill_value="extrapolate")
+    # arr_padded = arr_padded.interpolate_na(dim="E", method="nearest", fill_value="extrapolate")
     lat_padded = ds['lat'].pad(
         N=(pad_width, pad_width), E=(pad_width, pad_width), 
         mode='edge')
@@ -118,7 +118,7 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
         target_file = Path(tmpdir) / "target.nc"
         output_file = Path(tmpdir) / "interp.nc"
         if pad:
-            coarse_to_write = coarsening_padding(coarse_ds, varname, pad_width=4)
+            coarse_to_write = coarsening_padding(coarse_ds, varname, pad_width=15)
         else:
             coarse_to_write = coarse_ds
         coarse_to_write[[varname]].transpose("time", "N", "E").to_netcdf(coarse_file)
