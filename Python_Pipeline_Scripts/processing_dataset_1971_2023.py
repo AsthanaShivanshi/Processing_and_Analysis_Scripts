@@ -90,24 +90,16 @@ def conservative_coarsening(ds, varname, block_size):  #Gives conservative coars
 
 
 
-
-def coarsening_padding(ds, varname, pad_width=2):
-    arr = ds[varname]
-    arr_padded = arr.pad(
-        N=(pad_width, pad_width), E=(pad_width, pad_width), 
-        mode='edge')
-
-    lat_padded = ds['lat'].pad(
-        N=(pad_width, pad_width), E=(pad_width, pad_width), 
-        mode='edge')
-    lon_padded = ds['lon'].pad(
-        N=(pad_width, pad_width), E=(pad_width, pad_width), 
-        mode='edge')
-    arr_padded = arr_padded.assign_coords(lat=lat_padded, lon=lon_padded)
-    arr_padded.name = varname
-    return arr_padded.to_dataset().set_coords(["lat", "lon"])
-
-
+def coarsening_padding(ds, varname, pad_width):
+    da = ds[varname]
+    pad_kwargs = {dim: (pad_width, pad_width) for dim in ['N', 'E'] if dim in da.dims}
+    da_padded = da.pad(pad_kwargs, mode='edge')
+    lat = ds['lat']
+    lon = ds['lon']
+    lat_pad = lat.pad({ 'N': (pad_width, pad_width), 'E': (pad_width, pad_width) }, mode='edge')
+    lon_pad = lon.pad({ 'N': (pad_width, pad_width), 'E': (pad_width, pad_width) }, mode='edge')
+    ds_padded = da_padded.to_dataset(name=varname).assign_coords(lat=lat_pad, lon=lon_pad).set_coords(['lat', 'lon'])
+    return ds_padded
 
 
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
@@ -124,7 +116,7 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
         target_file = Path(tmpdir) / "target.nc"
         output_file = Path(tmpdir) / "interp.nc"
         if pad:
-            coarse_to_write = coarsening_padding(coarse_ds, varname, pad_width=15)
+            coarse_to_write = coarsening_padding(coarse_ds, varname, pad_width=4)
         else:
             coarse_to_write = coarse_ds
         coarse_to_write[[varname]].transpose("time", "N", "E").to_netcdf(coarse_file)
