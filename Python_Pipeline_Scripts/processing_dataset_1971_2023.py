@@ -8,7 +8,6 @@ import subprocess
 from pyproj import Transformer, datadir
 from dask.distributed import Client
 import tempfile
-import subprocess
 
 np.random.seed(42)
 
@@ -35,8 +34,6 @@ def get_chunk_dict(ds):
         raise ValueError(f"Dataset has unknown dimensions: {ds.dims}")
     
 
-
-
 def promote_latlon(infile, varname):
     ds = xr.open_dataset(infile).chunk({"time": 50, "N": 100, "E": 100})
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
@@ -58,10 +55,6 @@ def promote_latlon(infile, varname):
     ds = ds.assign_coords(lat=lat, lon=lon).set_coords(["lat", "lon"])
     return ds
 
-
-
-
-
 def conservative_coarsening(ds, varname, block_size):  #Gives conservative coarsening depending on the block size
     da = ds[varname]
     if 'time' not in da.dims:
@@ -79,8 +72,6 @@ def conservative_coarsening(ds, varname, block_size):  #Gives conservative coars
     weighted_sum = weighted.coarsen(**coarsen_dims, boundary='trim').sum()
     area_sum = valid_area.coarsen(**coarsen_dims, boundary='trim').sum()
     data_coarse = (weighted_sum / area_sum).where(area_sum != 0)
-
-    
     lat2d_coarse = lat.coarsen(N=block_size, E=block_size, boundary='trim').mean()
     lon2d_coarse = lon.coarsen(N=block_size, E=block_size, boundary='trim').mean()
     data_coarse = data_coarse.assign_coords(lat=lat2d_coarse, lon=lon2d_coarse)
@@ -88,45 +79,19 @@ def conservative_coarsening(ds, varname, block_size):  #Gives conservative coars
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
     return ds_out
 
-
-
-def coarsening_padding(ds, varname, pad_width):
-    da = ds[varname]
-    pad_kwargs = {dim: (pad_width, pad_width) for dim in ['N', 'E'] if dim in da.dims}
-    da_padded = da.pad(pad_kwargs, mode='edge')
-    lat = ds['lat']
-    lon = ds['lon']
-    lat_pad = lat.pad({ 'N': (pad_width, pad_width), 'E': (pad_width, pad_width) }, mode='edge')
-    lon_pad = lon.pad({ 'N': (pad_width, pad_width), 'E': (pad_width, pad_width) }, mode='edge')
-    ds_padded = da_padded.to_dataset(name=varname).assign_coords(lat=lat_pad, lon=lon_pad).set_coords(['lat', 'lon'])
-    return ds_padded
-
-
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
-
-    n_size = coarse_ds.dims.get('N', None)
-    e_size = coarse_ds.dims.get('E', None)
-    pad = False
-    if n_size is not None and e_size is not None:
-        # Coarse grid: padding applied, else not
-        if n_size < 10 and e_size < 10:
-            pad = True
+    # Padding removed for optimisation
     with tempfile.TemporaryDirectory() as tmpdir:
         coarse_file = Path(tmpdir) / "coarse.nc"
         target_file = Path(tmpdir) / "target.nc"
         output_file = Path(tmpdir) / "interp.nc"
-        if pad:
-            coarse_to_write = coarsening_padding(coarse_ds, varname, pad_width=4)
-        else:
-            coarse_to_write = coarse_ds
-        coarse_to_write[[varname]].transpose("time", "N", "E").to_netcdf(coarse_file)
+        coarse_ds[[varname]].transpose("time", "N", "E").to_netcdf(coarse_file)
         target_ds[[varname]].transpose("time", "N", "E").to_netcdf(target_file)
         script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
         subprocess.run([
             str(script_path), str(coarse_file), str(target_file), str(output_file)
         ], check=True)
         return xr.open_dataset(output_file)[[varname]]
-
 
 def get_cdo_stats(file_path, method,varname):
     stats = {}
@@ -150,9 +115,6 @@ def get_cdo_stats(file_path, method,varname):
         raise ValueError(f"Unsupported method: {method}")
     return stats
 
-
-
-
 def apply_cdo_scaling(ds, stats, method):
     if method == "standard":
         return (ds - stats['mean']) / stats['std']
@@ -163,9 +125,6 @@ def apply_cdo_scaling(ds, stats, method):
         return (log_ds - stats['mean']) / stats['std']
     else:
         raise ValueError(f"Unknown method: {method}")
-    
-
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -208,23 +167,12 @@ def main():
 
     highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
 
-
     step2_path = OUTPUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11) #EUR11
         coarse_ds.to_netcdf(step2_path)
         coarse_ds.close()
     coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
-
-    step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
-    if not step3_path.exists():
-        interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
-        interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
-        interp_ds.to_netcdf(step3_path)
-        interp_ds.close()
-    interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
-
-
 
     step3_path = OUTPUT_DIR / f"{varname}_step3_interp.nc"
     if not step3_path.exists():
