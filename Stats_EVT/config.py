@@ -12,3 +12,4 @@ BC_DIR= os.environ.get("BC_DIR", f"{BASE_DIR}/sasthana/Downscaling/Downscaling_M
 SCRATCH_DIR= os.environ.get("SCRATCH_DIR", f"/scratch/sasthana")
 BIAS_CORRECTED_DIR= os.environ.get("BIAS_CORRECTED_DIR", f"{BASE_DIR}/sasthana/Downscaling/Downscaling_Models/BC_Model_Runs")
 HR_GRID_FILE= os.environ.get("HR_GRID_FILE", f"{BASE_DIR}/sasthana/Downscaling/Processing_and_Analysis_Scripts/grid.txt")
+LDM_DOWNSCALED_DIR= os.environ.get("LDM_DOWNSCALED_DIR", f"{BASE_DIR}/sasthana/Downscaling/Downscaling_Models/downscaled_files_LDM_res")
