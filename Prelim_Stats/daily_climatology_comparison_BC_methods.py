@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.patches import Patch
 import config
+import seaborn as sns
+sns.set(style="whitegrid")
 
 dOTC_path = config.BIAS_CORRECTED_DIR + "/dOTC/precip_temp_tmin_tmax_bicubic_r01.nc"
 EQM_path_temp = config.BIAS_CORRECTED_DIR + "/EQM/temp_BC_bicubic_r01.nc"
@@ -36,7 +38,6 @@ def daily_climatology(arr, time_coord):
         else:
             clim[doy-1] = np.nan  # Explicitly set to nan if no data
     return clim
-
 
 
 
@@ -89,8 +90,6 @@ for i in range(pss_dOTC.shape[0]):
 winner[~tabsd_mask] = np.nan
 
 
-
-
 tol_colors = ["#4477AA", "#EE7733", "#228833"]  # blue, orange, green
 
 cmap = mcolors.ListedColormap(tol_colors)
@@ -98,17 +97,12 @@ labels = ["dOTC+bicubic", "EQM+bicubic", "QDM+bicubic"]
 
 fig, ax = plt.subplots(figsize=(10, 9), constrained_layout=True, dpi=200)
 im = ax.imshow(winner, origin='lower', aspect='auto', cmap=cmap, vmin=0, vmax=2)
-ax.set_title("Best BC Method for climatology of daily temperature, 1981-2010 (PSS)", fontsize=20)
+ax.set_title("Best BC for climatology of daily temperature (PSS)", fontsize=20)
 ax.set_xticks([])
 ax.set_yticks([])
 
 legend_elements = [Patch(facecolor=tol_colors[i], label=labels[i]) for i in range(3)]
 ax.legend(handles=legend_elements, loc='lower right', fontsize=16, frameon=True)
-
-cbar = fig.colorbar(im, ax=ax, ticks=[0, 1, 2], orientation='vertical', fraction=0.03, pad=0.02)
-cbar.ax.set_yticklabels(labels, fontsize=18, fontname="DejaVu Serif")
-cbar.set_label("Best Bias Correction Method (PSS)", fontsize=16)
-cbar.ax.tick_params(length=0)
 
 plt.savefig("gridwise_pss_winner_temp_climatology_1981_2010.png", dpi=1000)
 plt.close()
