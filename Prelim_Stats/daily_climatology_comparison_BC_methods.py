@@ -150,7 +150,7 @@ ax.legend(handles=legend_elements, loc='upper left', fontsize=14, frameon=False,
 city_markers = {
     "Zürich": (47.3769, 8.5417),   #EQM best
     "Bern": (46.9480, 7.4474), #dOTC best
-    "Geneva": (46.2044, 6.1432) , #QDM best
+    "Locarno": (46.1709, 8.7995) , #QDM best
 }
 
 
@@ -159,7 +159,7 @@ city_markers = {
 offsets = {
     "Zürich": (3, -3),
     "Bern": (-30, 5),
-    "Geneva": (3, 5)
+    "Locarno": (3, 5)
 }
 
 for city, (lat, lon) in city_markers.items():
