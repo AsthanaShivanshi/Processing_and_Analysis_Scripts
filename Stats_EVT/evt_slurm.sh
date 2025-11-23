@@ -14,4 +14,5 @@ source environment.sh
 
 cd Stats_EVT
 
-python spatial_quantile_BC_comparison.py #--region $SLURM_ARRAY_TASK_ID
+#python spatial_quantile_BC_comparison.py #--region $SLURM_ARRAY_TASK_ID
+python Multiplicative_Return_Levels_Bias_Baselines.py
