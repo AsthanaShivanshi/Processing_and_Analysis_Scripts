@@ -6,6 +6,8 @@ from matplotlib.patches import Patch
 import config
 import seaborn as sns
 sns.set(style="whitegrid")
+from matplotlib.colors import ListedColormap
+from closest_grid_cell import select_nearest_grid_cell
 
 dOTC_path = config.BIAS_CORRECTED_DIR + "/dOTC/precip_temp_tmin_tmax_bicubic_r01.nc"
 EQM_path_temp = config.BIAS_CORRECTED_DIR + "/EQM/temp_BC_bicubic_r01.nc"
@@ -90,19 +92,85 @@ for i in range(pss_dOTC.shape[0]):
 winner[~tabsd_mask] = np.nan
 
 
-tol_colors = ["#4477AA", "#EE7733", "#228833"]  # blue, orange, green
+# Calculate percentages for legend
 
-cmap = mcolors.ListedColormap(tol_colors)
-labels = ["dOTC+bicubic", "EQM+bicubic", "QDM+bicubic"]
 
-fig, ax = plt.subplots(figsize=(10, 9), constrained_layout=True, dpi=200)
+total_cells = np.sum(tabsd_mask)
+percentages = []
+for i in range(3):
+    count = np.sum((winner == i) & tabsd_mask)
+    perc = 100 * count / total_cells
+    percentages.append(perc)
+
+labels = [
+    f"dOTC+bicubic ({percentages[0]:.1f}%)",
+    f"EQM+bicubic ({percentages[1]:.1f}%)",
+    f"QDM+bicubic ({percentages[2]:.1f}%)"
+]
+
+# Print best BC method for each city
+cities = {
+    "Bern": (46.9480, 7.4474),
+    "Geneva": (46.2044, 6.1432),
+    "Locarno": (46.1709, 8.7995),
+    "Lugano": (46.0037, 8.9511),
+    "Zürich": (47.3769, 8.5417)
+}
+
+for city, (lat, lon) in cities.items():
+    result = select_nearest_grid_cell(obs_temp_ds, lat, lon)
+    i, j = result['lat_idx'], result['lon_idx']
+    if tabsd_mask[i, j] and not np.isnan(winner[i, j]):
+        method_idx = int(winner[i, j])
+        method_name = ["dOTC+bicubic", "EQM+bicubic", "QDM+bicubic"][method_idx]
+        print(f"{city}: Best BC method is {method_name}")
+    else:
+        print(f"{city}: No valid data at nearest grid cell.")
+
+
+cbf_colors = plt.get_cmap('Set1').colors[:3]  # First 3 colors from Set1
+cmap = ListedColormap(cbf_colors)
+# labels is now updated above
+
+fig, ax = plt.subplots(figsize=(10, 9), dpi=1000)
 im = ax.imshow(winner, origin='lower', aspect='auto', cmap=cmap, vmin=0, vmax=2)
-ax.set_title("Best BC for climatology of daily temperature (PSS)", fontsize=20)
+
 ax.set_xticks([])
 ax.set_yticks([])
+ax.set_xlabel("")
+ax.set_ylabel("")
 
-legend_elements = [Patch(facecolor=tol_colors[i], label=labels[i]) for i in range(3)]
-ax.legend(handles=legend_elements, loc='lower right', fontsize=16, frameon=True)
+for spine in ax.spines.values():
+    spine.set_visible(False)
 
-plt.savefig("gridwise_pss_winner_temp_climatology_1981_2010.png", dpi=1000)
+legend_elements = [Patch(facecolor=cbf_colors[i], label=labels[i]) for i in range(3)]
+ax.legend(handles=legend_elements, loc='upper left', fontsize=14, frameon=False, bbox_to_anchor=(1.05, 1))
+
+
+city_markers = {
+    "Zürich": (47.3769, 8.5417),   #EQM best
+    "Bern": (46.9480, 7.4474), #dOTC best
+    "Geneva": (46.2044, 6.1432) , #QDM best
+}
+
+
+
+
+offsets = {
+    "Zürich": (3, -3),
+    "Bern": (-30, 5),
+    "Geneva": (3, 5)
+}
+
+for city, (lat, lon) in city_markers.items():
+    result = select_nearest_grid_cell(obs_temp_ds, lat, lon)
+    i, j = result['lat_idx'], result['lon_idx']
+    ax.plot(j, i, marker='*', color='gold', markeredgecolor='black', markersize=18, markeredgewidth=2, zorder=10)
+    dx, dy = offsets.get(city, (3, -3))
+    ax.text(j + dx, i + dy, city, fontsize=14, color='black',
+            bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.2'), zorder=11)
+
+
+ax.set_title("Best Bias Correction for Daily Temperature Climatology\n(Perkins Skill Score, 1981–2010)", fontsize=18, pad=15)
+plt.savefig("gridwise_pss_winner_temp_climatology_1981_2010_poster.png", dpi=1000, bbox_inches='tight')
 plt.close()
