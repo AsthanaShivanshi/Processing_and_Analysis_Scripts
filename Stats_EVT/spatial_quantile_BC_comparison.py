@@ -81,8 +81,8 @@ best_unet_bias_90_tmax = np.full(mask.shape, np.nan)
 for i in range(mask.shape[0]):
     for j in range(mask.shape[1]):
         if mask[i, j]:
-            idx_tmin = winner_tmin[i, j]
-            idx_tmax = winner_tmax[i, j]
+            idx_tmin = int(winner_tmin[i, j])
+            idx_tmax = int(winner_tmax[i, j])
             method_tmin = bc_methods[idx_tmin]
             method_tmax = bc_methods[idx_tmax]
             # Bias for best BC+bicubic
@@ -128,5 +128,5 @@ axs[1].set_xticks([]); axs[1].set_yticks([])
 
 fig.suptitle("Spatial Improvement of SR+BC+bicubic over BC+bicubic\nQuantile Bias Reduction (1981–2010)", fontsize=26, fontweight='bold')
 plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-plt.savefig("../Outputs/gridwise_quantile_bias_reduction_SR_BC_bicubic_over_BC_bicubic_tmin_tmax_poster.png", dpi=1000)
+plt.savefig("gridwise_quantile_bias_reduction_SR_BC_bicubic_over_BC_bicubic_tmin_tmax_poster.png", dpi=1000)
 plt.close()
