@@ -129,21 +129,27 @@ masked_10_tmin = np.ma.masked_where(~mask, percent_reduction_10_tmin)
 masked_90_tmax = np.ma.masked_where(~mask, percent_reduction_90_tmax)
 
 
+
 #Tmin 10th percentile bias reduction
-im1 = axs[0].imshow(masked_10_tmin, origin='lower', aspect='auto', cmap=cmocean.cm.balance, vmin=-100, vmax=100)
-cbar1 = fig.colorbar(im1, ax=axs[0], orientation='vertical', fraction=0.046, pad=0.04)
+im1 = axs[0].imshow(masked_10_tmin, origin='lower', aspect='auto', cmap='RdBu_r', vmin=-100, vmax=100)
+cbar1 = fig.colorbar(im1, ax=axs[0], orientation='vertical', fraction=0.046, pad=0.04, extend='both')
 cbar1.set_label("% Reduction in 10th Percentile Bias\n(SR+BC+bicubic vs BC+bicubic)", fontsize=18)
+cbar1.ax.tick_params(labelsize=14)
+cbar1.ax.set_yticks([-100, -50, 0, 50, 100])
 axs[0].set_title("Tmin: % Reduction in 10th Percentile Bias", fontsize=22, fontweight='bold')
 axs[0].tick_params(labelsize=16)
 axs[0].set_xticks([]); axs[0].set_yticks([])
 
 #Tmax 90th percentile bias reduction
-im2 = axs[1].imshow(masked_90_tmax, origin='lower', aspect='auto', cmap=colorcet.cm['bkr'], vmin=-100, vmax=100)
-cbar2 = fig.colorbar(im2, ax=axs[1], orientation='vertical', fraction=0.046, pad=0.04)
+im2 = axs[1].imshow(masked_90_tmax, origin='lower', aspect='auto', cmap='RdBu_r', vmin=-100, vmax=100)
+cbar2 = fig.colorbar(im2, ax=axs[1], orientation='vertical', fraction=0.046, pad=0.04, extend='both')
 cbar2.set_label("% Reduction in 90th Percentile Bias\n(SR+BC+bicubic vs BC+bicubic)", fontsize=18)
+cbar2.ax.tick_params(labelsize=14)
+cbar2.ax.set_yticks([-100, -50, 0, 50, 100])
 axs[1].set_title("Tmax: % Reduction in 90th Percentile Bias", fontsize=22, fontweight='bold')
 axs[1].tick_params(labelsize=16)
 axs[1].set_xticks([]); axs[1].set_yticks([])
+
 
 fig.suptitle("Spatial Improvement of SR+BC+bicubic over BC+bicubic\nQuantile Bias Reduction (1981–2010)", fontsize=26, fontweight='bold')
 plt.tight_layout(rect=[0, 0.03, 1, 0.95])
