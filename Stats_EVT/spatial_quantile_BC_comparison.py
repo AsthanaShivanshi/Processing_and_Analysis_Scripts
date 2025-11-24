@@ -21,15 +21,21 @@ unet_files_tmin = {
     "EQM":  "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/UNet_Deterministic_Training_Dataset/EQM_ModelRun_Downscaled_Predictions_Validation_1981_2010.nc",
     "QDM":  "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/UNet_Deterministic_Training_Dataset/QDM_ModelRun_Downscaled_Predictions_Validation_1981_2010.nc"
 }
-unet_files_tmax = unet_files_tmin  # Assuming same structure
+unet_files_tmax = unet_files_tmin  
+
+
 
 obs_tmin_file = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TminD_1971_2023.nc"
 obs_tmax_file = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TmaxD_1971_2023.nc"
 time_slice = slice("1981-01-01", "2010-12-31")
 
+
+
 obs_tmin = xr.open_dataset(obs_tmin_file)["TminD"].sel(time=time_slice)
 obs_tmax = xr.open_dataset(obs_tmax_file)["TmaxD"].sel(time=time_slice)
 mask = ~np.isnan(obs_tmin.isel(time=0).values)
+
+
 
 # Load BC+bicubic and UNet files
 bc_bicubic_tmin = {m: xr.open_dataset(bicubic_files_tmin[m])["tmin"].sel(time=time_slice) for m in bc_methods}
@@ -37,78 +43,91 @@ bc_bicubic_tmax = {m: xr.open_dataset(bicubic_files_tmax[m])["tmax"].sel(time=ti
 unet_tmin = {m: xr.open_dataset(unet_files_tmin[m])["tmin"].sel(time=time_slice) for m in bc_methods}
 unet_tmax = {m: xr.open_dataset(unet_files_tmax[m])["tmax"].sel(time=time_slice) for m in bc_methods}
 
+
+
 def gridwise_pss(a, b, nbins=50):
-    pss = np.full(a.shape[1:], np.nan)
-    for i in range(a.shape[1]):
-        for j in range(a.shape[2]):
-            a1, b1 = a[:, i, j], b[:, i, j]
-            mask_ij = ~np.isnan(a1) & ~np.isnan(b1)
-            if np.sum(mask_ij) > 10:
-                a_valid, b_valid = a1[mask_ij], b1[mask_ij]
-                combined = np.concatenate([a_valid, b_valid])
-                bins = np.linspace(np.min(combined), np.max(combined), nbins + 1)
-                hist_a, _ = np.histogram(a_valid, bins=bins, density=True)
-                hist_b, _ = np.histogram(b_valid, bins=bins, density=True)
-                hist_a /= np.sum(hist_a)
-                hist_b /= np.sum(hist_b)
-                pss[i, j] = np.sum(np.minimum(hist_a, hist_b))
+    # Vectorized version
+    shp = a.shape[1:]
+    pss = np.full(shp, np.nan)
+    a_flat = a.reshape(a.shape[0], -1)
+    b_flat = b.reshape(b.shape[0], -1)
+    for idx in range(a_flat.shape[1]):
+        a1, b1 = a_flat[:, idx], b_flat[:, idx]
+        mask_ij = ~np.isnan(a1) & ~np.isnan(b1)
+        if np.sum(mask_ij) > 10:
+            a_valid, b_valid = a1[mask_ij], b1[mask_ij]
+            combined = np.concatenate([a_valid, b_valid])
+            bins = np.linspace(np.min(combined), np.max(combined), nbins + 1)
+            hist_a, _ = np.histogram(a_valid, bins=bins, density=True)
+            hist_b, _ = np.histogram(b_valid, bins=bins, density=True)
+            hist_a /= np.sum(hist_a)
+            hist_b /= np.sum(hist_b)
+            pss.flat[idx] = np.sum(np.minimum(hist_a, hist_b))
     return pss
 
+
+
+
 def gridwise_percentile_bias(a, b, percentile):
-    bias = np.full(a.shape[1:], np.nan)
-    for i in range(a.shape[1]):
-        for j in range(a.shape[2]):
-            a1, b1 = a[:, i, j], b[:, i, j]
-            mask_ij = ~np.isnan(a1) & ~np.isnan(b1)
-            if np.sum(mask_ij) > 10:
-                bias[i, j] = np.nanpercentile(a1[mask_ij], percentile) - np.nanpercentile(b1[mask_ij], percentile)
+    # Vectorized version
+    shp = a.shape[1:]
+    bias = np.full(shp, np.nan)
+    a_flat = a.reshape(a.shape[0], -1)
+    b_flat = b.reshape(b.shape[0], -1)
+    for idx in range(a_flat.shape[1]):
+        a1, b1 = a_flat[:, idx], b_flat[:, idx]
+        mask_ij = ~np.isnan(a1) & ~np.isnan(b1)
+        if np.sum(mask_ij) > 10:
+            bias.flat[idx] = np.nanpercentile(a1[mask_ij], percentile) - np.nanpercentile(b1[mask_ij], percentile)
     return bias
 
+
+
 # Best BC method per grid cell based on PSS
-pss_tmin = [gridwise_pss(bc_bicubic_tmin[m].values, obs_tmin.values) for m in bc_methods]
-pss_tmax = [gridwise_pss(bc_bicubic_tmax[m].values, obs_tmax.values) for m in bc_methods]
+pss_tmin = np.stack([gridwise_pss(bc_bicubic_tmin[m].values, obs_tmin.values) for m in bc_methods])
+pss_tmax = np.stack([gridwise_pss(bc_bicubic_tmax[m].values, obs_tmax.values) for m in bc_methods])
 winner_tmin = np.argmax(pss_tmin, axis=0).astype(float)
 winner_tmax = np.argmax(pss_tmax, axis=0).astype(float)
 winner_tmin[~mask] = np.nan
 winner_tmax[~mask] = np.nan
 
-# Calculate bias for best BC+bicubic method at each grid cell
+
+
+# Precompute all biases for all methods
+all_bc_bias_10_tmin = np.stack([gridwise_percentile_bias(bc_bicubic_tmin[m].values, obs_tmin.values, 10) for m in bc_methods])
+all_bc_bias_90_tmax = np.stack([gridwise_percentile_bias(bc_bicubic_tmax[m].values, obs_tmax.values, 90) for m in bc_methods])
+all_unet_bias_10_tmin = np.stack([gridwise_percentile_bias(unet_tmin[m].values, obs_tmin.values, 10) for m in bc_methods])
+all_unet_bias_90_tmax = np.stack([gridwise_percentile_bias(unet_tmax[m].values, obs_tmax.values, 90) for m in bc_methods])
+
+
+
+# Select best method per cell using winner_tmin and winner_tmax
+winner_tmin_int = np.nan_to_num(winner_tmin, nan=-1).astype(int)
+winner_tmax_int = np.nan_to_num(winner_tmax, nan=-1).astype(int)
+
+
 best_bc_bias_10_tmin = np.full(mask.shape, np.nan)
 best_bc_bias_90_tmax = np.full(mask.shape, np.nan)
 best_unet_bias_10_tmin = np.full(mask.shape, np.nan)
 best_unet_bias_90_tmax = np.full(mask.shape, np.nan)
 
-for i in range(mask.shape[0]):
-    for j in range(mask.shape[1]):
-        if mask[i, j]:
-            idx_tmin = int(winner_tmin[i, j])
-            idx_tmax = int(winner_tmax[i, j])
-            method_tmin = bc_methods[idx_tmin]
-            method_tmax = bc_methods[idx_tmax]
-            # Bias for best BC+bicubic
-            best_bc_bias_10_tmin[i, j] = gridwise_percentile_bias(
-                bc_bicubic_tmin[method_tmin].values, obs_tmin.values, 10
-            )[i, j]
-            best_bc_bias_90_tmax[i, j] = gridwise_percentile_bias(
-                bc_bicubic_tmax[method_tmax].values, obs_tmax.values, 90
-            )[i, j]
-            # Bias for UNet using the best BC method
-            best_unet_bias_10_tmin[i, j] = gridwise_percentile_bias(
-                unet_tmin[method_tmin].values, obs_tmin.values, 10
-            )[i, j]
-            best_unet_bias_90_tmax[i, j] = gridwise_percentile_bias(
-                unet_tmax[method_tmax].values, obs_tmax.values, 90
-            )[i, j]
-
-
+valid_mask = mask & (winner_tmin_int >= 0) & (winner_tmax_int >= 0)
+best_bc_bias_10_tmin[valid_mask] = all_bc_bias_10_tmin[winner_tmin_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
+best_bc_bias_90_tmax[valid_mask] = all_bc_bias_90_tmax[winner_tmax_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
+best_unet_bias_10_tmin[valid_mask] = all_unet_bias_10_tmin[winner_tmin_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
+best_unet_bias_90_tmax[valid_mask] = all_unet_bias_90_tmax[winner_tmax_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
 
 percent_reduction_10_tmin = 100 * (best_bc_bias_10_tmin - best_unet_bias_10_tmin) / np.abs(best_bc_bias_10_tmin)
 percent_reduction_90_tmax = 100 * (best_bc_bias_90_tmax - best_unet_bias_90_tmax) / np.abs(best_bc_bias_90_tmax)
 
 fig, axs = plt.subplots(1, 2, figsize=(20, 10), dpi=300)
 
+
+
+
 masked_10_tmin = np.ma.masked_where(~mask, percent_reduction_10_tmin)
 masked_90_tmax = np.ma.masked_where(~mask, percent_reduction_90_tmax)
+
 
 #Tmin 10th percentile bias reduction
 im1 = axs[0].imshow(masked_10_tmin, origin='lower', aspect='auto', cmap=cmocean.cm.balance, vmin=-100, vmax=100)
