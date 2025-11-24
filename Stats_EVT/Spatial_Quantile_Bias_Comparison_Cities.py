@@ -1,8 +1,8 @@
 import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
-import cmocean
-import colorcet
+import seaborn as sns
+import pandas as pd
 
 bc_methods = ["dOTC", "EQM", "QDM"]
 
@@ -21,32 +21,22 @@ unet_files_tmin = {
     "EQM":  "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/UNet_Deterministic_Training_Dataset/EQM_ModelRun_Downscaled_Predictions_Validation_1981_2010.nc",
     "QDM":  "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/UNet_Deterministic_Training_Dataset/QDM_ModelRun_Downscaled_Predictions_Validation_1981_2010.nc"
 }
-unet_files_tmax = unet_files_tmin  
-
-
+unet_files_tmax = unet_files_tmin
 
 obs_tmin_file = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TminD_1971_2023.nc"
 obs_tmax_file = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TmaxD_1971_2023.nc"
 time_slice = slice("1981-01-01", "2010-12-31")
 
-
-
 obs_tmin = xr.open_dataset(obs_tmin_file)["TminD"].sel(time=time_slice)
 obs_tmax = xr.open_dataset(obs_tmax_file)["TmaxD"].sel(time=time_slice)
 mask = ~np.isnan(obs_tmin.isel(time=0).values)
 
-
-
-# Load BC+bicubic and UNet files
 bc_bicubic_tmin = {m: xr.open_dataset(bicubic_files_tmin[m])["tmin"].sel(time=time_slice) for m in bc_methods}
 bc_bicubic_tmax = {m: xr.open_dataset(bicubic_files_tmax[m])["tmax"].sel(time=time_slice) for m in bc_methods}
 unet_tmin = {m: xr.open_dataset(unet_files_tmin[m])["tmin"].sel(time=time_slice) for m in bc_methods}
 unet_tmax = {m: xr.open_dataset(unet_files_tmax[m])["tmax"].sel(time=time_slice) for m in bc_methods}
 
-
-
 def gridwise_pss(a, b, nbins=50):
-    # Vectorized version
     shp = a.shape[1:]
     pss = np.full(shp, np.nan)
     a_flat = a.reshape(a.shape[0], -1)
@@ -65,11 +55,7 @@ def gridwise_pss(a, b, nbins=50):
             pss.flat[idx] = np.sum(np.minimum(hist_a, hist_b))
     return pss
 
-
-
-
 def gridwise_percentile_bias(a, b, percentile):
-    # Vectorized version
     shp = a.shape[1:]
     bias = np.full(shp, np.nan)
     a_flat = a.reshape(a.shape[0], -1)
@@ -81,19 +67,33 @@ def gridwise_percentile_bias(a, b, percentile):
             bias.flat[idx] = np.nanpercentile(a1[mask_ij], percentile) - np.nanpercentile(b1[mask_ij], percentile)
     return bias
 
+# Five cities and their coordinates
+cities = {
+    "Bern": (46.9480, 7.4474),
+    "Geneva": (46.2044, 6.1432),
+    "Locarno": (46.1709, 8.7995),
+    "Lugano": (46.0037, 8.9511),
+    "Zürich": (47.3769, 8.5417)
+}
+
+def find_closest_grid(ds, lat, lon):
+    lat_arr = ds['lat'].values if 'lat' in ds else ds['latitude'].values
+    lon_arr = ds['lon'].values if 'lon' in ds else ds['longitude'].values
+    lat_idx = np.abs(lat_arr - lat).argmin()
+    lon_idx = np.abs(lon_arr - lon).argmin()
+    return lat_idx, lon_idx
 
 
-# Best BC method per grid cell based on PSS
+
+# Compute PSS for all methods
 pss_tmin = np.stack([gridwise_pss(bc_bicubic_tmin[m].values, obs_tmin.values) for m in bc_methods])
 pss_tmax = np.stack([gridwise_pss(bc_bicubic_tmax[m].values, obs_tmax.values) for m in bc_methods])
-winner_tmin = np.argmax(pss_tmin, axis=0).astype(float)
-winner_tmax = np.argmax(pss_tmax, axis=0).astype(float)
-winner_tmin[~mask] = np.nan
-winner_tmax[~mask] = np.nan
+winner_tmin = np.argmax(pss_tmin, axis=0)
+winner_tmax = np.argmax(pss_tmax, axis=0)
 
 
 
-# Precompute all biases for all methods
+# Compute percentile biases for all methods
 all_bc_bias_10_tmin = np.stack([gridwise_percentile_bias(bc_bicubic_tmin[m].values, obs_tmin.values, 10) for m in bc_methods])
 all_bc_bias_90_tmax = np.stack([gridwise_percentile_bias(bc_bicubic_tmax[m].values, obs_tmax.values, 90) for m in bc_methods])
 all_unet_bias_10_tmin = np.stack([gridwise_percentile_bias(unet_tmin[m].values, obs_tmin.values, 10) for m in bc_methods])
@@ -101,51 +101,44 @@ all_unet_bias_90_tmax = np.stack([gridwise_percentile_bias(unet_tmax[m].values, 
 
 
 
-# Select best method per cell using winner_tmin and winner_tmax
-winner_tmin_int = np.nan_to_num(winner_tmin, nan=-1).astype(int)
-winner_tmax_int = np.nan_to_num(winner_tmax, nan=-1).astype(int)
+city_names = []
+tmin_bias_reduction = []
+tmax_bias_reduction = []
+
+for city, (lat, lon) in cities.items():
+    # Use obs_tmin for grid finding
+    lat_idx, lon_idx = find_closest_grid(obs_tmin, lat, lon)
+    # Get best method index for this grid cell
+    best_tmin_method = winner_tmin[lat_idx, lon_idx]
+    best_tmax_method = winner_tmax[lat_idx, lon_idx]
+    # Get biases for BC+bicubic and UNet for best method
+    bc_bias_10_tmin = all_bc_bias_10_tmin[best_tmin_method, lat_idx, lon_idx]
+    unet_bias_10_tmin = all_unet_bias_10_tmin[best_tmin_method, lat_idx, lon_idx]
+    bc_bias_90_tmax = all_bc_bias_90_tmax[best_tmax_method, lat_idx, lon_idx]
+    unet_bias_90_tmax = all_unet_bias_90_tmax[best_tmax_method, lat_idx, lon_idx]
+    # Compute percent reduction
+    reduction_10_tmin = 100 * (bc_bias_10_tmin - unet_bias_10_tmin) / np.abs(bc_bias_10_tmin) if np.abs(bc_bias_10_tmin) > 0 else np.nan
+    reduction_90_tmax = 100 * (bc_bias_90_tmax - unet_bias_90_tmax) / np.abs(bc_bias_90_tmax) if np.abs(bc_bias_90_tmax) > 0 else np.nan
+    city_names.append(city)
+    tmin_bias_reduction.append(reduction_10_tmin)
+    tmax_bias_reduction.append(reduction_90_tmax)
 
 
-best_bc_bias_10_tmin = np.full(mask.shape, np.nan)
-best_bc_bias_90_tmax = np.full(mask.shape, np.nan)
-best_unet_bias_10_tmin = np.full(mask.shape, np.nan)
-best_unet_bias_90_tmax = np.full(mask.shape, np.nan)
-
-valid_mask = mask & (winner_tmin_int >= 0) & (winner_tmax_int >= 0)
-best_bc_bias_10_tmin[valid_mask] = all_bc_bias_10_tmin[winner_tmin_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
-best_bc_bias_90_tmax[valid_mask] = all_bc_bias_90_tmax[winner_tmax_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
-best_unet_bias_10_tmin[valid_mask] = all_unet_bias_10_tmin[winner_tmin_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
-best_unet_bias_90_tmax[valid_mask] = all_unet_bias_90_tmax[winner_tmax_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
-
-percent_reduction_10_tmin = 100 * (best_bc_bias_10_tmin - best_unet_bias_10_tmin) / np.abs(best_bc_bias_10_tmin)
-percent_reduction_90_tmax = 100 * (best_bc_bias_90_tmax - best_unet_bias_90_tmax) / np.abs(best_bc_bias_90_tmax)
-
-fig, axs = plt.subplots(1, 2, figsize=(20, 10), dpi=300)
 
 
+df = pd.DataFrame({
+    "City": city_names,
+    "Tmin 10th %ile Bias Reduction over Best BC+bicubic": tmin_bias_reduction,
+    "Tmax 90th %ile Bias Reduction over Best BC+bicubic": tmax_bias_reduction
+})
+df.set_index("City", inplace=True)
+heatmap_data = df.T
 
-
-masked_10_tmin = np.ma.masked_where(~mask, percent_reduction_10_tmin)
-masked_90_tmax = np.ma.masked_where(~mask, percent_reduction_90_tmax)
-
-
-#Tmin 10th percentile bias reduction
-im1 = axs[0].imshow(masked_10_tmin, origin='lower', aspect='auto', cmap=cmocean.cm.balance, vmin=-100, vmax=100)
-cbar1 = fig.colorbar(im1, ax=axs[0], orientation='vertical', fraction=0.046, pad=0.04)
-cbar1.set_label("% Reduction in 10th Percentile Bias\n(SR+BC+bicubic vs BC+bicubic)", fontsize=18)
-axs[0].set_title("Tmin: % Reduction in 10th Percentile Bias", fontsize=22, fontweight='bold')
-axs[0].tick_params(labelsize=16)
-axs[0].set_xticks([]); axs[0].set_yticks([])
-
-#Tmax 90th percentile bias reduction
-im2 = axs[1].imshow(masked_90_tmax, origin='lower', aspect='auto', cmap=colorcet.cm['bkr'], vmin=-100, vmax=100)
-cbar2 = fig.colorbar(im2, ax=axs[1], orientation='vertical', fraction=0.046, pad=0.04)
-cbar2.set_label("% Reduction in 90th Percentile Bias\n(SR+BC+bicubic vs BC+bicubic)", fontsize=18)
-axs[1].set_title("Tmax: % Reduction in 90th Percentile Bias", fontsize=22, fontweight='bold')
-axs[1].tick_params(labelsize=16)
-axs[1].set_xticks([]); axs[1].set_yticks([])
-
-fig.suptitle("Spatial Improvement of SR+BC+bicubic over BC+bicubic\nQuantile Bias Reduction (1981–2010)", fontsize=26, fontweight='bold')
-plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-plt.savefig("gridwise_quantile_bias_reduction_SR_BC_bicubic_over_BC_bicubic_tmin_tmax_poster.png", dpi=1000)
+plt.figure(figsize=(8, 4), dpi=300)
+sns.heatmap(heatmap_data, annot=True, fmt=".1f", cmap="coolwarm", center=0, cbar_kws={'label': '% Bias Reduction'})
+plt.title("% Bias Reduction for Cities\nTmin 10th and Tmax 90th Percentile (UNet vs BC+bicubic)")
+plt.ylabel("Metric")
+plt.xlabel("City")
+plt.tight_layout()
+plt.savefig("city_heatmap_bias_reduction_tmin10_tmax90.png", dpi=300)
 plt.close()

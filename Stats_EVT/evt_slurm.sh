@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=EVT_runner
-#SBATCH --output=logs/EVT_runner_%j.out
-#SBATCH --error=logs/EVT_runner_%j.err
+#SBATCH --job-name=Spatial_Quantile_EVT
+#SBATCH --output=logs/Spatial_Quantile_EVT_%j.out
+#SBATCH --error=logs/Spatial_Quantile_EVT_%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=500G
@@ -14,5 +14,6 @@ source environment.sh
 
 cd Stats_EVT
 
-#python spatial_quantile_BC_comparison.py #--region $SLURM_ARRAY_TASK_ID
-python Multiplicative_Return_Levels_Bias_Baselines.py
+python spatial_quantile_BC_comparison.py 
+#python Multiplicative_Return_Levels_Bias_Baselines.py
+#python Spatial_Quantile_Bias_Comparison_Cities.py
