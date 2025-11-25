@@ -6,7 +6,9 @@ from closest_grid_cell import select_nearest_grid_cell
 import matplotlib as mpl
 
 
-city_name = "Locarno"  
+city_name = "Geneva"  
+
+
 cities = {
     "Bern": (46.9480, 7.4474),
     "Geneva": (46.2044, 6.1432),
@@ -18,9 +20,9 @@ target_lat, target_lon = cities[city_name]
 time_slice = slice("1981-01-01", "2010-12-31")
 
 coarse_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/Model_Runs/temp_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099/temp_r01_coarse_masked.nc"
-dotc_bc_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/BC_Model_Runs/QDM/temp_QDM_BC_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_r01.nc"
-dotc_bicubic_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/BC_Model_Runs/QDM/temp_BC_bicubic_r01.nc"
-unet_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/UNet_Deterministic_Training_Dataset/QDM_ModelRun_Downscaled_Predictions_Validation_1981_2010.nc"
+dotc_bc_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/BC_Model_Runs/EQM/temp_EQM_BC_MPI-CSC-REMO2009_MPI-M-MPI-ESM-LR_rcp85_1971-2099_r01.nc"
+dotc_bicubic_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/BC_Model_Runs/EQM/temp_BC_bicubic_r01.nc"
+unet_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/UNet_Deterministic_Training_Dataset/EQM_ModelRun_Downscaled_Predictions_Validation_1981_2010.nc"
 obs_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TabsD_1971_2023.nc"
 
 coarse_ds = xr.open_dataset(coarse_path)
@@ -77,11 +79,14 @@ pss_dotc_bc = perkins_skill_score(dotc_bc_clim, obs_clim)
 pss_dotc_bicubic = perkins_skill_score(dotc_bicubic_clim, obs_clim)
 pss_unet = perkins_skill_score(unet_clim, obs_clim)
 
-print(f"PSS vs Ground Truth ({city_name}):")
-print(f"  Coarse:           {pss_coarse:.3f}")
-print(f"  QDM Bias Corrected: {pss_dotc_bc:.3f}")
-print(f"  QDM + Bicubic:   {pss_dotc_bicubic:.3f}")
-print(f"  UNet Super Resolved:  {pss_unet:.3f}")
+
+
+print(f"Perkins Skill Score({city_name}):")
+
+print(f"  Coarse non Bias Corrected:           {pss_coarse:.3f}")
+print(f"  EQM Bias Corrected: {pss_dotc_bc:.3f}")
+print(f"  EQM Bias Corrected + Bicubically Interpolated:   {pss_dotc_bicubic:.3f}")
+print(f"  EQM Bias Corrected + Bicubically Interpolated+ UNet Super Resolved:  {pss_unet:.3f}")
 
 
 
@@ -89,15 +94,15 @@ cb_colors = mpl.colormaps['Set3'].colors
 
 plt.figure(figsize=(10,6))
 days = np.arange(1, 367)
-plt.plot(days, obs_clim, label="Ground Truth", color=cb_colors[0], linewidth=2)          # Blue
-plt.plot(days, coarse_clim, label=f"Coarse (PSS={pss_coarse:.2f})", color=cb_colors[1], linewidth=2)      # Orange
-plt.plot(days, dotc_bc_clim, label=f"QDM Bias Corrected (PSS={pss_dotc_bc:.2f})", color=cb_colors[2], linewidth=2) # Green
-plt.plot(days, dotc_bicubic_clim, label=f"QDM + Bicubic (PSS={pss_dotc_bicubic:.2f})", color=cb_colors[3], linewidth=2) # Red
-plt.plot(days, unet_clim, label=f"UNet Downscaled (PSS={pss_unet:.2f})", color=cb_colors[4], linewidth=2) # Purple
+plt.plot(days, obs_clim, label="Ground Truth", color="black", linewidth=2)         
+plt.plot(days, coarse_clim, label=f"Coarse non BC (PSS={pss_coarse:.2f})", color=cb_colors[0], linewidth=2)      # Orange
+plt.plot(days, dotc_bc_clim, label=f"EQM BC (PSS={pss_dotc_bc:.2f})", color=cb_colors[1], linewidth=2) # Green
+plt.plot(days, dotc_bicubic_clim, label=f"EQM + Bicubic Interpolation (PSS={pss_dotc_bicubic:.2f})", color=cb_colors[2], linewidth=2) # Red
+plt.plot(days, unet_clim, label=f"EQM + Bicubic Interpolation + UNet Super Resolved (PSS={pss_unet:.2f})", color=cb_colors[3], linewidth=2) # Purple
 
 plt.xlabel("Day of Year")
 plt.ylabel("Temperature (°C)")
-plt.title(f"{city_name} PSS of Daily Temperature Climatology (1981–2010)")
+plt.title(f"{city_name} PSS of Climatological Mean Annual Cycle (1981–2010) with EQM+bicubic interpolation")
 plt.legend()
 plt.tight_layout()
 plt.savefig(f"{city_name}_daily_climatology_1981_2010.png", dpi=1000)
