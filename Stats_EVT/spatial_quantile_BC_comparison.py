@@ -1,7 +1,6 @@
 import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
-import cmocean
 import colorcet
 
 bc_methods = ["dOTC", "EQM", "QDM"]
@@ -25,25 +24,18 @@ unet_files_tmax = unet_files_tmin
 
 obs_tmin_file = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TminD_1971_2023.nc"
 obs_tmax_file = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TmaxD_1971_2023.nc"
-time_slice = slice("1981-01-01", "2010-12-31")
 
-obs_tmin = xr.open_dataset(obs_tmin_file)["TminD"].sel(time=time_slice)
-obs_tmax = xr.open_dataset(obs_tmax_file)["TmaxD"].sel(time=time_slice)
-mask = ~np.isnan(obs_tmin.isel(time=0).values)
+# Best BC based on val period: 2011-2023
 
+validation_slice = slice("2011-01-01", "2023-12-31")
+obs_tmin_val = xr.open_dataset(obs_tmin_file)["TminD"].sel(time=validation_slice)
+obs_tmax_val = xr.open_dataset(obs_tmax_file)["TmaxD"].sel(time=validation_slice)
+mask_val = ~np.isnan(obs_tmin_val.isel(time=0).values)
 
-
-
-
-bc_bicubic_tmin = {m: xr.open_dataset(bicubic_files_tmin[m])["tmin"].sel(time=time_slice) for m in bc_methods}
-bc_bicubic_tmax = {m: xr.open_dataset(bicubic_files_tmax[m])["tmax"].sel(time=time_slice) for m in bc_methods}
-unet_tmin = {m: xr.open_dataset(unet_files_tmin[m])["tmin"].sel(time=time_slice) for m in bc_methods}
-unet_tmax = {m: xr.open_dataset(unet_files_tmax[m])["tmax"].sel(time=time_slice) for m in bc_methods}
-
-
+bc_bicubic_tmin_val = {m: xr.open_dataset(bicubic_files_tmin[m])["tmin"].sel(time=validation_slice) for m in bc_methods}
+bc_bicubic_tmax_val = {m: xr.open_dataset(bicubic_files_tmax[m])["tmax"].sel(time=validation_slice) for m in bc_methods}
 
 def gridwise_pss(a, b, nbins=50):
-    # Vectorized version
     shp = a.shape[1:]
     pss = np.full(shp, np.nan)
     a_flat = a.reshape(a.shape[0], -1)
@@ -64,8 +56,29 @@ def gridwise_pss(a, b, nbins=50):
 
 
 
+
+pss_tmin_val = np.stack([gridwise_pss(bc_bicubic_tmin_val[m].values, obs_tmin_val.values) for m in bc_methods])
+pss_tmax_val = np.stack([gridwise_pss(bc_bicubic_tmax_val[m].values, obs_tmax_val.values) for m in bc_methods])
+winner_tmin = np.argmax(pss_tmin_val, axis=0).astype(float)
+winner_tmax = np.argmax(pss_tmax_val, axis=0).astype(float)
+winner_tmin[~mask_val] = np.nan
+winner_tmax[~mask_val] = np.nan
+
+# Redcution of bias
+analysis_slice = slice("1981-01-01", "2010-12-31")
+obs_tmin = xr.open_dataset(obs_tmin_file)["TminD"].sel(time=analysis_slice)
+obs_tmax = xr.open_dataset(obs_tmax_file)["TmaxD"].sel(time=analysis_slice)
+mask = ~np.isnan(obs_tmin.isel(time=0).values)
+
+
+bc_bicubic_tmin = {m: xr.open_dataset(bicubic_files_tmin[m])["tmin"].sel(time=analysis_slice) for m in bc_methods}
+bc_bicubic_tmax = {m: xr.open_dataset(bicubic_files_tmax[m])["tmax"].sel(time=analysis_slice) for m in bc_methods}
+unet_tmin = {m: xr.open_dataset(unet_files_tmin[m])["tmin"].sel(time=analysis_slice) for m in bc_methods}
+unet_tmax = {m: xr.open_dataset(unet_files_tmax[m])["tmax"].sel(time=analysis_slice) for m in bc_methods}
+
+
+
 def gridwise_percentile_bias(a, b, percentile):
-    # Vectorized version
     shp = a.shape[1:]
     bias = np.full(shp, np.nan)
     a_flat = a.reshape(a.shape[0], -1)
@@ -78,24 +91,11 @@ def gridwise_percentile_bias(a, b, percentile):
     return bias
 
 
-
-# Best BC method per grid cell based on PSS
-pss_tmin = np.stack([gridwise_pss(bc_bicubic_tmin[m].values, obs_tmin.values) for m in bc_methods])
-pss_tmax = np.stack([gridwise_pss(bc_bicubic_tmax[m].values, obs_tmax.values) for m in bc_methods])
-winner_tmin = np.argmax(pss_tmin, axis=0).astype(float)
-winner_tmax = np.argmax(pss_tmax, axis=0).astype(float)
-winner_tmin[~mask] = np.nan
-winner_tmax[~mask] = np.nan
-
-
-
-# 5th and 95th percentile
 all_bc_bias_5_tmin = np.stack([gridwise_percentile_bias(bc_bicubic_tmin[m].values, obs_tmin.values, 5) for m in bc_methods])
 all_bc_bias_95_tmax = np.stack([gridwise_percentile_bias(bc_bicubic_tmax[m].values, obs_tmax.values, 95) for m in bc_methods])
 all_unet_bias_5_tmin = np.stack([gridwise_percentile_bias(unet_tmin[m].values, obs_tmin.values, 5) for m in bc_methods])
 all_unet_bias_95_tmax = np.stack([gridwise_percentile_bias(unet_tmax[m].values, obs_tmax.values, 95) for m in bc_methods])
 
-# Select best method per cell using winner_tmin and winner_tmax
 winner_tmin_int = np.nan_to_num(winner_tmin, nan=-1).astype(int)
 winner_tmax_int = np.nan_to_num(winner_tmax, nan=-1).astype(int)
 
@@ -115,15 +115,19 @@ percent_reduction_95_tmax = 100 * (best_bc_bias_95_tmax - best_unet_bias_95_tmax
 
 fig, axs = plt.subplots(1, 2, figsize=(20, 10), dpi=300)
 
+
+
 masked_5_tmin = np.ma.masked_where(~mask, percent_reduction_5_tmin)
 masked_95_tmax = np.ma.masked_where(~mask, percent_reduction_95_tmax)
+
+
 
 #Tmin 5th percentile bias reduction
 im1 = axs[0].imshow(
     masked_5_tmin,
     origin='lower',
     aspect='auto',
-    cmap=colorcet.cm['bwy_r'],  # Blue-yellow diverging, colorblind safe, posterworthy
+    cmap=colorcet.cm['bwy_r'],
     vmin=-200,
     vmax=200
 )
@@ -137,26 +141,28 @@ axs[0].set_title("Tmin: % Reduction in 5th Percentile Bias", fontsize=22, fontwe
 axs[0].tick_params(labelsize=16)
 axs[0].set_xticks([]); axs[0].set_yticks([])
 
+
+
 #Tmax 95th percentile bias reduction
 im2 = axs[1].imshow(
     masked_95_tmax,
     origin='lower',
     aspect='auto',
-    cmap=colorcet.cm['bkr_r'],  # Blue-black-red
+    cmap=colorcet.cm['bkr_r'],
     vmin=-200,
     vmax=200
 )
+
+
 cbar2 = fig.colorbar(im2, ax=axs[1], orientation='vertical', fraction=0.046, pad=0.04, extend='both')
-cbar2.set_label("% Reduction in 95th Percentile Bias\n(SR+BC+bicubic over best BC+bicubic)", fontsize=18)
+cbar2.set_label("% Reduction in 95th Percentile Bias\n(SR+best BC+bicubic over best BC+bicubic)", fontsize=18)
 cbar2.ax.tick_params(labelsize=14)
 cbar2.ax.set_yticks([-100, -50, 0, 50, 100])
 axs[1].set_title("Tmax: % Reduction in 95th Percentile Bias", fontsize=22, fontweight='bold')
 axs[1].tick_params(labelsize=16)
 axs[1].set_xticks([]); axs[1].set_yticks([])
 
-
-
-fig.suptitle("Spatial Improvement of SR+BC+bicubic over BC+bicubic\nQuantile Bias Reduction (5th/95th Percentile, 1981–2010)", fontsize=26, fontweight='bold')
+fig.suptitle("Spatial Improvement of SR+best BC+bicubic over best best BC+bicubic\nQuantile Bias Reduction (5th/95th Percentile, 1981–2010)", fontsize=26, fontweight='bold')
 plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-plt.savefig("gridwise_quantile_bias_reduction_SR_BC_bicubic_over_BC_bicubic_tmin_tmax_5th_95th_poster.png", dpi=1000)
+plt.savefig("gridwise_quantile_bias_reduction_SR_best_BC_bicubic_over_best_BC_bicubic_tmin_tmax_5th_95th_poster.png", dpi=1000)
 plt.close()
