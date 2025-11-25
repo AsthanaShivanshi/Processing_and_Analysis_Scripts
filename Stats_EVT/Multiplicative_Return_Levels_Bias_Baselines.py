@@ -11,20 +11,20 @@ from matplotlib.patches import Patch
 
 dOTC_precip_path = config.BIAS_CORRECTED_DIR + "/dOTC/precip_temp_tmin_tmax_bicubic_r01.nc"
 EQM_precip_path = config.BIAS_CORRECTED_DIR + "/EQM/precip_BC_bicubic_r01.nc"
-QDM_precip_path = config.BIAS_CORRECTED_DIR + "/QDM/precip_BC_bicubic_r01.nc"
+# QDM_precip_path = config.BIAS_CORRECTED_DIR + "/QDM/precip_BC_bicubic_r01.nc"  # Removed
 obs_precip_file = config.TARGET_DIR + "/RhiresD_1971_2023.nc"
 
 dOTC_precip_SR= "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/UNet_Deterministic_Training_Dataset/dOTC_ModelRun_Downscaled_Predictions_Validation_1981_2010.nc"
 EQM_precip_SR= "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/UNet_Deterministic_Training_Dataset/EQM_ModelRun_Downscaled_Predictions_Validation_1981_2010.nc"
-QDM_precip_SR= "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/UNet_Deterministic_Training_Dataset/QDM_ModelRun_Downscaled_Predictions_Validation_1981_2010.nc"
+# QDM_precip_SR= "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/UNet_Deterministic_Training_Dataset/QDM_ModelRun_Downscaled_Predictions_Validation_1981_2010.nc"  # Removed
 
 models = {
     "dOTC+bicubic": dOTC_precip_path,
     "dOTC+bicubic+SR": dOTC_precip_SR,
     "EQM+bicubic": EQM_precip_path,
     "EQM+bicubic+SR": EQM_precip_SR,
-    "QDM+bicubic": QDM_precip_path,
-    "QDM+bicubic+SR": QDM_precip_SR,
+    # "QDM+bicubic": QDM_precip_path,  # Removed
+    # "QDM+bicubic+SR": QDM_precip_SR,  # Removed
 }
 
 cities = {
@@ -92,15 +92,11 @@ palette_20 = [
     "#0072B2", "#D55E00", "#009E73", "#F0E442", "#CC79A7", "#56B4E9"
 ]
 
-
-
 palette_50 = [
     "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00"
 ]
 model_palette_20 = {model: palette_20[i % len(palette_20)] for i, model in enumerate(model_names)}
 model_palette_50 = {model: palette_50[i % len(palette_50)] for i, model in enumerate(model_names)}
-
-
 
 # Define marker shapes for each city
 city_markers = {
@@ -110,8 +106,6 @@ city_markers = {
     "Lugano": "^",
     "Zürich": "P"
 }
-
-
 
 # Dot plot for 20-year RL
 plt.figure(figsize=(12, 7), dpi=1000)

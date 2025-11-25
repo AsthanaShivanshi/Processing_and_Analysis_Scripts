@@ -22,12 +22,8 @@ unet_files_tmax = unet_files_tmin
 obs_tmin_file = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TminD_1971_2023.nc"
 obs_tmax_file = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TmaxD_1971_2023.nc"
 
-
-
-# 2011 -2023 BIC validation for winner selection
+# Validation period: 2011-2023
 validation_slice = slice("2011-01-01", "2023-12-31")
-
-
 obs_tmin_val = xr.open_dataset(obs_tmin_file)["TminD"].sel(time=validation_slice)
 obs_tmax_val = xr.open_dataset(obs_tmax_file)["TmaxD"].sel(time=validation_slice)
 mask_val = ~np.isnan(obs_tmin_val.isel(time=0).values)
@@ -36,38 +32,31 @@ bc_bicubic_tmin_val = {m: xr.open_dataset(bicubic_files_tmin[m])["tmin"].sel(tim
 bc_bicubic_tmax_val = {m: xr.open_dataset(bicubic_files_tmax[m])["tmax"].sel(time=validation_slice) for m in bc_methods}
 
 def climatological_cycle(da):
-    # Returns [dayofyear, lat, lon]
+    # Returns DataArrayGroupBy object grouped by dayofyear
     return da.groupby("time.dayofyear")
 
-
-
 def gridwise_pss_annual_cycle(a, b, nbins=50):
-    # a, b: xarray DataArray, grouped by dayofyear
+    # a, b: xarray DataArrayGroupBy objects (grouped by dayofyear)
     doy = np.arange(1, 367)
     shp = a.mean(dim="time").shape  # [lat, lon]
     pss = np.full(shp, np.nan)
-
-
     a_group = a
     b_group = b
-    # For each grid cell, collect the annual cycle values (one per day)
-
-
     for i in range(shp[0]):
         for j in range(shp[1]):
             a_cycle = []
             b_cycle = []
             for d in doy:
                 if d in a_group.groups and d in b_group.groups:
-                    a_val = a_group.get_group(d).values[:, i, j]
-                    b_val = b_group.get_group(d).values[:, i, j]
+                    a_idx = a_group.groups[d]
+                    b_idx = b_group.groups[d]
+                    a_val = a_group._obj.isel(time=a_idx).values[:, i, j]
+                    b_val = b_group._obj.isel(time=b_idx).values[:, i, j]
                     a_cycle.append(np.nanmean(a_val))
                     b_cycle.append(np.nanmean(b_val))
             a_cycle = np.array(a_cycle)
             b_cycle = np.array(b_cycle)
             mask_ij = ~np.isnan(a_cycle) & ~np.isnan(b_cycle)
-
-
             if np.sum(mask_ij) > 10:
                 a_valid, b_valid = a_cycle[mask_ij], b_cycle[mask_ij]
                 combined = np.concatenate([a_valid, b_valid])
@@ -79,19 +68,14 @@ def gridwise_pss_annual_cycle(a, b, nbins=50):
                 pss[i, j] = np.sum(np.minimum(hist_a, hist_b))
     return pss
 
-
 pss_tmin_val = np.stack([
     gridwise_pss_annual_cycle(climatological_cycle(bc_bicubic_tmin_val[m]), climatological_cycle(obs_tmin_val))
     for m in bc_methods
 ])
-
-
 pss_tmax_val = np.stack([
     gridwise_pss_annual_cycle(climatological_cycle(bc_bicubic_tmax_val[m]), climatological_cycle(obs_tmax_val))
     for m in bc_methods
 ])
-
-
 winner_tmin = np.argmax(pss_tmin_val, axis=0).astype(float)
 winner_tmax = np.argmax(pss_tmax_val, axis=0).astype(float)
 winner_tmin[~mask_val] = np.nan
@@ -99,9 +83,6 @@ winner_tmax[~mask_val] = np.nan
 
 # Analysis period: 1981-2010
 analysis_slice = slice("1981-01-01", "2010-12-31")
-
-
-
 obs_tmin = xr.open_dataset(obs_tmin_file)["TminD"].sel(time=analysis_slice)
 obs_tmax = xr.open_dataset(obs_tmax_file)["TmaxD"].sel(time=analysis_slice)
 mask = ~np.isnan(obs_tmin.isel(time=0).values)
@@ -122,8 +103,6 @@ def gridwise_percentile_bias(a, b, percentile):
         if np.sum(mask_ij) > 10:
             bias.flat[idx] = np.nanpercentile(a1[mask_ij], percentile) - np.nanpercentile(b1[mask_ij], percentile)
     return bias
-
-
 
 all_bc_bias_5_tmin = np.stack([gridwise_percentile_bias(bc_bicubic_tmin[m].values, obs_tmin.values, 5) for m in bc_methods])
 all_bc_bias_95_tmax = np.stack([gridwise_percentile_bias(bc_bicubic_tmax[m].values, obs_tmax.values, 95) for m in bc_methods])
@@ -151,7 +130,6 @@ fig, axs = plt.subplots(1, 2, figsize=(20, 10), dpi=1000)
 
 masked_5_tmin = np.ma.masked_where(~mask, percent_reduction_5_tmin)
 masked_95_tmax = np.ma.masked_where(~mask, percent_reduction_95_tmax)
-
 
 im1 = axs[0].imshow(
     masked_5_tmin,
