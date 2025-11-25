@@ -104,8 +104,8 @@ for i in range(2):
     percentages.append(perc)
 
 labels = [
-    f"dOTC+bicubic ({percentages[0]:.1f}%)",
-    f"EQM+bicubic ({percentages[1]:.1f}%)",
+    f"dOTC+bicubic ({percentages[0]:.1f}% of grid cells)",
+    f"EQM+bicubic ({percentages[1]:.1f}% of grid cells)",
     #f"QDM+bicubic ({percentages[2]:.1f}%)"
 ]
 
@@ -151,7 +151,7 @@ legend_elements = [
     Patch(facecolor='green', label=labels[0]),  # dOTC+bicubic
     Patch(facecolor='blue', label=labels[1])    # EQM+bicubic
 ]
-ax.legend(handles=legend_elements, loc='upper left', fontsize=14, frameon=False, bbox_to_anchor=(1.05, 1))
+ax.legend(handles=legend_elements, loc='upper left', fontsize=14, frameon=False)
 
 
 
