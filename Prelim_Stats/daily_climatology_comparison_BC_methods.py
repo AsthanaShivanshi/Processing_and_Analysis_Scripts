@@ -19,7 +19,8 @@ EQM_temp_ds = xr.open_dataset(EQM_path_temp)
 QDM_temp_ds = xr.open_dataset(QDM_path_temp)
 obs_temp_ds = xr.open_dataset(temp_obs_file)
 
-time_slice = slice("1981-01-01", "2010-12-31")
+
+time_slice = slice("2011-01-01", "2023-12-31")
 
 dOTC_temp = dOTC_ds["temp"].sel(time=time_slice)
 EQM_temp = EQM_temp_ds["temp"].sel(time=time_slice)
@@ -154,13 +155,13 @@ city_markers = {
 }
 
 
-
-
 offsets = {
     "Zürich": (3, -3),
     "Bern": (-30, 5),
     "Locarno": (3, 5)
 }
+
+
 
 for city, (lat, lon) in city_markers.items():
     result = select_nearest_grid_cell(obs_temp_ds, lat, lon)
@@ -171,6 +172,7 @@ for city, (lat, lon) in city_markers.items():
             bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.2'), zorder=11)
 
 
-ax.set_title("Best Bias Correction for Daily Temperature Climatology\n(Perkins Skill Score, 1981–2010)", fontsize=18, pad=15)
-plt.savefig("gridwise_pss_winner_temp_climatology_1981_2010_poster.png", dpi=1000, bbox_inches='tight')
+ax.set_title("Best Bias Correction for Daily Temperature Decadal Mean Annual Cycle \n(Perkins Skill Score, 2011–2023)", fontsize=18, pad=15)
+plt.savefig("gridwise_pss_winner_temp_climatology_2011_2023_poster.png", dpi=1000, bbox_inches='tight')
 plt.close()
+

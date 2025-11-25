@@ -23,13 +23,9 @@ unet_files_tmin = {
 }
 unet_files_tmax = unet_files_tmin  
 
-
-
 obs_tmin_file = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TminD_1971_2023.nc"
 obs_tmax_file = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TmaxD_1971_2023.nc"
 time_slice = slice("1981-01-01", "2010-12-31")
-
-
 
 obs_tmin = xr.open_dataset(obs_tmin_file)["TminD"].sel(time=time_slice)
 obs_tmax = xr.open_dataset(obs_tmax_file)["TmaxD"].sel(time=time_slice)
@@ -37,7 +33,8 @@ mask = ~np.isnan(obs_tmin.isel(time=0).values)
 
 
 
-# Load BC+bicubic and UNet files
+
+
 bc_bicubic_tmin = {m: xr.open_dataset(bicubic_files_tmin[m])["tmin"].sel(time=time_slice) for m in bc_methods}
 bc_bicubic_tmax = {m: xr.open_dataset(bicubic_files_tmax[m])["tmax"].sel(time=time_slice) for m in bc_methods}
 unet_tmin = {m: xr.open_dataset(unet_files_tmin[m])["tmin"].sel(time=time_slice) for m in bc_methods}
@@ -67,7 +64,6 @@ def gridwise_pss(a, b, nbins=50):
 
 
 
-
 def gridwise_percentile_bias(a, b, percentile):
     # Vectorized version
     shp = a.shape[1:]
@@ -93,65 +89,74 @@ winner_tmax[~mask] = np.nan
 
 
 
-# Precompute all biases for all methods
-all_bc_bias_10_tmin = np.stack([gridwise_percentile_bias(bc_bicubic_tmin[m].values, obs_tmin.values, 10) for m in bc_methods])
-all_bc_bias_90_tmax = np.stack([gridwise_percentile_bias(bc_bicubic_tmax[m].values, obs_tmax.values, 90) for m in bc_methods])
-all_unet_bias_10_tmin = np.stack([gridwise_percentile_bias(unet_tmin[m].values, obs_tmin.values, 10) for m in bc_methods])
-all_unet_bias_90_tmax = np.stack([gridwise_percentile_bias(unet_tmax[m].values, obs_tmax.values, 90) for m in bc_methods])
-
-
+# 5th and 95th percentile
+all_bc_bias_5_tmin = np.stack([gridwise_percentile_bias(bc_bicubic_tmin[m].values, obs_tmin.values, 5) for m in bc_methods])
+all_bc_bias_95_tmax = np.stack([gridwise_percentile_bias(bc_bicubic_tmax[m].values, obs_tmax.values, 95) for m in bc_methods])
+all_unet_bias_5_tmin = np.stack([gridwise_percentile_bias(unet_tmin[m].values, obs_tmin.values, 5) for m in bc_methods])
+all_unet_bias_95_tmax = np.stack([gridwise_percentile_bias(unet_tmax[m].values, obs_tmax.values, 95) for m in bc_methods])
 
 # Select best method per cell using winner_tmin and winner_tmax
 winner_tmin_int = np.nan_to_num(winner_tmin, nan=-1).astype(int)
 winner_tmax_int = np.nan_to_num(winner_tmax, nan=-1).astype(int)
 
-
-best_bc_bias_10_tmin = np.full(mask.shape, np.nan)
-best_bc_bias_90_tmax = np.full(mask.shape, np.nan)
-best_unet_bias_10_tmin = np.full(mask.shape, np.nan)
-best_unet_bias_90_tmax = np.full(mask.shape, np.nan)
+best_bc_bias_5_tmin = np.full(mask.shape, np.nan)
+best_bc_bias_95_tmax = np.full(mask.shape, np.nan)
+best_unet_bias_5_tmin = np.full(mask.shape, np.nan)
+best_unet_bias_95_tmax = np.full(mask.shape, np.nan)
 
 valid_mask = mask & (winner_tmin_int >= 0) & (winner_tmax_int >= 0)
-best_bc_bias_10_tmin[valid_mask] = all_bc_bias_10_tmin[winner_tmin_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
-best_bc_bias_90_tmax[valid_mask] = all_bc_bias_90_tmax[winner_tmax_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
-best_unet_bias_10_tmin[valid_mask] = all_unet_bias_10_tmin[winner_tmin_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
-best_unet_bias_90_tmax[valid_mask] = all_unet_bias_90_tmax[winner_tmax_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
+best_bc_bias_5_tmin[valid_mask] = all_bc_bias_5_tmin[winner_tmin_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
+best_bc_bias_95_tmax[valid_mask] = all_bc_bias_95_tmax[winner_tmax_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
+best_unet_bias_5_tmin[valid_mask] = all_unet_bias_5_tmin[winner_tmin_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
+best_unet_bias_95_tmax[valid_mask] = all_unet_bias_95_tmax[winner_tmax_int[valid_mask], np.where(valid_mask)[0], np.where(valid_mask)[1]]
 
-percent_reduction_10_tmin = 100 * (best_bc_bias_10_tmin - best_unet_bias_10_tmin) / np.abs(best_bc_bias_10_tmin)
-percent_reduction_90_tmax = 100 * (best_bc_bias_90_tmax - best_unet_bias_90_tmax) / np.abs(best_bc_bias_90_tmax)
+percent_reduction_5_tmin = 100 * (best_bc_bias_5_tmin - best_unet_bias_5_tmin) / np.abs(best_bc_bias_5_tmin)
+percent_reduction_95_tmax = 100 * (best_bc_bias_95_tmax - best_unet_bias_95_tmax) / np.abs(best_bc_bias_95_tmax)
 
 fig, axs = plt.subplots(1, 2, figsize=(20, 10), dpi=300)
 
+masked_5_tmin = np.ma.masked_where(~mask, percent_reduction_5_tmin)
+masked_95_tmax = np.ma.masked_where(~mask, percent_reduction_95_tmax)
+
+#Tmin 5th percentile bias reduction
+im1 = axs[0].imshow(
+    masked_5_tmin,
+    origin='lower',
+    aspect='auto',
+    cmap=colorcet.cm['bwy_r'],  # Blue-yellow diverging, colorblind safe, posterworthy
+    vmin=-200,
+    vmax=200
+)
 
 
-
-masked_10_tmin = np.ma.masked_where(~mask, percent_reduction_10_tmin)
-masked_90_tmax = np.ma.masked_where(~mask, percent_reduction_90_tmax)
-
-
-
-#Tmin 10th percentile bias reduction
-im1 = axs[0].imshow(masked_10_tmin, origin='lower', aspect='auto', cmap='RdBu_r', vmin=-100, vmax=100)
 cbar1 = fig.colorbar(im1, ax=axs[0], orientation='vertical', fraction=0.046, pad=0.04, extend='both')
-cbar1.set_label("% Reduction in 10th Percentile Bias\n(SR+BC+bicubic vs BC+bicubic)", fontsize=18)
+cbar1.set_label("% Reduction in 5th Percentile Bias\n(SR+BC+bicubic over best BC+bicubic)", fontsize=18)
 cbar1.ax.tick_params(labelsize=14)
 cbar1.ax.set_yticks([-100, -50, 0, 50, 100])
-axs[0].set_title("Tmin: % Reduction in 10th Percentile Bias", fontsize=22, fontweight='bold')
+axs[0].set_title("Tmin: % Reduction in 5th Percentile Bias", fontsize=22, fontweight='bold')
 axs[0].tick_params(labelsize=16)
 axs[0].set_xticks([]); axs[0].set_yticks([])
 
-#Tmax 90th percentile bias reduction
-im2 = axs[1].imshow(masked_90_tmax, origin='lower', aspect='auto', cmap='RdBu_r', vmin=-100, vmax=100)
+#Tmax 95th percentile bias reduction
+im2 = axs[1].imshow(
+    masked_95_tmax,
+    origin='lower',
+    aspect='auto',
+    cmap=colorcet.cm['bkr_r'],  # Blue-black-red
+    vmin=-200,
+    vmax=200
+)
 cbar2 = fig.colorbar(im2, ax=axs[1], orientation='vertical', fraction=0.046, pad=0.04, extend='both')
-cbar2.set_label("% Reduction in 90th Percentile Bias\n(SR+BC+bicubic vs BC+bicubic)", fontsize=18)
+cbar2.set_label("% Reduction in 95th Percentile Bias\n(SR+BC+bicubic over best BC+bicubic)", fontsize=18)
 cbar2.ax.tick_params(labelsize=14)
 cbar2.ax.set_yticks([-100, -50, 0, 50, 100])
-axs[1].set_title("Tmax: % Reduction in 90th Percentile Bias", fontsize=22, fontweight='bold')
+axs[1].set_title("Tmax: % Reduction in 95th Percentile Bias", fontsize=22, fontweight='bold')
 axs[1].tick_params(labelsize=16)
 axs[1].set_xticks([]); axs[1].set_yticks([])
 
 
-fig.suptitle("Spatial Improvement of SR+BC+bicubic over BC+bicubic\nQuantile Bias Reduction (1981–2010)", fontsize=26, fontweight='bold')
+
+fig.suptitle("Spatial Improvement of SR+BC+bicubic over BC+bicubic\nQuantile Bias Reduction (5th/95th Percentile, 1981–2010)", fontsize=26, fontweight='bold')
 plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-plt.savefig("gridwise_quantile_bias_reduction_SR_BC_bicubic_over_BC_bicubic_tmin_tmax_poster.png", dpi=1000)
+plt.savefig("gridwise_quantile_bias_reduction_SR_BC_bicubic_over_BC_bicubic_tmin_tmax_5th_95th_poster.png", dpi=1000)
 plt.close()

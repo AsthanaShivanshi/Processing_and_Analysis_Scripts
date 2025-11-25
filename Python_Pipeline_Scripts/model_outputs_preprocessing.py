@@ -133,6 +133,8 @@ for src, tgt, out, oldvar, newvar, mask_path, hr_grid in pairs:
     step2 = out.replace(".nc", "_step2.nc")
     process_file(src, tgt, out, oldvar, newvar, mask_path)
     out_hr = out.replace("_coarse_masked.nc", "_HR_masked.nc")
+
+    
     interpolate_to_HR(out, hr_grid, out_hr, newvar)
     # Now delete intermediate files
     if os.path.exists(step1):
