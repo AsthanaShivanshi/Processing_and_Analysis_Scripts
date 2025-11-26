@@ -48,15 +48,15 @@ def annual_max_5day_totals(arr, time_coord):
             max_per_year.append(np.nan)
     return pd.Series(max_per_year, index=pd.to_datetime(years, format='%Y'))
 
-def get_return_level(series, periods=[20, 50]):
+def get_return_level(series, periods=[50, 100]):
     eva_model = EVA(series)
     eva_model.get_extremes(method="BM", block_size="365D")
     eva_model.fit_model()
     summary = eva_model.get_summary(return_period=periods, alpha=0.95, n_samples=1000)
     return summary['return value']
 
-bias_20 = np.zeros((len(cities), len(models)))
 bias_50 = np.zeros((len(cities), len(models)))
+bias_100 = np.zeros((len(cities), len(models)))
 city_names = list(cities.keys())
 model_names = list(models.keys())
 
@@ -76,27 +76,28 @@ for ci, (city, (lat, lon)) in enumerate(cities.items()):
         mi_idx, mj_idx = result_mod['lat_idx'], result_mod['lon_idx']
         mod_series = annual_max_5day_totals(precip[:, mi_idx, mj_idx].values, precip["time"])
         mod_rl = get_return_level(mod_series)
-        bias_20[ci, mi] = mod_rl.loc[20] / obs_rl.loc[20]
         bias_50[ci, mi] = mod_rl.loc[50] / obs_rl.loc[50]
+        bias_100[ci, mi] = mod_rl.loc[100] / obs_rl.loc[100]
 
 # Prepare data for dot plots
 data = []
 for ci, city in enumerate(city_names):
     for mi, model in enumerate(model_names):
-        data.append({"City": city, "Model": model, "Period": "20-year RL", "Bias": bias_20[ci, mi]})
         data.append({"City": city, "Model": model, "Period": "50-year RL", "Bias": bias_50[ci, mi]})
+        data.append({"City": city, "Model": model, "Period": "100-year RL", "Bias": bias_100[ci, mi]})
 df = pd.DataFrame(data)
 
 # Two different colorblind-friendly palettes for the two plots
-palette_20 = [
+palette_50 = [
     "#0072B2", "#D55E00", "#009E73", "#F0E442", "#CC79A7", "#56B4E9"
 ]
 
-palette_50 = [
+palette_100 = [
     "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00"
 ]
-model_palette_20 = {model: palette_20[i % len(palette_20)] for i, model in enumerate(model_names)}
 model_palette_50 = {model: palette_50[i % len(palette_50)] for i, model in enumerate(model_names)}
+model_palette_100 = {model: palette_100[i % len(palette_100)] for i, model in enumerate(model_names)}
+
 
 # Define marker shapes for each city
 city_markers = {
@@ -106,34 +107,6 @@ city_markers = {
     "Lugano": "^",
     "Zürich": "P"
 }
-
-# Dot plot for 20-year RL
-plt.figure(figsize=(12, 7), dpi=1000)
-ax = sns.scatterplot(
-    data=df[df["Period"] == "20-year RL"],
-    x="City",
-    y="Bias",
-    hue="Model",
-    palette=model_palette_20,
-    style="City",
-    markers=city_markers,
-    s=120,
-    legend=False  # Disable automatic legend
-)
-plt.axhline(1, color='black', linestyle='--', linewidth=2, label='No Bias (y=1)')
-plt.ylabel("Multiplicative Bias (20-year RL)", fontsize=14)
-plt.title("Multiplicative Bias of 20-Year Return Level\nAnnual Max 5-Day Total Precipitation (1981–2010)", fontsize=18)
-plt.xticks(range(len(city_names)), city_names, fontsize=13)
-plt.tight_layout()
-for i in range(1, len(city_names)):
-    plt.axvline(i - 0.5, color='gray', linestyle=':', linewidth=1)
-
-# Custom legend: colored rectangles for models
-handles = [Patch(facecolor=model_palette_20[model], edgecolor='black', label=model) for model in model_names]
-ax.legend(handles=handles, title="Model", loc='upper left', bbox_to_anchor=(1,1), fontsize=12, title_fontsize=13)
-
-plt.savefig("dotplot_bias_20yrRL_5day_precip_cities_poster.png", dpi=1000, bbox_inches="tight")
-plt.close()
 
 # Dot plot for 50-year RL
 plt.figure(figsize=(12, 7), dpi=1000)
@@ -161,4 +134,32 @@ handles = [Patch(facecolor=model_palette_50[model], edgecolor='black', label=mod
 ax.legend(handles=handles, title="Model", loc='upper left', bbox_to_anchor=(1,1), fontsize=12, title_fontsize=13)
 
 plt.savefig("dotplot_bias_50yrRL_5day_precip_cities_poster.png", dpi=1000, bbox_inches="tight")
+plt.close()
+
+# Dot plot for 100-year RL
+plt.figure(figsize=(12, 7), dpi=1000)
+ax = sns.scatterplot(
+    data=df[df["Period"] == "100-year RL"],
+    x="City",
+    y="Bias",
+    hue="Model",
+    palette=model_palette_100,
+    style="City",
+    markers=city_markers,
+    s=120,
+    legend=False  # Disable automatic legend
+)
+plt.axhline(1, color='black', linestyle='--', linewidth=2, label='No Bias (y=1)')
+plt.ylabel("Multiplicative Bias (100-year RL)", fontsize=14)
+plt.title("Multiplicative Bias of 100-Year Return Level\nAnnual Max 5-Day Total Precipitation (1981–2010)", fontsize=18)
+plt.xticks(range(len(city_names)), city_names, fontsize=13)
+plt.tight_layout()
+for i in range(1, len(city_names)):
+    plt.axvline(i - 0.5, color='gray', linestyle=':', linewidth=1)
+
+# Custom legend: colored rectangles for models
+handles = [Patch(facecolor=model_palette_50[model], edgecolor='black', label=model) for model in model_names]
+ax.legend(handles=handles, title="Model", loc='upper left', bbox_to_anchor=(1,1), fontsize=12, title_fontsize=13)
+
+plt.savefig("dotplot_bias_100yrRL_5day_precip_cities_poster.png", dpi=1000, bbox_inches="tight")
 plt.close()
