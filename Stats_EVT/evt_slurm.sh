@@ -14,6 +14,6 @@ source environment.sh
 
 cd Stats_EVT
 
-python spatial_quantile_BC_comparison.py 
+python Multiplicative_Bias_Percentiles_Citywise.py
 #python Multiplicative_99th_cities.py
 #python Spatial_Quantile_Bias_Comparison_Cities.py
