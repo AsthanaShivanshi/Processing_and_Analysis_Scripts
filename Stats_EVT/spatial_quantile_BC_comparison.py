@@ -5,6 +5,8 @@ import config
 
 bc_methods = ["dOTC", "EQM"]
 
+np.Inf=np.inf
+
 bicubic_files_tmin = {
     "dOTC": "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/BC_Model_Runs/dOTC/precip_temp_tmin_tmax_bicubic_r01.nc",
     "EQM":  "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Downscaling_Models/BC_Model_Runs/EQM/tmin_BC_bicubic_r01.nc",
@@ -100,34 +102,44 @@ improvement_95_tmax[valid_mask_95_tmax] = (
 percent_improved_5_tmin = 100 * np.sum(improvement_5_tmin) / np.sum(valid_mask_5_tmin)
 percent_improved_95_tmax = 100 * np.sum(improvement_95_tmax) / np.sum(valid_mask_95_tmax)
 
+
 fig, axs = plt.subplots(1, 2, figsize=(20, 10), dpi=1000)
 
 im1 = axs[0].imshow(
     np.ma.masked_where(~mask, improvement_5_tmin),
     origin='lower',
     aspect='auto',
-    cmap='cividis',
+    cmap='magma',  
     vmin=0,
     vmax=1
 )
+cbar1 = fig.colorbar(im1, ax=axs[0], fraction=0.046, pad=0.04)
+cbar1.outline.set_edgecolor('black')
+cbar1.ax.tick_params(colors='black')
+cbar1.set_label('Improvement', fontsize=18, color='black')
 
 axs[0].set_title(f"Tmin 5th Percentile Bias Improvement\n{percent_improved_5_tmin:.1f}% grid cells improved", fontsize=18)
-axs[0].tick_params(labelsize=16)
+axs[0].tick_params(labelsize=18)
 axs[0].set_xticks([]); axs[0].set_yticks([])
 
 im2 = axs[1].imshow(
     np.ma.masked_where(~mask, improvement_95_tmax),
     origin='lower',
     aspect='auto',
-    cmap='plasma',
+    cmap='inferno', 
     vmin=0,
     vmax=1
 )
-axs[1].set_title(f"Tmax 95th Percentile Bias Improvement\n{percent_improved_95_tmax:.1f}% grid cells improved", fontsize=18)
-axs[1].tick_params(labelsize=16)
+cbar2 = fig.colorbar(im2, ax=axs[1], fraction=0.046, pad=0.04)
+cbar2.outline.set_edgecolor('black')
+cbar2.ax.tick_params(colors='black')
+cbar2.set_label('Improvement', fontsize=18, color='black')
+
+axs[1].set_title(f"Tmax 95th Percentile Bias Improvement\n{percent_improved_95_tmax:.1f}% grid cells improved", fontsize=20)
+axs[1].tick_params(labelsize=18)
 axs[1].set_xticks([]); axs[1].set_yticks([])
 
-fig.suptitle("Gridwise Bias Improvement: SR+best BC+bicubic vs best BC+bicubic\n(5th/95th Percentile, 1981–2010)", fontsize=26, fontweight='bold')
+fig.suptitle("Gridwise Bias Improvement: SR+best BC+bicubic vs best BC+bicubic\n(5th/95th Percentile, 1981–2010)", fontsize=30, fontweight='bold')
 plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 plt.savefig("gridwise_quantile_bias_improvement_SR_best_BC_bicubic_over_best_BC_bicubic_tmin_tmax_5th_95th_binary.png", dpi=1000)
 plt.close()

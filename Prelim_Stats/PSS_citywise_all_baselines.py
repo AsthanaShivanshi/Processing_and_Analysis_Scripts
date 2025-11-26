@@ -6,7 +6,7 @@ from closest_grid_cell import select_nearest_grid_cell
 import matplotlib as mpl
 
 
-city_name = "Geneva"  
+city_name = "Locarno"  
 
 
 cities = {
@@ -92,18 +92,21 @@ print(f"  EQM Bias Corrected + Bicubically Interpolated+ UNet Super Resolved:  {
 
 cb_colors = mpl.colormaps['Set3'].colors 
 
-plt.figure(figsize=(10,6))
-days = np.arange(1, 367)
-plt.plot(days, obs_clim, label="Ground Truth", color="black", linewidth=2)         
-plt.plot(days, coarse_clim, label=f"Coarse non BC (PSS={pss_coarse:.2f})", color=cb_colors[0], linewidth=2)      # Orange
-plt.plot(days, dotc_bc_clim, label=f"EQM BC (PSS={pss_dotc_bc:.2f})", color=cb_colors[1], linewidth=2) # Green
-plt.plot(days, dotc_bicubic_clim, label=f"EQM + Bicubic Interpolation (PSS={pss_dotc_bicubic:.2f})", color=cb_colors[2], linewidth=2) # Red
-plt.plot(days, unet_clim, label=f"EQM + Bicubic Interpolation + UNet Super Resolved (PSS={pss_unet:.2f})", color=cb_colors[3], linewidth=2) # Purple
 
-plt.xlabel("Day of Year")
-plt.ylabel("Temperature (°C)")
-plt.title(f"{city_name} PSS of Climatological Mean Annual Cycle (1981–2010) with EQM+bicubic interpolation")
-plt.legend()
+plt.figure(figsize=(16, 10))  # Larger figure for poster
+days = np.arange(1, 367)
+plt.plot(days, obs_clim, label="Ground Truth", color="black", linewidth=5)         
+plt.plot(days, coarse_clim, label=f"Coarse non BC (PSS={pss_coarse:.2f})", color=cb_colors[0], linewidth=5)
+plt.plot(days, dotc_bc_clim, label=f"EQM BC (PSS={pss_dotc_bc:.2f})", color=cb_colors[1], linewidth=5)
+plt.plot(days, dotc_bicubic_clim, label=f"EQM + Bicubic Interpolation (PSS={pss_dotc_bicubic:.2f})", color=cb_colors[2], linewidth=5)
+plt.plot(days, unet_clim, label=f"EQM + Bicubic Interpolation + UNet Super Resolved (PSS={pss_unet:.2f})", color=cb_colors[3], linewidth=5)
+
+plt.xlabel("Day of Year", fontsize=36, labelpad=20)
+plt.ylabel("Temperature (°C)", fontsize=36, labelpad=20)
+plt.title(f"{city_name} PSS of Climatological Mean Annual Cycle (1981–2010)\nwith EQM+bicubic interpolation", fontsize=40, fontweight='bold', pad=30)
+plt.legend(fontsize=28, loc='best')
+plt.xticks(fontsize=28)
+plt.yticks(fontsize=28)
 plt.tight_layout()
 plt.savefig(f"{city_name}_daily_climatology_1981_2010.png", dpi=1000)
 plt.show()
