@@ -156,7 +156,8 @@ legend_elements = [
     Patch(facecolor='green', label=labels[0]),  # dOTC+bicubic
     Patch(facecolor='blue', label=labels[1])    # EQM+bicubic
 ]
-ax.legend(handles=legend_elements, loc='upper left', fontsize=32, frameon=False)
+ax.legend(handles=legend_elements, loc='upper left', 
+          bbox_to_anchor=(-0.5, -0.1), fontsize=32, frameon=False)
 
 city_markers = {
     "Geneva": (46.2044, 6.1432), 

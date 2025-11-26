@@ -113,10 +113,6 @@ im1 = axs[0].imshow(
     vmin=0,
     vmax=1
 )
-cbar1 = fig.colorbar(im1, ax=axs[0], fraction=0.046, pad=0.04)
-cbar1.outline.set_edgecolor('black')
-cbar1.ax.tick_params(colors='black')
-cbar1.set_label('Improvement', fontsize=18, color='black')
 
 axs[0].set_title(f"Tmin 5th Percentile Bias Improvement\n{percent_improved_5_tmin:.1f}% grid cells improved", fontsize=18)
 axs[0].tick_params(labelsize=18)
@@ -130,10 +126,7 @@ im2 = axs[1].imshow(
     vmin=0,
     vmax=1
 )
-cbar2 = fig.colorbar(im2, ax=axs[1], fraction=0.046, pad=0.04)
-cbar2.outline.set_edgecolor('black')
-cbar2.ax.tick_params(colors='black')
-cbar2.set_label('Improvement', fontsize=18, color='black')
+
 
 axs[1].set_title(f"Tmax 95th Percentile Bias Improvement\n{percent_improved_95_tmax:.1f}% grid cells improved", fontsize=20)
 axs[1].tick_params(labelsize=18)

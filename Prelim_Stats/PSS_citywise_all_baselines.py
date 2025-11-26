@@ -6,7 +6,9 @@ from closest_grid_cell import select_nearest_grid_cell
 import matplotlib as mpl
 
 
-city_name = "Locarno"  
+city_name = "Geneva"  
+
+np.Inf=np.inf
 
 
 cities = {
@@ -101,8 +103,8 @@ plt.plot(days, dotc_bc_clim, label=f"EQM BC (PSS={pss_dotc_bc:.2f})", color=cb_c
 plt.plot(days, dotc_bicubic_clim, label=f"EQM + Bicubic Interpolation (PSS={pss_dotc_bicubic:.2f})", color=cb_colors[2], linewidth=5)
 plt.plot(days, unet_clim, label=f"EQM + Bicubic Interpolation + UNet Super Resolved (PSS={pss_unet:.2f})", color=cb_colors[3], linewidth=5)
 
-plt.xlabel("Day of Year", fontsize=36, labelpad=20)
-plt.ylabel("Temperature (°C)", fontsize=36, labelpad=20)
+plt.xlabel("Day of Year", fontsize=40, labelpad=20)
+plt.ylabel("Temperature (°C)", fontsize=40, labelpad=20)
 plt.title(f"{city_name} PSS of Climatological Mean Annual Cycle (1981–2010)\nwith EQM+bicubic interpolation", fontsize=40, fontweight='bold', pad=30)
 plt.legend(fontsize=28, loc='best')
 plt.xticks(fontsize=28)
