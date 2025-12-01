@@ -3,7 +3,34 @@ import numpy as np
 import matplotlib.pyplot as plt
 from closest_grid_cell import select_nearest_grid_cell
 
-import matplotlib as mpl
+import proplot as pplt
+
+# Set global poster-worthy style
+pplt.rc.update({
+    'font.family': 'sans-serif',
+    'font.sans-serif': ['Arial', 'Liberation Sans', 'DejaVu Sans'],
+    'font.size': 38,
+    'axes.titlesize': 44,
+    'axes.titleweight': 'bold',
+    'axes.labelsize': 40,
+    'axes.labelweight': 'bold',
+    'xtick.labelsize': 32,
+    'ytick.labelsize': 32,
+    'legend.fontsize': 32,
+    'figure.titlesize': 44,
+    'lines.linewidth': 5,
+    'axes.linewidth': 2.5,
+    'savefig.dpi': 1000,
+    'figure.figsize': (16, 12),
+    'axes.grid': True,
+    'grid.linewidth': 1.5,
+    'grid.alpha': 0.5,
+    'legend.frameon': False,
+    'legend.loc': 'best',
+    'axes.spines.top': False,
+    'axes.spines.right': False,
+})
+
 
 
 city_name = "Geneva"  
@@ -91,24 +118,29 @@ print(f"  EQM Bias Corrected + Bicubically Interpolated:   {pss_dotc_bicubic:.3f
 print(f"  EQM Bias Corrected + Bicubically Interpolated+ UNet Super Resolved:  {pss_unet:.3f}")
 
 
-
-cb_colors = mpl.colormaps['Set3'].colors 
-
-
-plt.figure(figsize=(16, 10))  # Larger figure for poster
+cb_colors = ['black', 'red', 'green', 'blue']
 days = np.arange(1, 367)
-plt.plot(days, obs_clim, label="Ground Truth", color="black", linewidth=5)         
-plt.plot(days, coarse_clim, label=f"Coarse non BC (PSS={pss_coarse:.2f})", color=cb_colors[0], linewidth=5)
-plt.plot(days, dotc_bc_clim, label=f"EQM BC (PSS={pss_dotc_bc:.2f})", color=cb_colors[1], linewidth=5)
-plt.plot(days, dotc_bicubic_clim, label=f"EQM + Bicubic Interpolation (PSS={pss_dotc_bicubic:.2f})", color=cb_colors[2], linewidth=5)
-plt.plot(days, unet_clim, label=f"EQM + Bicubic Interpolation + UNet Super Resolved (PSS={pss_unet:.2f})", color=cb_colors[3], linewidth=5)
 
-plt.xlabel("Day of Year", fontsize=40, labelpad=20)
-plt.ylabel("Temperature (°C)", fontsize=40, labelpad=20)
-plt.title(f"{city_name} PSS of Climatological Mean Annual Cycle (1981–2010)\nwith EQM+bicubic interpolation", fontsize=40, fontweight='bold', pad=30)
-plt.legend(fontsize=28, loc='best')
-plt.xticks(fontsize=28)
-plt.yticks(fontsize=28)
-plt.tight_layout()
-plt.savefig(f"{city_name}_daily_climatology_1981_2010.png", dpi=1000)
-plt.show()
+fig, ax = pplt.subplots(figsize=(16, 10))
+ax.plot(days, obs_clim, label="Ground Truth", color="black", linewidth=5)
+ax.plot(days, coarse_clim, label=f"Coarse non BC (PSS={pss_coarse:.2f})", color=cb_colors[0], linewidth=5)
+ax.plot(days, dotc_bc_clim, label=f"EQM BC (PSS={pss_dotc_bc:.2f})", color=cb_colors[1], linewidth=5)
+ax.plot(days, dotc_bicubic_clim, label=f"EQM + Bicubic Interpolation (PSS={pss_dotc_bicubic:.2f})", color=cb_colors[2], linewidth=5)
+ax.plot(days, unet_clim, label=f"EQM + Bicubic Interpolation + UNet Super Resolved (PSS={pss_unet:.2f})", color=cb_colors[3], linewidth=5)
+
+ax.format(
+    xlabel="Day of Year",
+    ylabel="Temperature (°C)",
+    title=f"{city_name} PSS",
+    legend='r',  # upper right side
+    legendfontsize=32,
+    xlabelsize=40,
+    ylabelsize=40,
+    titlesize=44,
+    xticklabelsize=32,
+    yticklabelsize=32,
+    grid=True,
+    gridlinewidth=1.5,
+    gridalpha=0.5,
+)
+fig.save(f"{city_name}_daily_climatology_1981_2010.png", dpi=1000)

@@ -9,6 +9,8 @@ sns.set(style="whitegrid")
 from matplotlib.colors import ListedColormap
 from closest_grid_cell import select_nearest_grid_cell
 
+import proplot as pplt
+
 
 np.Inf=np.inf
 
@@ -136,11 +138,11 @@ for city, (lat, lon) in cities.items():
         print(f"{city}: No valid data at nearest grid cell.")
 
 
-cbf_colors = ['green', 'blue']  # EQM = blue, dOTC = green
+
+cbf_colors = ['yellow', 'blue']  # dOTC = yellow, EQM = blue
 cmap = ListedColormap(cbf_colors)
 
-
-fig, ax = plt.subplots(figsize=(14, 12), dpi=1000)  # Larger figure for poster
+fig, ax = plt.subplots(figsize=(14, 12), dpi=1000)
 
 im = ax.imshow(winner, origin='lower', aspect='auto', cmap=cmap, vmin=0, vmax=1)
 
@@ -152,35 +154,42 @@ ax.set_ylabel("", fontsize=32)
 for spine in ax.spines.values():
     spine.set_visible(False)
 
+
 legend_elements = [
-    Patch(facecolor='green', label=labels[0]),  # dOTC+bicubic
-    Patch(facecolor='blue', label=labels[1])    # EQM+bicubic
+    Patch(facecolor='yellow', label=labels[0]),  # dOTC+bicubic
+    Patch(facecolor='blue', label=labels[1])     # EQM+bicubic
 ]
-ax.legend(handles=legend_elements, loc='upper left', 
-          bbox_to_anchor=(-0.5, -0.1), fontsize=32, frameon=False)
+ax.legend(
+    handles=legend_elements,
+    loc='upper right',
+    bbox_to_anchor=(1.6, 1),  # Offset legend further right
+    fontsize=38,
+    frameon=False
+)
+
 
 city_markers = {
     "Geneva": (46.2044, 6.1432), 
-    "Locarno": (46.1709, 8.7995) , 
+    "Locarno": (46.1709, 8.7995), 
 }
 
 offsets = {
-    "Geneva": (-30, 5),
-    "Locarno": (3, -3),
+    "Geneva": (30, -5),
+    "Locarno": (-3, 3),
 }
 
 for city, (lat, lon) in city_markers.items():
     result = select_nearest_grid_cell(obs_temp_ds, lat, lon)
     i, j = result['lat_idx'], result['lon_idx']
-    ax.plot(j, i, marker='*', color='gold', markeredgecolor='black', markersize=32, markeredgewidth=3, zorder=10)
+    ax.plot(j, i, marker='*', color='gold', markeredgecolor='black', markersize=35, markeredgewidth=3, zorder=10)
     dx, dy = offsets.get(city, (3, -3))
     ax.text(j + dx, i + dy, city, fontsize=32, color='black',
             bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3'), zorder=11)
 
 ax.set_title(
-    "Perkins Skill Score for two BC methods (EQM, dOTC) for Mean Annual Cycle of Daily Temperature\n"
+    "\"Best\" skill (EQM or dOTC) for Mean Annual Cycle of Daily Temperature\n"
     "(Calibration: 1981-2010, Validation: 2011-2023)",
-    fontsize=38, fontweight='bold'
+    fontsize=44, fontweight='bold'
 )
 plt.savefig("gridwise_pss_winner_temp_climatology_2011_2023_poster.png", dpi=1000, bbox_inches='tight')
 plt.close()
