@@ -8,10 +8,12 @@ import subprocess
 from pyproj import Transformer, datadir
 from dask.distributed import Client
 import tempfile
+import config
 
 np.random.seed(42)
 
 proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/MyPythonEnvNew/share/proj"
+
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
@@ -21,13 +23,10 @@ CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/"Processing_and_Analysis_Scripts" / "data_1971_2023" / "HR_files_full"
 
-FOLD_I_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Chronological_Dataset_Fold_I"
-FOLD_II_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Training_Chronological_Dataset_Fold_II"
-FOLD_I_DIR.mkdir(parents=True, exist_ok=True)
-FOLD_II_DIR.mkdir(parents=True, exist_ok=True)
+OUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Dataset_Setup_I_Chronological"
 
 
-
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 def get_chunk_dict(ds):
     dims = set(ds.dims)
@@ -36,14 +35,16 @@ def get_chunk_dict(ds):
     elif {"E", "N"}.issubset(dims):
         return CHUNK_DICT_RAW
     else:
-        raise ValueError(f"Dataset has unknown dimensions: {ds.dims}")
+        raise ValueError(f"Dataset has unknown dimensions: {ds.dims}") #debug
 
 def promote_latlon(infile, varname):
+
     ds = xr.open_dataset(infile).chunk({"time": 50, "N": 100, "E": 100})
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
     def transform_coords(e, n):
         lon, lat = transformer.transform(e, n)
         return np.stack([lon, lat], axis=0)
+    
     E, N = ds["E"], ds["N"]
     EE, NN = xr.broadcast(E, N)
     transformed = xr.apply_ufunc(
@@ -61,17 +62,19 @@ def promote_latlon(infile, varname):
 
 
 
-
-def conservative_coarsening(ds, varname, block_size):
+def conservative_coarsening(ds, varname, block_size):   #Block size for sensitity tests
     da = ds[varname]
     if 'time' not in da.dims:
         da = da.expand_dims('time')
     lat, lon = ds['lat'], ds['lon']
     R = 6371000
+
     lat_rad = np.deg2rad(lat)
     dlat = np.deg2rad(np.diff(lat.mean('E')).mean().item())
     dlon = np.deg2rad(np.diff(lon.mean('N')).mean().item())
     area = (R**2) * dlat * dlon * np.cos(lat_rad)
+
+
     area = area.broadcast_like(da.isel(time=0)).expand_dims(time=da.sizes['time'])
     weighted = da.fillna(0) * area
     valid_area = area * da.notnull()
@@ -82,11 +85,10 @@ def conservative_coarsening(ds, varname, block_size):
     lat2d_coarse = lat.coarsen(N=block_size, E=block_size, boundary='trim').mean()
     lon2d_coarse = lon.coarsen(N=block_size, E=block_size, boundary='trim').mean()
     data_coarse = data_coarse.assign_coords(lat=lat2d_coarse, lon=lon2d_coarse)
+
     data_coarse.name = varname
     ds_out = data_coarse.to_dataset().set_coords(["lat", "lon"])
     return ds_out
-
-
 
 
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
@@ -125,7 +127,6 @@ def get_cdo_stats(file_path, method, varname):
     return stats
 
 
-
 def apply_cdo_scaling(ds, stats, method):
     if method == "standard":
         return (ds - stats['mean']) / stats['std']
@@ -139,15 +140,16 @@ def apply_cdo_scaling(ds, stats, method):
 
 
 
-def save_fold(x_train, y_train, x_val, y_val, x_test, y_test, stats, outdir, varname, fold_name):
-    x_train.to_netcdf(outdir / f"{varname}_input_train_{fold_name}_scaled.nc")
-    y_train.to_netcdf(outdir / f"{varname}_target_train_{fold_name}_scaled.nc")
-    x_val.to_netcdf(outdir / f"{varname}_input_val_{fold_name}_scaled.nc")
-    y_val.to_netcdf(outdir / f"{varname}_target_val_{fold_name}_scaled.nc")
-    x_test.to_netcdf(outdir / f"{varname}_input_test_{fold_name}_scaled.nc")
-    y_test.to_netcdf(outdir / f"{varname}_target_test_{fold_name}_scaled.nc")
-    with open(outdir / f"{varname}_scaling_params_{fold_name}.json", "w") as f:
+def save_split(x_train, y_train, x_val, y_val, x_test, y_test, stats, outdir, varname):
+    x_train.to_netcdf(outdir / f"{varname}_input_train_scaled.nc")
+    y_train.to_netcdf(outdir / f"{varname}_target_train_scaled.nc")
+    x_val.to_netcdf(outdir / f"{varname}_input_val_scaled.nc")
+    y_val.to_netcdf(outdir / f"{varname}_target_val_scaled.nc")
+    x_test.to_netcdf(outdir / f"{varname}_input_test_scaled.nc")
+    y_test.to_netcdf(outdir / f"{varname}_target_test_scaled.nc")
+    with open(outdir / f"{varname}_scaling_params.json", "w") as f:
         json.dump(stats, f, indent=2)
+
 
 
 def main():
@@ -163,17 +165,14 @@ def main():
         "TmaxD":   ("TmaxD_1971_2023.nc", "standard", "TmaxD"),
     }
 
-    if varname not in dataset_map:
-        raise ValueError(f"[ERROR] Unknown variable '{varname}'. Choose from {list(dataset_map.keys())}.")
-
     infile, scale_type, varname_in_file = dataset_map[varname]
     infile_path = INPUT_DIR / infile
-    if not infile_path.exists():
-        raise FileNotFoundError(f"[ERROR] Input file does not exist: {infile_path}")
 
-    step1_path = FOLD_I_DIR / f"{varname}_step1_latlon.nc"
+    step1_path = OUT_DIR / f"{varname}_step1_latlon.nc"
+
     if not step1_path.exists() or not {'lat', 'lon'}.issubset(xr.open_dataset(step1_path).coords):
-        print(f"[INFO] Step 1: Preparing dataset for '{varname}'")
+        print(f"Step 1: prepping '{varname}'")
+
         ds = xr.open_dataset(infile_path)
         ds = ds.chunk(get_chunk_dict(ds))
         if 'lat' in ds.coords and 'lon' in ds.coords:
@@ -190,14 +189,14 @@ def main():
 
     highres_ds = xr.open_dataset(step1_path).chunk(get_chunk_dict(xr.open_dataset(step1_path)))
 
-    step2_path = FOLD_I_DIR / f"{varname}_step2_coarse.nc"
+    step2_path = OUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=11)
         coarse_ds.to_netcdf(step2_path)
         coarse_ds.close()
     coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
 
-    step3_path = FOLD_I_DIR / f"{varname}_step3_interp.nc"
+    step3_path = OUT_DIR / f"{varname}_step3_interp.nc"
     if not step3_path.exists():
         interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
         interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
@@ -209,49 +208,29 @@ def main():
     upsampled = interp_ds[varname_in_file].sel(time=slice("1971-01-01", "2023-12-31"))
     years = upsampled['time.year'].values
 
-    # FOLD I: Train 1971–1995, Validate 1996–2020, Test 2021–2023
-    train_mask_I = (years >= 1971) & (years <= 1995)
-    val_mask_I   = (years >= 1996) & (years <= 2020)
-    test_mask_I  = (years >= 2021) & (years <= 2023)
-    x_train_I = upsampled.isel(time=train_mask_I)
-    y_train_I = highres.isel(time=train_mask_I)
-    x_val_I   = upsampled.isel(time=val_mask_I)
-    y_val_I   = highres.isel(time=val_mask_I)
-    x_test_I  = upsampled.isel(time=test_mask_I)
-    y_test_I  = highres.isel(time=test_mask_I)
-    with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile_I:
-        y_train_I.to_netcdf(tmpfile_I.name)
-        stats_I = get_cdo_stats(tmpfile_I.name, scale_type, varname_in_file)
-    x_train_I_scaled = apply_cdo_scaling(x_train_I, stats_I, scale_type)
-    x_val_I_scaled = apply_cdo_scaling(x_val_I, stats_I, scale_type)
-    x_test_I_scaled = apply_cdo_scaling(x_test_I, stats_I, scale_type)
-    y_train_I_scaled = apply_cdo_scaling(y_train_I, stats_I, scale_type)
-    y_val_I_scaled = apply_cdo_scaling(y_val_I, stats_I, scale_type)
-    y_test_I_scaled = apply_cdo_scaling(y_test_I, stats_I, scale_type)
-    save_fold(x_train_I_scaled, y_train_I_scaled, x_val_I_scaled, y_val_I_scaled, x_test_I_scaled, y_test_I_scaled, stats_I, FOLD_I_DIR, varname, "fold_I")
+    # chron split: train 1971–2000, val 2001–2011, test 2012–2023
+    train_mask = (years >= 1971) & (years <= 2000)
+    val_mask   = (years >= 2001) & (years <= 2011)
+    test_mask  = (years >= 2012) & (years <= 2023)
 
-    # FOLD II: Train 1996–2020, Validate 1971–1995, Test 2021–2023
-    train_mask_II = (years >= 1996) & (years <= 2020)
-    val_mask_II   = (years >= 1971) & (years <= 1995)
-    test_mask_II  = (years >= 2021) & (years <= 2023)
-    x_train_II = upsampled.isel(time=train_mask_II)
-    y_train_II = highres.isel(time=train_mask_II)
-    x_val_II   = upsampled.isel(time=val_mask_II)
-    y_val_II   = highres.isel(time=val_mask_II)
-    x_test_II  = upsampled.isel(time=test_mask_II)
-    y_test_II  = highres.isel(time=test_mask_II)
-    with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile_II:
-        y_train_II.to_netcdf(tmpfile_II.name)
-        stats_II = get_cdo_stats(tmpfile_II.name, scale_type, varname_in_file)
-    x_train_II_scaled = apply_cdo_scaling(x_train_II, stats_II, scale_type)
-    x_val_II_scaled = apply_cdo_scaling(x_val_II, stats_II, scale_type)
-    x_test_II_scaled = apply_cdo_scaling(x_test_II, stats_II, scale_type)
-    y_train_II_scaled = apply_cdo_scaling(y_train_II, stats_II, scale_type)
-    y_val_II_scaled = apply_cdo_scaling(y_val_II, stats_II, scale_type)
-    y_test_II_scaled = apply_cdo_scaling(y_test_II, stats_II, scale_type)
-    save_fold(x_train_II_scaled, y_train_II_scaled, x_val_II_scaled, y_val_II_scaled, x_test_II_scaled, y_test_II_scaled, stats_II, FOLD_II_DIR, varname, "fold_II")
+    x_train = upsampled.isel(time=train_mask)
+    y_train = highres.isel(time=train_mask)
+    x_val   = upsampled.isel(time=val_mask)
+    y_val   = highres.isel(time=val_mask)
+    x_test  = upsampled.isel(time=test_mask)
+    y_test  = highres.isel(time=test_mask)
 
-
+    with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
+        
+        y_train.to_netcdf(tmpfile.name)
+        stats = get_cdo_stats(tmpfile.name, scale_type, varname_in_file)
+    x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
+    x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
+    x_test_scaled = apply_cdo_scaling(x_test, stats, scale_type)
+    y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
+    y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
+    y_test_scaled = apply_cdo_scaling(y_test, stats, scale_type)
+    save_split(x_train_scaled, y_train_scaled, x_val_scaled, y_val_scaled, x_test_scaled, y_test_scaled, stats, OUT_DIR, varname)
 
 if __name__ == "__main__":
     client = Client(processes=False)

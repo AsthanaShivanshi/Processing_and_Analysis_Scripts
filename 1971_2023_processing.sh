@@ -10,13 +10,17 @@
 #SBATCH --array=0-3%1          
 
 source sasthana/Downscaling/Processing_and_Analysis_Scripts/environment.sh 
+
 module load cdo
+
 export PROJ_LIB="$ENVIRONMENT/share/proj"
 export HDF5_USE_FILE_LOCKING=FALSE 
 
-cd "$BASE_DIR" || { echo "[ERROR] Failed to cd into BASE_DIR"; exit 1; }
+
+cd "$BASE_DIR" || { echo "failed to cd into base dir"; exit 1; }
 
 VARS=(RhiresD TabsD TminD TmaxD)
+
 VAR=${VARS[$SLURM_ARRAY_TASK_ID]}
 
 SCRIPT_PATH="sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/processing_dataset_1971_2023.py"
@@ -26,11 +30,11 @@ if [ ! -f "$SCRIPT_PATH" ]; then
   exit 1
 fi
 
-echo "[INFO] Starting job for variable: $VAR"
+echo "starting var processing : $VAR"
 
 export OMP_NUM_THREADS=1 
 
 python "$SCRIPT_PATH" --var "$VAR"
 
-echo "[INFO] Finished job for variable: $VAR"
+echo "finished var processing : $VAR"
 
