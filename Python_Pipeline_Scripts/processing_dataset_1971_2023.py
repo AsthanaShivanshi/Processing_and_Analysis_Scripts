@@ -23,7 +23,7 @@ CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling"/"Processing_and_Analysis_Scripts" / "data_1971_2023" / "HR_files_full"
 
-OUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Dataset_Setup_I_Chronological_44km"
+OUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Dataset_Setup_I_Chronological_20km"
 
 
 OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -191,7 +191,7 @@ def main():
 
     step2_path = OUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
-        coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=44)  #Block size for tests_ 11,22,33,44
+        coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=20)  #Block size for tests_ 11,22,33,44
         coarse_ds.to_netcdf(step2_path)
         coarse_ds.close()
     coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
