@@ -1,6 +1,9 @@
 import os
 BASE_DIR = os.environ.get("BASE_DIR", "/work/FAC/FGSE/IDYST/tbeucler/downscaling")
-DATASETS_TRAINING_DIR= os.environ.get("DATASETS_TRAINING_DIR", f"{BASE_DIR}/sasthana/Downscaling/Downscaling_Models/Dataset_Setup_I_Chronological_10km")
+DATASETS_TRAINING_DIR_12km= os.environ.get("DATASETS_TRAINING_DIR_12km", f"{BASE_DIR}/sasthana/Downscaling/Downscaling_Models/Dataset_Setup_I_Chronological_12km")
+DATASETS_TRAINING_DIR_24km= os.environ.get("DATASETS_TRAINING_DIR_24km", f"{BASE_DIR}/sasthana/Downscaling/Downscaling_Models/Dataset_Setup_I_Chronological_24km")
+DATASETS_TRAINING_DIR_36km= os.environ.get("DATASETS_TRAINING_DIR_36km", f"{BASE_DIR}/sasthana/Downscaling/Downscaling_Models/Dataset_Setup_I_Chronological_36km")
+DATASETS_TRAINING_DIR_48km= os.environ.get("DATASETS_TRAINING_DIR_48km", f"{BASE_DIR}/sasthana/Downscaling/Downscaling_Models/Dataset_Setup_I_Chronological_48km")
 DATASETS_COMBINED_DIR= os.environ.get("DATASETS_COMBINED_DIR", f"{BASE_DIR}/sasthana/Downscaling/Downscaling_Models/Combined_Chronological_Dataset")  
 UNET_1971_DIR= os.environ.get("UNET_1971", f"{BASE_DIR}/sasthana/Downscaling/Downscaling_Models/models_UNet/UNet_Deterministic_Training_Dataset")
 TARGET_DIR= os.environ.get("TARGET_DIR", f"{BASE_DIR}/sasthana/Downscaling/Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full")   
