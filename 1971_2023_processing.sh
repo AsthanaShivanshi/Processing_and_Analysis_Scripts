@@ -24,9 +24,9 @@ VARS=(RhiresD TabsD TminD TmaxD)
 VAR=${VARS[$SLURM_ARRAY_TASK_ID]}
 
 SCRIPT_PATH_1="sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/processing_dataset_1971_2023_12km.py"
-SCRIPT_PATH_2="sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/processing_dataset_1971_2023_24km.py"
-SCRIPT_PATH_3="sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/processing_dataset_1971_2023_36km.py"
-SCRIPT_PATH_4="sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/processing_dataset_1971_2023_48km.py"
+#SCRIPT_PATH_2="sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/processing_dataset_1971_2023_24km.py"
+#SCRIPT_PATH_3="sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/processing_dataset_1971_2023_36km.py"
+#SCRIPT_PATH_4="sasthana/Downscaling/Processing_and_Analysis_Scripts/Python_Pipeline_Scripts/processing_dataset_1971_2023_48km.py"
 
 echo "starting var processing : $VAR"
 

@@ -159,7 +159,7 @@ def main():
     varname = args.var
 
     dataset_map = {
-        "RhiresD": ("RhiresD_1971_2023_nonneg.nc", "log", "RhiresD"),
+        "RhiresD": ("RhiresD_1971_2023.nc", "log", "RhiresD"),
         "TabsD":   ("TabsD_1971_2023.nc", "standard", "TabsD"),
         "TminD":   ("TminD_1971_2023.nc", "standard", "TminD"),
         "TmaxD":   ("TmaxD_1971_2023.nc", "standard", "TmaxD"),
@@ -192,6 +192,8 @@ def main():
     step2_path = OUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=12)  #Block size for tests_ 12,24,36,48
+        if varname == "RhiresD":
+            coarse_ds[varname_in_file] = xr.where(coarse_ds[varname_in_file] < 1, 0, coarse_ds[varname_in_file])
         coarse_ds.to_netcdf(step2_path)
         coarse_ds.close()
     coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
@@ -208,10 +210,10 @@ def main():
     upsampled = interp_ds[varname_in_file].sel(time=slice("1971-01-01", "2023-12-31"))
     years = upsampled['time.year'].values
 
-    # chron split: train 1971–2000, val 2001–2011, test 2012–2023
+    # chron split: train 1971–2000, val 2001–2010, test 2011–2023
     train_mask = (years >= 1971) & (years <= 2000)
-    val_mask   = (years >= 2001) & (years <= 2011)
-    test_mask  = (years >= 2012) & (years <= 2023)
+    val_mask   = (years >= 2001) & (years <= 2010)
+    test_mask  = (years >= 2011) & (years <= 2023)
 
     x_train = upsampled.isel(time=train_mask)
     y_train = highres.isel(time=train_mask)
