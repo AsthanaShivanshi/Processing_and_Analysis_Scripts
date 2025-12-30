@@ -92,6 +92,7 @@ def conservative_coarsening(ds, varname, block_size):   #Block size for sensitit
 
 
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
+
     with tempfile.TemporaryDirectory() as tmpdir:
         coarse_file = Path(tmpdir) / "coarse.nc"
         target_file = Path(tmpdir) / "target.nc"
@@ -105,8 +106,9 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
         return xr.open_dataset(output_file)[[varname]]
 
 
+#CDO : not global standardisation 
 
-def get_cdo_stats(file_path, method, varname):
+"""def get_cdo_stats(file_path, method, varname):
     stats = {}
     if method == "standard":
         stats['mean'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timmean", str(file_path)]).decode().strip())
@@ -136,9 +138,60 @@ def apply_cdo_scaling(ds, stats, method):
         log_ds = np.log(ds + stats["epsilon"])
         return (log_ds - stats['mean']) / stats['std']
     else:
-        raise ValueError(f"Unknown method: {method}")
+        raise ValueError(f"Unknown method: {method}")"""
 
 
+#Global standardisation : temp and precip
+
+
+def get_stats(da, method):
+    arr_flat = da.values.flatten()
+    arr_flat = arr_flat[~np.isnan(arr_flat)]
+    stats = {}
+    if method == "standard":
+        stats['mean'] = float(np.mean(arr_flat))
+        stats['std'] = float(np.std(arr_flat))
+
+
+
+    elif method == "minmax":
+        stats['min'] = float(np.min(arr_flat))
+        stats['max'] = float(np.max(arr_flat))
+
+
+
+    elif method == "log":
+        epsilon = 1e-3
+        stats["epsilon"] = epsilon
+        arr_flat_log = np.log(arr_flat + epsilon)
+        stats['mean'] = float(np.mean(arr_flat_log))
+        stats['std'] = float(np.std(arr_flat_log))
+
+    else:
+        raise ValueError ("Invalid scaling type")
+
+    return stats
+
+
+
+def apply_scaling(da, stats, method):
+    if method == "standard":
+        return (da - stats['mean']) / stats['std']
+    elif method == "minmax":
+        return (da - stats['min']) / (stats['max'] - stats['min'])
+    elif method == "log":
+
+
+        log_da = np.log(da + stats["epsilon"])
+        return (log_da - stats['mean']) / stats['std']
+    
+
+    else:
+        raise ValueError("Invalid scaling method")
+    
+
+
+    
 
 def save_split(x_train, y_train, x_val, y_val, x_test, y_test, stats, outdir, varname):
     x_train.to_netcdf(outdir / f"{varname}_input_train_scaled.nc")
@@ -222,16 +275,20 @@ def main():
     x_test  = upsampled.isel(time=test_mask)
     y_test  = highres.isel(time=test_mask)
 
-    with tempfile.NamedTemporaryFile(suffix=".nc") as tmpfile:
-        
-        y_train.to_netcdf(tmpfile.name)
-        stats = get_cdo_stats(tmpfile.name, scale_type, varname_in_file)
-    x_train_scaled = apply_cdo_scaling(x_train, stats, scale_type)
-    x_val_scaled = apply_cdo_scaling(x_val, stats, scale_type)
-    x_test_scaled = apply_cdo_scaling(x_test, stats, scale_type)
-    y_train_scaled = apply_cdo_scaling(y_train, stats, scale_type)
-    y_val_scaled = apply_cdo_scaling(y_val, stats, scale_type)
-    y_test_scaled = apply_cdo_scaling(y_test, stats, scale_type)
+
+    stats = get_stats(y_train, scale_type)
+
+
+    x_train_scaled = apply_scaling(x_train, stats, scale_type)
+    x_val_scaled = apply_scaling(x_val, stats, scale_type)
+    x_test_scaled = apply_scaling(x_test, stats, scale_type)
+
+
+    y_train_scaled = apply_scaling(y_train, stats, scale_type)
+    y_val_scaled = apply_scaling(y_val, stats, scale_type)
+    y_test_scaled = apply_scaling(y_test, stats, scale_type)
+
+
     save_split(x_train_scaled, y_train_scaled, x_val_scaled, y_val_scaled, x_test_scaled, y_test_scaled, stats, OUT_DIR, varname)
 
 if __name__ == "__main__":
