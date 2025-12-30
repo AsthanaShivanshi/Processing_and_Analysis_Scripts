@@ -161,7 +161,7 @@ def get_stats(da, method):
 
 
     elif method == "log":
-        epsilon = 1e-3
+        epsilon = float(da.where(da > 0).min().item()) * 0.5 #Not arbitrarily small value, could skew the da. 
         stats["epsilon"] = epsilon
         arr_flat_log = np.log(arr_flat + epsilon)
         stats['mean'] = float(np.mean(arr_flat_log))
