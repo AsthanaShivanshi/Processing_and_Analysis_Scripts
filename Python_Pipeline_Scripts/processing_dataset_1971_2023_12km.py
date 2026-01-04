@@ -92,7 +92,6 @@ def conservative_coarsening(ds, varname, block_size):   #Block size for sensitit
 
 
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
-
     with tempfile.TemporaryDirectory() as tmpdir:
         coarse_file = Path(tmpdir) / "coarse.nc"
         target_file = Path(tmpdir) / "target.nc"
@@ -100,9 +99,15 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
         coarse_ds[[varname]].transpose("time", "N", "E").to_netcdf(coarse_file)
         target_ds[[varname]].transpose("time", "N", "E").to_netcdf(target_file)
         script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bicubic_interpolation.sh"
+        
+        working_dir = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts"
+        
+        os.chmod(script_path, 0o755)
+        
         subprocess.run([
             str(script_path), str(coarse_file), str(target_file), str(output_file)
-        ], check=True)
+        ], check=True, cwd=str(working_dir))
+        
         return xr.open_dataset(output_file)[[varname]]
 
 
@@ -152,16 +157,14 @@ def get_stats(da, method):
         stats['mean'] = float(np.mean(arr_flat))
         stats['std'] = float(np.std(arr_flat))
 
-
-
     elif method == "minmax":
         stats['min'] = float(np.min(arr_flat))
         stats['max'] = float(np.max(arr_flat))
 
-
-
     elif method == "log":
-        epsilon = float(da.where(da > 0).min().item()) * 0.5 #Not arbitrarily small value, could skew the da. 
+
+
+        epsilon = float(da.where(da > 0).min().compute().item()) * 0.5
         stats["epsilon"] = epsilon
         arr_flat_log = np.log(arr_flat + epsilon)
         stats['mean'] = float(np.mean(arr_flat_log))
