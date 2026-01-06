@@ -62,7 +62,7 @@ def promote_latlon(infile, varname):
 
 
 
-def conservative_coarsening(ds, varname, block_size):   #Block size for sensitity tests_ 12,24,36,48
+def conservative_coarsening(ds, varname, block_size):
     da = ds[varname]
     if 'time' not in da.dims:
         da = da.expand_dims('time')
@@ -74,14 +74,16 @@ def conservative_coarsening(ds, varname, block_size):   #Block size for sensitit
     dlon = np.deg2rad(np.diff(lon.mean('N')).mean().item())
     area = (R**2) * dlat * dlon * np.cos(lat_rad)
 
-
     area = area.broadcast_like(da.isel(time=0)).expand_dims(time=da.sizes['time'])
+    # Area-weighted: ** data by cell Area, sum, and normalised by valid area
     weighted = da.fillna(0) * area
     valid_area = area * da.notnull()
     coarsen_dims = {dim: block_size for dim in ['N', 'E'] if dim in da.dims}
-    weighted_sum = weighted.coarsen(**coarsen_dims, boundary='trim').sum()
-    area_sum = valid_area.coarsen(**coarsen_dims, boundary='trim').sum()
+    weighted_sum = weighted.coarsen(**coarsen_dims, boundary='trim').sum(skipna=True)
+    area_sum = valid_area.coarsen(**coarsen_dims, boundary='trim').sum(skipna=True)
     data_coarse = (weighted_sum / area_sum).where(area_sum != 0)
+
+
     lat2d_coarse = lat.coarsen(N=block_size, E=block_size, boundary='trim').mean()
     lon2d_coarse = lon.coarsen(N=block_size, E=block_size, boundary='trim').mean()
     data_coarse = data_coarse.assign_coords(lat=lat2d_coarse, lon=lon2d_coarse)
@@ -182,7 +184,7 @@ def apply_scaling(da, stats, method):
         return (da - stats['mean']) / stats['std']
     elif method == "minmax":
         return (da - stats['min']) / (stats['max'] - stats['min'])
-    elif method == "log":
+    elif method == "log": #In use currently
 
 
         log_da = np.log(da + stats["epsilon"])
@@ -239,7 +241,7 @@ def main():
             ds.close()
             ds = promote_latlon(infile_path, varname_in_file)
         if varname == "RhiresD":
-            ds[varname_in_file] = xr.where(ds[varname_in_file] < 1, 0, ds[varname_in_file]) #less than 1 mm ----> 0 (ivanov and Kotlrski, 2017)
+            ds[varname_in_file] = xr.where(ds[varname_in_file] < 0.1, 0, ds[varname_in_file]) #less than 0.1 mm ----> 0 for noise reduction
         ds.to_netcdf(step1_path)
         ds.close()
 
@@ -249,7 +251,7 @@ def main():
     if not step2_path.exists():
         coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=12)  #Block size for tests_ 12,24,36,48
         if varname == "RhiresD":
-            coarse_ds[varname_in_file] = xr.where(coarse_ds[varname_in_file] < 1, 0, coarse_ds[varname_in_file])
+            coarse_ds[varname_in_file] = xr.where(coarse_ds[varname_in_file] < 0.0, 0, coarse_ds[varname_in_file])
         coarse_ds.to_netcdf(step2_path)
         coarse_ds.close()
     coarse_ds = xr.open_dataset(step2_path).chunk(get_chunk_dict(xr.open_dataset(step2_path)))
@@ -258,9 +260,12 @@ def main():
     if not step3_path.exists():
         interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
         interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
+        if varname == "RhiresD":
+            interp_ds[varname_in_file] = xr.where(interp_ds[varname_in_file] < 0, 0, interp_ds[varname_in_file]) 
         interp_ds.to_netcdf(step3_path)
         interp_ds.close()
     interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
+
 
     highres = highres_ds[varname_in_file].sel(time=slice("1971-01-01", "2023-12-31"))
     upsampled = interp_ds[varname_in_file].sel(time=slice("1971-01-01", "2023-12-31"))
