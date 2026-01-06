@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=4       
 #SBATCH --mem=256G
 #SBATCH --time=20:00:00
-#SBATCH --array=0-3%1          
+#SBATCH --array=0 #Else set to 0-3%1 for sequential processing of all vars        
 
 source sasthana/Downscaling/Processing_and_Analysis_Scripts/environment.sh 
 

@@ -9,6 +9,8 @@ from pyproj import Transformer, datadir
 from dask.distributed import Client
 import tempfile
 import config
+from scipy.stats import yeojohnson
+
 
 np.random.seed(42)
 
@@ -172,6 +174,12 @@ def get_stats(da, method):
         stats['mean'] = float(np.mean(arr_flat_log))
         stats['std'] = float(np.std(arr_flat_log))
 
+    elif method == "yeojohnson":
+        tranformed_data,fitted_lambda = yeojohnson(arr_flat)
+        stats['lambda'] = float(fitted_lambda)
+        stats['mean'] = float(np.mean(tranformed_data))
+        stats['std'] = float(np.std(tranformed_data))
+
     else:
         raise ValueError ("Invalid scaling type")
 
@@ -184,28 +192,32 @@ def apply_scaling(da, stats, method):
         return (da - stats['mean']) / stats['std']
     elif method == "minmax":
         return (da - stats['min']) / (stats['max'] - stats['min'])
-    elif method == "log": #In use currently
-
-
+    elif method == "log":
         log_da = np.log(da + stats["epsilon"])
         return (log_da - stats['mean']) / stats['std']
-    
-
+    elif method == "yeojohnson":
+        arr = da.values
+        arr_out = np.full_like(arr, np.nan, dtype=np.float64)
+        mask = ~np.isnan(arr)
+        arr_out[mask] = yeojohnson(arr[mask], lmbda=stats['lambda'])
+        arr_out = (arr_out - stats['mean']) / stats['std']
+        return xr.DataArray(arr_out, dims=da.dims, coords=da.coords)
     else:
-        raise ValueError("Invalid scaling method")
+        raise ValueError("Available: z, minmax, log, yeojohnson")
     
 
 
-    
+#Save with __yeojohnson for precip only for the experimental case. 
+
 
 def save_split(x_train, y_train, x_val, y_val, x_test, y_test, stats, outdir, varname):
-    x_train.to_netcdf(outdir / f"{varname}_input_train_scaled.nc")
-    y_train.to_netcdf(outdir / f"{varname}_target_train_scaled.nc")
-    x_val.to_netcdf(outdir / f"{varname}_input_val_scaled.nc")
-    y_val.to_netcdf(outdir / f"{varname}_target_val_scaled.nc")
-    x_test.to_netcdf(outdir / f"{varname}_input_test_scaled.nc")
-    y_test.to_netcdf(outdir / f"{varname}_target_test_scaled.nc")
-    with open(outdir / f"{varname}_scaling_params.json", "w") as f:
+    x_train.to_netcdf(outdir / f"{varname}_input_train_scaled_yeojohnson.nc")
+    y_train.to_netcdf(outdir / f"{varname}_target_train_scaled_yeojohnson.nc")
+    x_val.to_netcdf(outdir / f"{varname}_input_val_scaled_yeojohnson.nc")
+    y_val.to_netcdf(outdir / f"{varname}_target_val_scaled_yeojohnson.nc")
+    x_test.to_netcdf(outdir / f"{varname}_input_test_scaled_yeojohnson.nc")
+    y_test.to_netcdf(outdir / f"{varname}_target_test_scaled_yeojohnson.nc")
+    with open(outdir / f"{varname}_scaling_params.json_yeojohnson", "w") as f: #Only for precip boxcox, experimental
         json.dump(stats, f, indent=2)
 
 
@@ -217,7 +229,7 @@ def main():
     varname = args.var
 
     dataset_map = {
-        "RhiresD": ("RhiresD_1971_2023.nc", "log", "RhiresD"),
+        "RhiresD": ("RhiresD_1971_2023.nc", "yeojohnson", "RhiresD"),   #Trying yeojohnson for precip only. Earlier : log 
         "TabsD":   ("TabsD_1971_2023.nc", "standard", "TabsD"),
         "TminD":   ("TminD_1971_2023.nc", "standard", "TminD"),
         "TmaxD":   ("TmaxD_1971_2023.nc", "standard", "TmaxD"),
