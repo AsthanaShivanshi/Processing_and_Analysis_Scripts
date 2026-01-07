@@ -335,6 +335,7 @@ def main():
         y_test_scaled = apply_sklearn_quantile(y_test, qt)
         pt_to_save = None
         qt_to_save = qt
+        stats={}
 
     else:
         stats = get_stats(y_train, scale_type)
