@@ -9,8 +9,9 @@ from pyproj import Transformer, datadir
 from dask.distributed import Client
 import tempfile
 import config
-from scipy.stats import yeojohnson
-
+from sklearn.preprocessing import PowerTransformer
+from sklearn.preprocessing import QuantileTransformer
+import joblib
 
 np.random.seed(42)
 
@@ -95,6 +96,7 @@ def conservative_coarsening(ds, varname, block_size):
     return ds_out
 
 
+
 def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
     with tempfile.TemporaryDirectory() as tmpdir:
         coarse_file = Path(tmpdir) / "coarse.nc"
@@ -113,41 +115,6 @@ def interpolate_bicubic_shell(coarse_ds, target_ds, varname):
         ], check=True, cwd=str(working_dir))
         
         return xr.open_dataset(output_file)[[varname]]
-
-
-#CDO : not global standardisation 
-
-"""def get_cdo_stats(file_path, method, varname):
-    stats = {}
-    if method == "standard":
-        stats['mean'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timmean", str(file_path)]).decode().strip())
-        stats['std'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timstd", str(file_path)]).decode().strip())
-    elif method == "minmax":
-        stats['min'] = float(subprocess.check_output(["cdo", "output", "-fldmin", "-timmin", str(file_path)]).decode().strip())
-        stats['max'] = float(subprocess.check_output(["cdo", "output", "-fldmax", "-timmax", str(file_path)]).decode().strip())
-    elif method == "log":
-        epsilon = 1e-3
-        stats["epsilon"] = epsilon
-        log_file = str(file_path) + "_logtmp.nc"
-        subprocess.run(["cdo", f"expr,{varname}=log({varname}+{epsilon})", str(file_path), log_file], check=True)
-        stats['mean'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timmean", log_file]).decode().strip())
-        stats['std'] = float(subprocess.check_output(["cdo", "output", "-fldmean", "-timstd", log_file]).decode().strip())
-        os.remove(log_file)
-    else:
-        raise ValueError(f"Unsupported method: {method}")
-    return stats
-
-
-def apply_cdo_scaling(ds, stats, method):
-    if method == "standard":
-        return (ds - stats['mean']) / stats['std']
-    elif method == "minmax":
-        return (ds - stats['min']) / (stats['max'] - stats['min'])
-    elif method == "log":
-        log_ds = np.log(ds + stats["epsilon"])
-        return (log_ds - stats['mean']) / stats['std']
-    else:
-        raise ValueError(f"Unknown method: {method}")"""
 
 
 #Global standardisation : temp and precip
@@ -174,12 +141,6 @@ def get_stats(da, method):
         stats['mean'] = float(np.mean(arr_flat_log))
         stats['std'] = float(np.std(arr_flat_log))
 
-    elif method == "yeojohnson":
-        tranformed_data,fitted_lambda = yeojohnson(arr_flat)
-        stats['lambda'] = float(fitted_lambda)
-        stats['mean'] = float(np.mean(tranformed_data))
-        stats['std'] = float(np.std(tranformed_data))
-
     else:
         raise ValueError ("Invalid scaling type")
 
@@ -188,39 +149,99 @@ def get_stats(da, method):
 
 
 def apply_scaling(da, stats, method):
+
+    
     if method == "standard":
         return (da - stats['mean']) / stats['std']
     elif method == "minmax":
         return (da - stats['min']) / (stats['max'] - stats['min'])
+    
+
+
     elif method == "log":
         log_da = np.log(da + stats["epsilon"])
         return (log_da - stats['mean']) / stats['std']
-    elif method == "yeojohnson":
-        arr = da.values
-        arr_out = np.full_like(arr, np.nan, dtype=np.float64)
-        mask = ~np.isnan(arr)
-        arr_out[mask] = yeojohnson(arr[mask], lmbda=stats['lambda'])
-        arr_out = (arr_out - stats['mean']) / stats['std']
-        return xr.DataArray(arr_out, dims=da.dims, coords=da.coords)
     else:
         raise ValueError("Available: z, minmax, log, yeojohnson")
     
 
 
-#Save with __yeojohnson for precip only for the experimental case. 
+def get_stats_sklearn_yeojohnson(da):
+    arr_flat = da.values.flatten()
+    arr_flat = arr_flat[~np.isnan(arr_flat)]
+    pt = PowerTransformer(method='yeo-johnson', standardize=True)
+    arr_flat_reshaped = arr_flat.reshape(-1, 1)
+    pt.fit(arr_flat_reshaped)
+    stats = {'lambda': float(pt.lambdas_[0])}
+    return stats, pt
 
 
-def save_split(x_train, y_train, x_val, y_val, x_test, y_test, stats, outdir, varname):
-    x_train.to_netcdf(outdir / f"{varname}_input_train_scaled_yeojohnson.nc")
-    y_train.to_netcdf(outdir / f"{varname}_target_train_scaled_yeojohnson.nc")
-    x_val.to_netcdf(outdir / f"{varname}_input_val_scaled_yeojohnson.nc")
-    y_val.to_netcdf(outdir / f"{varname}_target_val_scaled_yeojohnson.nc")
-    x_test.to_netcdf(outdir / f"{varname}_input_test_scaled_yeojohnson.nc")
-    y_test.to_netcdf(outdir / f"{varname}_target_test_scaled_yeojohnson.nc")
-    with open(outdir / f"{varname}_scaling_params.json_yeojohnson", "w") as f: #Only for precip boxcox, experimental
-        json.dump(stats, f, indent=2)
+def apply_sklearn_yeojohnson(da, pt):
+    arr = da.values
+    arr_out = np.full_like(arr, np.nan, dtype=np.float64)
+    mask = ~np.isnan(arr)
+    arr_out[mask] = pt.transform(arr[mask].reshape(-1, 1)).flatten()
+    out_da = xr.DataArray(arr_out, dims=da.dims, coords=da.coords, name=da.name)
+    return out_da
 
 
+
+def get_stats_sklearn_quantile(da):
+    arr_flat = da.values.flatten()
+    arr_flat = arr_flat[~np.isnan(arr_flat)]
+    qt = QuantileTransformer(output_distribution='normal', random_state=42)
+    arr_flat_reshaped = arr_flat.reshape(-1, 1)
+    qt.fit(arr_flat_reshaped)
+    return qt
+
+def apply_sklearn_quantile(da, qt):
+    arr = da.values
+    arr_out = np.full_like(arr, np.nan, dtype=np.float64)
+    mask = ~np.isnan(arr)
+    arr_out[mask] = qt.transform(arr[mask].reshape(-1, 1)).flatten()
+    out_da = xr.DataArray(arr_out, dims=da.dims, coords=da.coords, name=da.name)
+    return out_da
+
+
+
+def save_split(x_train, y_train, x_val, y_val, x_test, y_test, stats, outdir, varname, pt=None, qt=None): #Signature didnt have QT!!
+    if varname == "RhiresD" and pt is not None:
+
+
+        x_train.to_netcdf(outdir / f"{varname}_input_train_scaled_yeojohnson.nc")
+        y_train.to_netcdf(outdir / f"{varname}_target_train_scaled_yeojohnson.nc")
+        x_val.to_netcdf(outdir / f"{varname}_input_val_scaled_yeojohnson.nc")
+        y_val.to_netcdf(outdir / f"{varname}_target_val_scaled_yeojohnson.nc")
+        x_test.to_netcdf(outdir / f"{varname}_input_test_scaled_yeojohnson.nc")
+        y_test.to_netcdf(outdir / f"{varname}_target_test_scaled_yeojohnson.nc")
+        joblib.dump(pt, outdir / f"{varname}_yeojohnson_transformer.joblib")
+
+        with open(outdir / f"{varname}_scaling_params_yeojohnson.json", "w") as f:
+            json.dump(stats, f)
+
+
+    elif varname == "RhiresD" and qt is not None:
+        x_train.to_netcdf(outdir / f"{varname}_input_train_scaled_quantile.nc")
+        y_train.to_netcdf(outdir / f"{varname}_target_train_scaled_quantile.nc")
+        x_val.to_netcdf(outdir / f"{varname}_input_val_scaled_quantile.nc")
+        y_val.to_netcdf(outdir / f"{varname}_target_val_scaled_quantile.nc")
+        x_test.to_netcdf(outdir / f"{varname}_input_test_scaled_quantile.nc")
+        y_test.to_netcdf(outdir / f"{varname}_target_test_scaled_quantile.nc")
+        joblib.dump(qt, outdir / f"{varname}_quantile_transformer.joblib")
+
+
+    else:
+        x_train.to_netcdf(outdir / f"{varname}_input_train_scaled.nc")
+        y_train.to_netcdf(outdir / f"{varname}_target_train_scaled.nc")
+        x_val.to_netcdf(outdir / f"{varname}_input_val_scaled.nc")
+        y_val.to_netcdf(outdir / f"{varname}_target_val_scaled.nc")
+        x_test.to_netcdf(outdir / f"{varname}_input_test_scaled.nc")
+        y_test.to_netcdf(outdir / f"{varname}_target_test_scaled.nc")
+
+
+
+        with open(outdir / f"{varname}_scaling_params.json", "w") as f:
+            json.dump(stats, f)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -229,7 +250,7 @@ def main():
     varname = args.var
 
     dataset_map = {
-        "RhiresD": ("RhiresD_1971_2023.nc", "yeojohnson", "RhiresD"),   #Trying yeojohnson for precip only. Earlier : log 
+        "RhiresD": ("RhiresD_1971_2023.nc", "quantile", "RhiresD"),
         "TabsD":   ("TabsD_1971_2023.nc", "standard", "TabsD"),
         "TminD":   ("TminD_1971_2023.nc", "standard", "TminD"),
         "TmaxD":   ("TmaxD_1971_2023.nc", "standard", "TmaxD"),
@@ -253,7 +274,7 @@ def main():
             ds.close()
             ds = promote_latlon(infile_path, varname_in_file)
         if varname == "RhiresD":
-            ds[varname_in_file] = xr.where(ds[varname_in_file] < 0.1, 0, ds[varname_in_file]) #less than 0.1 mm ----> 0 for noise reduction
+            ds[varname_in_file] = xr.where(ds[varname_in_file] < 0.1, 0, ds[varname_in_file])
         ds.to_netcdf(step1_path)
         ds.close()
 
@@ -261,7 +282,7 @@ def main():
 
     step2_path = OUT_DIR / f"{varname}_step2_coarse.nc"
     if not step2_path.exists():
-        coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=12)  #Block size for tests_ 12,24,36,48
+        coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=12)
         if varname == "RhiresD":
             coarse_ds[varname_in_file] = xr.where(coarse_ds[varname_in_file] < 0.0, 0, coarse_ds[varname_in_file])
         coarse_ds.to_netcdf(step2_path)
@@ -273,17 +294,15 @@ def main():
         interp_ds = interpolate_bicubic_shell(coarse_ds, highres_ds, varname_in_file)
         interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
         if varname == "RhiresD":
-            interp_ds[varname_in_file] = xr.where(interp_ds[varname_in_file] < 0, 0, interp_ds[varname_in_file]) 
+            interp_ds[varname_in_file] = xr.where(interp_ds[varname_in_file] < 0, 0, interp_ds[varname_in_file])
         interp_ds.to_netcdf(step3_path)
         interp_ds.close()
     interp_ds = xr.open_dataset(step3_path).chunk(get_chunk_dict(xr.open_dataset(step3_path)))
-
 
     highres = highres_ds[varname_in_file].sel(time=slice("1971-01-01", "2023-12-31"))
     upsampled = interp_ds[varname_in_file].sel(time=slice("1971-01-01", "2023-12-31"))
     years = upsampled['time.year'].values
 
-    # chron split: train 1971–2000, val 2001–2010, test 2011–2023
     train_mask = (years >= 1971) & (years <= 2000)
     val_mask   = (years >= 2001) & (years <= 2010)
     test_mask  = (years >= 2011) & (years <= 2023)
@@ -296,20 +315,41 @@ def main():
     y_test  = highres.isel(time=test_mask)
 
 
-    stats = get_stats(y_train, scale_type)
+    if varname == "RhiresD" and scale_type == "yeojohnson":
+        stats, pt = get_stats_sklearn_yeojohnson(y_train)
+        x_train_scaled = apply_sklearn_yeojohnson(x_train, pt)
+        x_val_scaled = apply_sklearn_yeojohnson(x_val, pt)
+        x_test_scaled = apply_sklearn_yeojohnson(x_test, pt)
+        y_train_scaled = apply_sklearn_yeojohnson(y_train, pt)
+        y_val_scaled = apply_sklearn_yeojohnson(y_val, pt)
+        y_test_scaled = apply_sklearn_yeojohnson(y_test, pt)
+        pt_to_save = pt
+
+    elif varname == "RhiresD" and scale_type == "quantile":
+        qt = get_stats_sklearn_quantile(y_train)
+        x_train_scaled = apply_sklearn_quantile(x_train, qt)
+        x_val_scaled = apply_sklearn_quantile(x_val, qt)
+        x_test_scaled = apply_sklearn_quantile(x_test, qt)
+        y_train_scaled = apply_sklearn_quantile(y_train, qt)
+        y_val_scaled = apply_sklearn_quantile(y_val, qt)
+        y_test_scaled = apply_sklearn_quantile(y_test, qt)
+        pt_to_save = None
+        qt_to_save = qt
+
+    else:
+        stats = get_stats(y_train, scale_type)
+        x_train_scaled = apply_scaling(x_train, stats, scale_type)
+        x_val_scaled = apply_scaling(x_val, stats, scale_type)
+        x_test_scaled = apply_scaling(x_test, stats, scale_type)
+        y_train_scaled = apply_scaling(y_train, stats, scale_type)
+        y_val_scaled = apply_scaling(y_val, stats, scale_type)
+        y_test_scaled = apply_scaling(y_test, stats, scale_type)
+        pt_to_save = None
+        qt_to_save = None
+
+    save_split(x_train_scaled, y_train_scaled, x_val_scaled, y_val_scaled, x_test_scaled, y_test_scaled, stats, OUT_DIR, varname, pt=pt_to_save, qt=qt_to_save)
 
 
-    x_train_scaled = apply_scaling(x_train, stats, scale_type)
-    x_val_scaled = apply_scaling(x_val, stats, scale_type)
-    x_test_scaled = apply_scaling(x_test, stats, scale_type)
-
-
-    y_train_scaled = apply_scaling(y_train, stats, scale_type)
-    y_val_scaled = apply_scaling(y_val, stats, scale_type)
-    y_test_scaled = apply_scaling(y_test, stats, scale_type)
-
-
-    save_split(x_train_scaled, y_train_scaled, x_val_scaled, y_val_scaled, x_test_scaled, y_test_scaled, stats, OUT_DIR, varname)
 
 if __name__ == "__main__":
     client = Client(processes=False)
