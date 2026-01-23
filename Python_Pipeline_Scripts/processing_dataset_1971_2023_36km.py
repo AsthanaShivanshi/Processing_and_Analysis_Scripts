@@ -250,7 +250,7 @@ def main():
     varname = args.var
 
     dataset_map = {
-        "RhiresD": ("RhiresD_1971_2023.nc", "quantile", "RhiresD"),
+        "RhiresD": ("RhiresD_1971_2023.nc", "log", "RhiresD"),
         "TabsD":   ("TabsD_1971_2023.nc", "standard", "TabsD"),
         "TminD":   ("TminD_1971_2023.nc", "standard", "TminD"),
         "TmaxD":   ("TmaxD_1971_2023.nc", "standard", "TmaxD"),
