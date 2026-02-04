@@ -4,34 +4,33 @@ import pandas as pd
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 import matplotlib.pyplot as plt
 import matplotlib as matplotlib
-matplotlib.use('Agg') 
-import numpy as np
+matplotlib.use('Agg')
+from concurrent.futures import ThreadPoolExecutor
+
 np.Inf = np.inf  
 
 def compute_metrics(obs, pred):
-    psnr_list, ssim_list = [], []
-    for t in range(obs.shape[0]):
+    def single_metric(t):
         hr_img = obs.isel(time=t).values
         pred_img = pred.isel(time=t).values
         mask = ~np.isnan(hr_img) & ~np.isnan(pred_img)
         if not np.any(mask):
-            psnr_list.append(np.nan)
-            ssim_list.append(np.nan)
-            continue
+            return np.nan, np.nan
         hr_img = hr_img[mask]
         pred_img = pred_img[mask]
-        if hr_img.max() == hr_img.min():
-            psnr_list.append(np.nan)
-            ssim_list.append(np.nan)
-            continue
+        if hr_img.size == 0 or hr_img.max() == hr_img.min():
+            return np.nan, np.nan
         psnr = peak_signal_noise_ratio(hr_img, pred_img, data_range=hr_img.max() - hr_img.min())
         try:
             ssim = structural_similarity(hr_img, pred_img, data_range=hr_img.max() - hr_img.min())
         except:
             ssim = np.nan
-        psnr_list.append(psnr)
-        ssim_list.append(ssim)
+        return psnr, ssim
+    with ThreadPoolExecutor() as executor:
+        results = list(executor.map(single_metric, range(obs.shape[0])))
+    psnr_list, ssim_list = zip(*results)
     return np.nanmean(psnr_list), np.nanmean(ssim_list)
+
 
 def spatial_correlogram(field, max_lag=10):
     field = field - np.nanmean(field)
@@ -52,21 +51,32 @@ def spatial_correlogram(field, max_lag=10):
 obs_temp = xr.open_dataset('../../Downscaling_Models/Dataset_Setup_I_Chronological_12km/TabsD_step1_latlon.nc')["TabsD"].sel(time=slice("2011-01-01","2023-12-31"))
 coarse_temp = xr.open_dataset('../../Downscaling_Models/Dataset_Setup_I_Chronological_12km/TabsD_step2_coarse.nc')["TabsD"].sel(time=slice("2011-01-01","2023-12-31"))
 bicubic_temp = xr.open_dataset('../../Downscaling_Models/Dataset_Setup_I_Chronological_12km/TabsD_step3_interp.nc')["TabsD"].sel(time=slice("2011-01-01","2023-12-31"))
-unet_temp = xr.open_dataset('../../Downscaling_Models/DDIM_conditional_derived/outputs/test_UNet_baseline.nc')["temp"].sel(time=slice("2011-01-01","2023-12-31"))
+unet_temp = xr.open_dataset('../../Downscaling_Models/DDIM_conditional_derived/outputs/test_UNet_baseline_CRPS__UNet_constrained_withoutReLU.nc')["temp"].sel(time=slice("2011-01-01","2023-12-31"))
 ddim_median_temp = xr.open_dataset("../../Downscaling_Models/DDIM_conditional_derived/outputs/ddim_downscaled_test_set_second_sample_run.nc")["temp"].sel(time=slice("2011-01-01","2023-12-31"))
 
-
 obs_precip = xr.open_dataset('../../Downscaling_Models/Dataset_Setup_I_Chronological_12km/RhiresD_step1_latlon.nc')["RhiresD"].sel(time=slice("2011-01-01","2023-12-31"))
-bicubic_precip = xr.open_dataset('../../Downscaling_Models/Dataset_Setup_I_Chronological_12km/RhiresD_step3_interp.nc')["RhiresD"].sel(time=slice("2011-01-01","2023-12-31"))
-unet_precip = xr.open_dataset('../../Downscaling_Models/DDIM_conditional_derived/outputs/test_UNet_baseline.nc')["precip"].sel(time=slice("2011-01-01","2023-12-31"))
 coarse_precip = xr.open_dataset('../../Downscaling_Models/Dataset_Setup_I_Chronological_12km/RhiresD_step2_coarse.nc')["RhiresD"].sel(time=slice("2011-01-01","2023-12-31"))
-ddim_median_ds = xr.open_dataset("../../Downscaling_Models/DDIM_conditional_derived/outputs/ddim_downscaled_test_set_second_sample_run.nc")
-ddim_median_precip = ddim_median_ds["precip"].sel(time=slice("2011-01-01","2023-12-31"))
+bicubic_precip = xr.open_dataset('../../Downscaling_Models/Dataset_Setup_I_Chronological_12km/RhiresD_step3_interp.nc')["RhiresD"].sel(time=slice("2011-01-01","2023-12-31"))
+unet_precip = xr.open_dataset('../../Downscaling_Models/LDM_conditional/outputs/test_UNet_baseline_CRPS__UNet_constrained_withoutReLU.nc')["precip"].sel(time=slice("2011-01-01","2023-12-31"))
+ddim_median_precip = xr.open_dataset("../../Downscaling_Models/DDIM_conditional_derived/outputs/ddim_downscaled_test_set_second_sample_run.nc")["precip"].sel(time=slice("2011-01-01","2023-12-31"))
+
+# Interpolate coarse and bicubic fields to obs grid for fair comparison
+coarse_temp_hr = coarse_temp.interp(N=obs_temp.N, E=obs_temp.E)
+bicubic_temp_hr = bicubic_temp.interp(N=obs_temp.N, E=obs_temp.E)
+unet_temp_hr = unet_temp.assign_coords(N=obs_temp.N, E=obs_temp.E)
+ddim_median_temp_hr = ddim_median_temp.assign_coords(N=obs_temp.N, E=obs_temp.E)
+
+coarse_precip_hr = coarse_precip.interp(N=obs_precip.N, E=obs_precip.E)
+bicubic_precip_hr = bicubic_precip.interp(N=obs_precip.N, E=obs_precip.E)
+unet_precip_hr = unet_precip.assign_coords(N=obs_precip.N, E=obs_precip.E)
+ddim_median_precip_hr = ddim_median_precip.assign_coords(N=obs_precip.N, E=obs_precip.E)
+
 # Metrics tables
 temp_metrics = {
-    'Coarse': compute_metrics(obs_temp, coarse_temp),
-    'Bicubic': compute_metrics(obs_temp, bicubic_temp),
-    'UNet': compute_metrics(obs_temp, unet_temp)
+    'Coarse': compute_metrics(obs_temp, coarse_temp_hr),
+    'Bicubic': compute_metrics(obs_temp, bicubic_temp_hr),
+    'UNet': compute_metrics(obs_temp, unet_temp_hr),
+    'DDIM 5 four sample mean': compute_metrics(obs_temp, ddim_median_temp_hr)
 }
 temp_df = pd.DataFrame(temp_metrics, index=['PSNR', 'SSIM']).T
 temp_df.to_csv('temp_metrics.csv')
@@ -74,10 +84,10 @@ print("Temperature metrics:")
 print(temp_df)
 
 precip_metrics = {
-    'Coarse': compute_metrics(obs_precip, coarse_precip),
-    'Bicubic': compute_metrics(obs_precip, bicubic_precip),
-    'UNet': compute_metrics(obs_precip, unet_precip),
-    'DDIM Median': compute_metrics(obs_precip, ddim_median_precip)
+    'Coarse': compute_metrics(obs_precip, coarse_precip_hr),
+    'Bicubic': compute_metrics(obs_precip, bicubic_precip_hr),
+    'UNet': compute_metrics(obs_precip, unet_precip_hr),
+    'DDIM 5 four sample mean': compute_metrics(obs_precip, ddim_median_precip_hr)
 }
 precip_df = pd.DataFrame(precip_metrics, index=['PSNR', 'SSIM']).T
 precip_df.to_csv('precip_metrics.csv')
@@ -91,10 +101,11 @@ corrs_obs, corrs_coarse, corrs_bicubic, corrs_unet, corrs_ddim_median = [], [], 
 
 for t in range(n_time):
     corrs_obs.append(spatial_correlogram(obs_temp.isel(time=t).values, max_lag=max_lag))
-    corrs_coarse.append(spatial_correlogram(coarse_temp.isel(time=t).values, max_lag=max_lag))
-    corrs_bicubic.append(spatial_correlogram(bicubic_temp.isel(time=t).values, max_lag=max_lag))
-    corrs_unet.append(spatial_correlogram(unet_temp.isel(time=t).values, max_lag=max_lag))
-    corrs_ddim_median.append(spatial_correlogram(ddim_median_temp.isel(time=t).values, max_lag=max_lag))
+    corrs_coarse.append(spatial_correlogram(coarse_temp_hr.isel(time=t).values, max_lag=max_lag))
+    corrs_bicubic.append(spatial_correlogram(bicubic_temp_hr.isel(time=t).values, max_lag=max_lag))
+    corrs_unet.append(spatial_correlogram(unet_temp_hr.isel(time=t).values, max_lag=max_lag))
+    corrs_ddim_median.append(spatial_correlogram(ddim_median_temp_hr.isel(time=t).values, max_lag=max_lag))
+
 corrs_obs = np.nanmean(corrs_obs, axis=0)
 corrs_coarse = np.nanmean(corrs_coarse, axis=0)
 corrs_bicubic = np.nanmean(corrs_bicubic, axis=0)
