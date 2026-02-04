@@ -27,7 +27,7 @@ def clean_and_slice(arr):
     arr = arr.sel(time=slice("2011-01-01", "2023-12-31"))
     arr = arr.values
     arr = np.squeeze(arr)
-    return arr[~np.isnan(arr)]
+    return arr
 
 def process_city(city, lat, lon):
     obs = clean_and_slice(select_nearest_grid_cell(obs_ds, lat, lon, var_name="RhiresD")['data'])
@@ -35,6 +35,14 @@ def process_city(city, lat, lon):
     bicubic = clean_and_slice(select_nearest_grid_cell(bicubic_ds, lat, lon, var_name="RhiresD")['data'])
     unet = clean_and_slice(select_nearest_grid_cell(unet_ds, lat, lon, var_name="precip")['data'])
     ddim_median = clean_and_slice(select_nearest_grid_cell(ddim_median_ds, lat, lon, var_name="precip")['data'])
+
+    # Only keep days where all arrays are finite
+    valid = np.isfinite(obs) & np.isfinite(coarse) & np.isfinite(bicubic) & np.isfinite(unet) & np.isfinite(ddim_median)
+    obs = obs[valid]
+    coarse = coarse[valid]
+    bicubic = bicubic[valid]
+    unet = unet[valid]
+    ddim_median = ddim_median[valid]
 
     quantiles = np.linspace(0, 1, 101)
     obs_q = np.quantile(obs, quantiles)
@@ -47,15 +55,15 @@ def process_city(city, lat, lon):
     plt.plot(quantiles, coarse_q - obs_q, label='Coarse', color='#E69F00')      
     plt.plot(quantiles, bicubic_q - obs_q, label='Bicubic', color='#56B4E9')   
     plt.plot(quantiles, unet_q - obs_q, label='UNet', color='#009E73')         
-    plt.plot(quantiles, ddim_median_q - obs_q, label='DDIM 4 sample mean', color='#D55E00') 
+    plt.plot(quantiles, ddim_median_q - obs_q, label='DDIM single sample', color='#D55E00') 
 
     plt.axhline(0, color='k', linestyle='--')
     plt.xlabel('Quantile')
     plt.ylabel('Bias (Model - Obs) (mm/day)')
-    plt.title(f'Bias of Quantiles: {city} (2011-2023)')
-    plt.legend()
+    plt.title(f'Bias of Quantiles for Daily Total Precipitation (mm/day): {city} (2011-2023)')
+    plt.legend(fontsize=12)
     plt.grid(True)
-    plt.savefig(f'outputs/quantile_bias_{city}.png')
+    plt.savefig(f'outputs/quantile_bias_{city}.png', dpi=1000)
     plt.close()
 
 with ThreadPoolExecutor() as executor:

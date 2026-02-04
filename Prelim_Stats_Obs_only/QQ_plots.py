@@ -2,15 +2,10 @@ import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
 from closest_grid_cell import select_nearest_grid_cell
+import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('Agg')
 from concurrent.futures import ThreadPoolExecutor
-
 np.Inf = np.inf
-
-
-
-
 
 
 
@@ -49,18 +44,19 @@ def process_city(city, lat, lon):
     unet_q = np.quantile(unet, quantiles)
     ddim_median_q = np.quantile(ddim_median, quantiles)
 
-    plt.figure(figsize=(8, 8))
+    plt.figure(figsize=(12, 8))
     plt.plot(obs_q, coarse_q, 'o', label='Coarse', alpha=0.4, color='orange')
-    plt.plot(obs_q, bicubic_q, 'o', label='Bicubic', alpha=0.4, color='blue')
-    plt.plot(obs_q, unet_q, 'o', label='UNet', alpha=0.4, color='green')
-    plt.plot(obs_q, ddim_median_q, 'o', label='DDIM 4 sample mean', alpha=0.4, color='red')
+    plt.plot(obs_q, bicubic_q, 's', label='Bicubic', alpha=0.4, color='blue')
+    plt.plot(obs_q, unet_q, '^', label='UNet', alpha=0.4, color='green')
+    plt.plot(obs_q, ddim_median_q, 'D', label='DDIM single sample', alpha=0.4, color='red')
     plt.plot([obs_q.min(), obs_q.max()], [obs_q.min(), obs_q.max()], 'k--', label='1:1 Line')
-    plt.xlabel(f'Observed Quantiles ({city}) for Daily Temperature (°C)')
-    plt.ylabel(f'Model Quantiles ({city}) for Daily Temperature (°C)')
-    plt.title(f'QQ Plot: {city} temperature (2011-2023)')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(f'outputs/qq_temperature_{city}.png')
+    plt.xlabel(f'Observed Quantiles ({city})', fontsize=12)
+    plt.ylabel(f'Model Quantiles ({city})', fontsize=12)
+    plt.title(f'QQ Plot: {city} daily average temperature (2011-2023)', fontsize=12)
+    plt.legend(fontsize=12)
+    plt.grid(True, which='both', linestyle='--', linewidth=0.4)
+    plt.tight_layout()
+    plt.savefig(f'outputs/qq_temperature_{city}.png', dpi=1000)
     plt.close()
 
 with ThreadPoolExecutor() as executor:
