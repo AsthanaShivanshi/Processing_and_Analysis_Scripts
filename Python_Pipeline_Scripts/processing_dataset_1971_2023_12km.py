@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import xarray as xr
 import subprocess
+import dask
 from pyproj import Transformer, datadir
 from dask.distributed import Client
 import tempfile
@@ -16,8 +17,8 @@ proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downsca
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
-CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
-CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
+CHUNK_DICT_RAW = {"time": 365, "E": 100, "N": 100}
+CHUNK_DICT_LATLON = {"time": 365, "lat": 100, "lon": 100}
 
 
 BASE_DIR = Path(os.environ["BASE_DIR"])
@@ -39,7 +40,10 @@ def get_chunk_dict(ds):
 
 def promote_latlon(infile, varname):
 
-    ds = xr.open_dataset(infile).chunk({"time": 50, "N": 100, "E": 100})
+    ds = xr.open_dataset(infile).chunk({"time": 365, "N": 100, "E": 100})
+
+
+
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
     def transform_coords(e, n):
         lon, lat = transformer.transform(e, n)
@@ -108,17 +112,17 @@ def interpolate_bilinear_shell(coarse_ds, target_ds, varname):
         coarse_ds[[varname]].transpose("time", "N", "E").to_netcdf(coarse_file)
         target_ds[[varname]].transpose("time", "N", "E").to_netcdf(target_file)
         script_path = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts" / "bilinear_interpolation.sh"
-        
+
         working_dir = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts"
-        
+
         os.chmod(script_path, 0o755)
-        
+
         subprocess.run([
             str(script_path), str(coarse_file), str(target_file), str(output_file)
         ], check=True, cwd=str(working_dir))
-        
-        return xr.open_dataset(output_file)[[varname]]
 
+        with xr.open_dataset(output_file) as ds_out:
+            return ds_out[[varname]].load()
 
 
 
@@ -133,9 +137,11 @@ def get_stats(da, method):
         stats['std'] = float(np.std(arr_flat))
 
 
+
+
     elif method == "log":
 
-        epsilon = float(da.where(da > 0).min().compute().item()) * 0.5
+        epsilon = float(da.where(da > 0).min().compute().item()) * 0.5 #Arbitrary choice, can be any  very small number. 
         stats["epsilon"] = epsilon
         arr_flat_log = np.log(arr_flat + epsilon)
         stats['mean'] = float(np.mean(arr_flat_log))
@@ -236,6 +242,8 @@ def main():
 
 
     if not step3_path.exists():
+
+        
         interp_ds = interpolate_bilinear_shell(coarse_ds, highres_ds, varname_in_file)
         interp_ds = interp_ds.chunk(get_chunk_dict(interp_ds))
         if varname == "RhiresD":
@@ -280,7 +288,7 @@ def main():
 
 
 if __name__ == "__main__":
-    client = Client(processes=False)
+    client = Client(processes=True)
     try:
         main()
     finally:
