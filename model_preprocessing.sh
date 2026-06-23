@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1      
 #SBATCH --mem=128G
-#SBATCH --time=3-00:00:00
+#SBATCH --time=1-00:00:00
 
 source sasthana/Downscaling/Processing_and_Analysis_Scripts/environment.sh
 export PROJ_LIB="$ENVIRONMENT/share/proj"

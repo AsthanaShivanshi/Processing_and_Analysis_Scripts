@@ -21,23 +21,27 @@ def process_file(source, target, outname, oldvar, newvar, mask_path):
     step1 = outname.replace(".nc", "_step1.nc")
     step2 = outname.replace(".nc", "_step2.nc")
 
-    # remapbic
+
+
+
     if not os.path.exists(step1):
         cdo_cmd1 = [
             "cdo",
-            f"-remapbic,{target}",
+            f"-remapbil,{target}",
             source,
             step1
         ]
+
+        
         print("Running:", " ".join(cdo_cmd1))
         result1 = subprocess.run(cdo_cmd1, capture_output=True, text=True)
         print(result1.stdout)
         print(result1.stderr)
         if result1.returncode != 0 or not os.path.exists(step1):
-            print(f"CDO remapbic failed for {source}")
+            print(f"CDO remapbil failed for {source}")
             return
     else:
-        print(f"Step1 file exists: {step1}, skipping remapbic.")
+        print(f"Step1 file exists: {step1}, skipping remapbil.")
 
     # crop
     if not os.path.exists(step2):
@@ -81,12 +85,12 @@ def process_file(source, target, outname, oldvar, newvar, mask_path):
     else:
         print(f"Final coarse masked file exists: {outname}, skipping masking.")
 
-# Interpolating to HR using obs grid
+# Interpolating to HR using obs grid::: bilinear 
 def interpolate_to_HR(coarse_file, hr_grid, out_hr_file, varname):
     if not os.path.exists(out_hr_file):
         cdo_cmd = [
             "cdo",
-            f"-remapbic,{hr_grid}",
+            f"-remapbil,{hr_grid}",
             coarse_file,
             out_hr_file
         ]
@@ -127,6 +131,9 @@ pairs = [
         "tasmin", "tmin", TEMP_MASK_PATH, TEMP_HR_GRID
     )
 ]
+
+
+
 
 for src, tgt, out, oldvar, newvar, mask_path, hr_grid in pairs:
     step1 = out.replace(".nc", "_step1.nc")

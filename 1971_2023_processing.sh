@@ -4,9 +4,9 @@
 #SBATCH --output=/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/logs/chron_split_observational_%A_%a.log
 #SBATCH --error=/work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/logs/chron_split_observational_%A_%a.log
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1      
+#SBATCH --cpus-per-task=1
 #SBATCH --mem=128G
-#SBATCH --time=12:00:00
+#SBATCH --time=00:20:00
 #SBATCH --array=0-1    
 
 source /work/FAC/FGSE/IDYST/tbeucler/downscaling/sasthana/Downscaling/Processing_and_Analysis_Scripts/environment.sh 
