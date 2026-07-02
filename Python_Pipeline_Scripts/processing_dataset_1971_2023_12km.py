@@ -4,6 +4,9 @@ import argparse
 import tempfile
 import subprocess
 from pathlib import Path
+import time
+
+os.environ.setdefault("HDF5_USE_FILE_LOCKING", "FALSE")
 
 import numpy as np
 import xarray as xr
@@ -16,166 +19,172 @@ proj_path = os.environ.get("PROJ_LIB") or "/work/FAC/FGSE/IDYST/tbeucler/downsca
 os.environ["PROJ_LIB"] = proj_path
 datadir.set_data_dir(proj_path)
 
-CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
-CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
-
 BASE_DIR = Path(os.environ["BASE_DIR"])
 INPUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "data_1971_2023" / "HR_files_full"
 OUT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Downscaling_Models" / "Dataset_Setup_I_Chronological_12km"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-SCRIPT_DIR = BASE_DIR / "sasthana" / "Downscaling" / "Processing_and_Analysis_Scripts" / "Python_Pipeline_Scripts"
+NETCDF_ENGINE = os.environ.get("XR_NETCDF_ENGINE", "h5netcdf")
+
+CHUNK_DICT_RAW = {"time": 50, "E": 100, "N": 100}
+CHUNK_DICT_LATLON = {"time": 50, "lat": 100, "lon": 100}
 
 
-def get_chunk_dict(ds: xr.Dataset):
+
+
+def years_simulated(ds):
+    years = ds["time"].dt.year.values
+    return float(len(np.unique(years)))
+
+
+def sypd(elapsed_seconds, n_years):
+    return float(n_years) / (elapsed_seconds / 86400.0)
+
+
+def get_chunk_dict(ds):
     dims = set(ds.dims)
-    if {"E", "N"}.issubset(dims):
-        return CHUNK_DICT_RAW
     if {"lat", "lon"}.issubset(dims):
         return CHUNK_DICT_LATLON
-    raise ValueError(f"Dataset has unknown dimensions: {ds.dims}")
+    elif {"E", "N"}.issubset(dims):
+        return CHUNK_DICT_RAW
+    else:
+        raise ValueError(f"Dataset has unknown dimensions: {ds.dims}")
 
 
-def open_chunked(path: Path):
+
+
+def chunking(path):
     ds = xr.open_dataset(path)
-    return ds.chunk(get_chunk_dict(ds))
+    return ds.chunk(get_chunk_dict(ds)).load()
 
 
-def promote_latlon(infile: Path):
-    ds = xr.open_dataset(infile).chunk(CHUNK_DICT_RAW)
+def latlon(path):
+    if not path.exists():
+        return False
+    with xr.open_dataset(path) as ds:
+        return {"lat", "lon"}.issubset(ds.coords)
+
+
+def netcdf(obj, path):
+    obj.to_netcdf(path, engine=NETCDF_ENGINE)
+
+
+def promote_latlon(infile, varname):
+    ds = xr.open_dataset(infile).chunk({"time": 50, "N": 100, "E": 100})
     transformer = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
 
-    def transform_coords(e, n):
-        lon, lat = transformer.transform(e, n)
-        return np.stack([lon, lat], axis=0)
+    e2d, n2d = xr.broadcast(ds["E"], ds["N"])
+    lon_vals, lat_vals = transformer.transform(e2d.values, n2d.values)
 
-    E, N = ds["E"], ds["N"]
-    EE, NN = xr.broadcast(E, N)
+    lon = xr.DataArray(lon_vals, dims=("N", "E"), coords={"N": ds["N"], "E": ds["E"]}, name="lon")
+    lat = xr.DataArray(lat_vals, dims=("N", "E"), coords={"N": ds["N"], "E": ds["E"]}, name="lat")
 
-    transformed = xr.apply_ufunc(
-        transform_coords,
-        EE,
-        NN,
-        input_core_dims=[["N", "E"], ["N", "E"]],
-        output_core_dims=[["coord_type", "N", "E"]],
-        vectorize=True,
-        dask="parallelized",
-        output_dtypes=[np.float64],
-    )
-
-    lon = transformed.sel(coord_type=0).rename("lon")
-    lat = transformed.sel(coord_type=1).rename("lat")
-    return ds.assign_coords(lat=lat, lon=lon).set_coords(["lat", "lon"])
+    ds = ds.assign_coords(lat=lat, lon=lon).set_coords(["lat", "lon"])
+    return ds[[varname]]
 
 
-def conservative_coarsening(ds: xr.Dataset, varname: str, block_size: int):
+def conservative_coarsening(ds, varname, block_size):
     da = ds[varname]
     if "time" not in da.dims:
         da = da.expand_dims("time")
 
     lat = ds["lat"]
     lon = ds["lon"]
+    r_earth = 6371000.0
 
-    R = 6371000.0
     lat_rad = np.deg2rad(lat)
-    dlat = np.deg2rad(np.diff(lat.mean("E")).mean().item())
-    dlon = np.deg2rad(np.diff(lon.mean("N")).mean().item())
-    area = (R**2) * dlat * dlon * np.cos(lat_rad)
+    dlat = np.deg2rad(np.diff(lat.mean("E").values).mean())
+    dlon = np.deg2rad(np.diff(lon.mean("N").values).mean())
+    area = (r_earth ** 2) * dlat * dlon * np.cos(lat_rad)
 
-    area = area.broadcast_like(da.isel(time=0)).expand_dims(time=da.sizes["time"])
+    area = area.broadcast_like(da.isel(time=0)).expand_dims(time=da["time"])
     weighted = da.fillna(0) * area
     valid_area = area * da.notnull()
 
-    coarsen_dims = {dim: block_size for dim in ["N", "E"] if dim in da.dims}
-    weighted_sum = weighted.coarsen(**coarsen_dims, boundary="trim").sum(skipna=True)
-    area_sum = valid_area.coarsen(**coarsen_dims, boundary="trim").sum(skipna=True)
-    data_coarse = (weighted_sum / area_sum).where(area_sum != 0)
+    weighted_sum = weighted.coarsen(N=block_size, E=block_size, boundary="trim").sum()
+    area_sum = valid_area.coarsen(N=block_size, E=block_size, boundary="trim").sum()
 
-    lat2d_coarse = lat.coarsen(N=block_size, E=block_size, boundary="trim").mean()
-    lon2d_coarse = lon.coarsen(N=block_size, E=block_size, boundary="trim").mean()
-    data_coarse = data_coarse.assign_coords(lat=lat2d_coarse, lon=lon2d_coarse)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        data_coarse = xr.where(area_sum > 0, weighted_sum / area_sum, np.nan)
 
+    lat_coarse = lat.coarsen(N=block_size, E=block_size, boundary="trim").mean()
+    lon_coarse = lon.coarsen(N=block_size, E=block_size, boundary="trim").mean()
+
+    data_coarse = data_coarse.assign_coords(lat=lat_coarse, lon=lon_coarse)
     data_coarse.name = varname
+
     return data_coarse.to_dataset().set_coords(["lat", "lon"])
 
 
-def run_cdo_interpolation(coarse_file: Path, target_file: Path, output_file: Path, method: str):
-    if method not in {"bicubic", "bilinear"}:
-        raise ValueError("method must be one of: bicubic, bilinear")
+def bilinear_or_bicubic(coarse_ds, target_ds, varname, output_file, method):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        coarse_file = Path(tmpdir) / "coarse.nc"
+        target_file = Path(tmpdir) / "target.nc"
 
-    script = "bicubic_interpolation.sh" if method == "bicubic" else "bilinear_interpolation.sh"
-    script_path = SCRIPT_DIR / script
-    os.chmod(script_path, 0o755)
+        netcdf(coarse_ds[[varname]].transpose("time", "N", "E"), coarse_file)
+        netcdf(target_ds[[varname]].transpose("time", "N", "E"), target_file)
 
-    env = os.environ.copy()
-    env["CDO_THREADS"] = env.get("CDO_THREADS", env.get("SLURM_CPUS_PER_TASK", "2"))
+        script_path = (
+            BASE_DIR
+            / "sasthana"
+            / "Downscaling"
+            / "Processing_and_Analysis_Scripts"
+            / "Python_Pipeline_Scripts"
+            / f"{method}_interpolation.sh"
+        )
 
-    subprocess.run(
-        [str(script_path), str(coarse_file), str(target_file), str(output_file)],
-        check=True,
-        cwd=str(SCRIPT_DIR),
-        env=env,
-    )
+        os.chmod(script_path, 0o755)
+
+        subprocess.run(
+            [str(script_path), str(coarse_file), str(target_file), str(output_file)],
+            check=True,
+            cwd=str(script_path.parent),
+        )
 
 
-def get_stats(da: xr.DataArray, method: str):
+def get_stats(da, method):
+    arr_flat = da.values.flatten()
+    arr_flat = arr_flat[~np.isnan(arr_flat)]
     stats = {}
 
     if method == "standard":
-        stats["mean"] = float(da.mean(skipna=True).compute().item())
-        stats["std"] = float(da.std(skipna=True).compute().item())
+        stats["mean"] = float(np.mean(arr_flat))
+        stats["std"] = float(np.std(arr_flat))
 
     elif method == "log":
-        min_pos = da.where(da > 0).min(skipna=True).compute().item()
-        epsilon = 1e-6 if (min_pos is None or np.isnan(min_pos) or min_pos <= 0) else float(min_pos) * 0.5
-        log_da = np.log(da + epsilon)
+        epsilon = 0.001
         stats["epsilon"] = epsilon
-        stats["mean"] = float(log_da.mean(skipna=True).compute().item())
-        stats["std"] = float(log_da.std(skipna=True).compute().item())
+        arr_flat_log = np.log(arr_flat + epsilon)
+        stats["mean"] = float(np.mean(arr_flat_log))
+        stats["std"] = float(np.std(arr_flat_log))
 
     else:
-        raise ValueError("Invalid scaling type. Available: standard, log")
+        raise ValueError("Invalid scaling type")
 
-    if stats["std"] == 0:
-        raise ValueError("Scaling std is zero.")
+    if not np.isfinite(stats["std"]) or stats["std"] == 0:
+        raise ValueError("Scaling std must be finite and non-zero.")
+
     return stats
 
 
-def apply_scaling(da: xr.DataArray, stats: dict, method: str):
+def apply_scaling(da, stats, method):
     if method == "standard":
         return (da - stats["mean"]) / stats["std"]
     if method == "log":
-        return (np.log(da + stats["epsilon"]) - stats["mean"]) / stats["std"]
+        log_da = np.log(da + stats["epsilon"])
+        return (log_da - stats["mean"]) / stats["std"]
     raise ValueError("Available: standard, log")
 
 
-def save_split(
-    x_train, y_train, x_val, y_val, x_test, y_test, stats, outdir: Path, varname: str, interp_method: str
-):
-    suffix = f"{varname}_{interp_method}"
-    x_train.to_netcdf(outdir / f"{suffix}_input_train_scaled.nc")
-    y_train.to_netcdf(outdir / f"{suffix}_target_train_scaled.nc")
-    x_val.to_netcdf(outdir / f"{suffix}_input_val_scaled.nc")
-    y_val.to_netcdf(outdir / f"{suffix}_target_val_scaled.nc")
-    x_test.to_netcdf(outdir / f"{suffix}_input_test_scaled.nc")
-    y_test.to_netcdf(outdir / f"{suffix}_target_test_scaled.nc")
+def save_split(x, y, stats, outdir, varname, split_name, scale_type, method):
+    outdir.mkdir(parents=True, exist_ok=True)
 
-    with open(outdir / f"{suffix}_scaling_params.json", "w") as f:
-        json.dump(stats, f)
+    x_scaled = apply_scaling(x, stats, scale_type)
+    netcdf(x_scaled, outdir / f"{varname}_{method}_input_{split_name}_scaled.nc")
 
+    y_scaled = apply_scaling(y, stats, scale_type)
+    netcdf(y_scaled, outdir / f"{varname}_{method}_target_{split_name}_scaled.nc")
 
-def final_outputs_exist(outdir: Path, varname: str, interp_method: str):
-    suffix = f"{varname}_{interp_method}"
-    files = [
-        outdir / f"{suffix}_input_train_scaled.nc",
-        outdir / f"{suffix}_target_train_scaled.nc",
-        outdir / f"{suffix}_input_val_scaled.nc",
-        outdir / f"{suffix}_target_val_scaled.nc",
-        outdir / f"{suffix}_input_test_scaled.nc",
-        outdir / f"{suffix}_target_test_scaled.nc",
-        outdir / f"{suffix}_scaling_params.json",
-    ]
-    return all(f.exists() for f in files)
 
 
 def main():
@@ -185,22 +194,26 @@ def main():
     varname = args.var
 
     dataset_map = {
-        "RhiresD": ("RhiresD_1971_2023.nc", "log", "RhiresD"),
-        "TabsD": ("TabsD_1971_2023.nc", "standard", "TabsD"),
+        "RhiresD": ("RhiresD_1971_2023.nc", "log",      "RhiresD"),
+        "TabsD":   ("TabsD_1971_2023.nc",   "standard", "TabsD"),
     }
 
     infile, scale_type, varname_in_file = dataset_map[varname]
     infile_path = INPUT_DIR / infile
 
-    step1_path = OUT_DIR / f"{varname}_step1_latlon.nc"
-    needs_step1 = True
-    if step1_path.exists():
-        with xr.open_dataset(step1_path) as ds_chk:
-            needs_step1 = not {"lat", "lon"}.issubset(ds_chk.coords)
+    step1_path         = OUT_DIR / f"{varname}_step1_latlon.nc"
+    step2_path         = OUT_DIR / f"{varname}_step2_coarse.nc"
+    step3_bilinear_path = OUT_DIR / f"{varname}_step3_interp_bilinear.nc"
+    step3_bicubic_path  = OUT_DIR / f"{varname}_step3_interp_bicubic.nc"
 
-    if needs_step1:
-        print(f"[INFO] Step 1: preparing {varname}")
-        ds = xr.open_dataset(infile_path).chunk(CHUNK_DICT_RAW)
+
+
+
+    if not latlon(step1_path):
+        print(f"Step 1: prepping '{varname}'")
+
+
+        ds = xr.open_dataset(infile_path).load()
 
         if "lat" in ds.coords and "lon" in ds.coords:
             pass
@@ -208,94 +221,115 @@ def main():
             ds = ds.set_coords(["lat", "lon"])
         else:
             ds.close()
-            ds = promote_latlon(infile_path)
+            ds = promote_latlon(infile_path, varname_in_file)
 
         if varname == "RhiresD":
-            ds[varname_in_file] = xr.where(ds[varname_in_file] < 0.0, 0.0, ds[varname_in_file])
+            ds[varname_in_file] = xr.where(ds[varname_in_file] < 1, 0, ds[varname_in_file]) #Less than 1 mm/day set to 0,, for noise control..
 
-        ds.to_netcdf(step1_path)
+        netcdf(ds, step1_path)
         ds.close()
 
-    highres_ds = open_chunked(step1_path)
 
-    step2_path = OUT_DIR / f"{varname}_step2_coarse.nc"
+
+    highres_ds = chunking(step1_path)
+
+    n_years = years_simulated(highres_ds.sel(time=slice("1971-01-01", "2023-12-31")))
+
+
+    sypd_summary = {}
+
+
+
     if not step2_path.exists():
-        print(f"[INFO] Step 2: coarsening {varname}")
-        coarse_ds_tmp = conservative_coarsening(highres_ds, varname_in_file, block_size=12)
+        print(f"Step 2: coarsening '{varname}'")
+        coarse_ds = conservative_coarsening(highres_ds, varname_in_file, block_size=12)
+
         if varname == "RhiresD":
-            coarse_ds_tmp[varname_in_file] = xr.where(coarse_ds_tmp[varname_in_file] < 0.0, 0.0, coarse_ds_tmp[varname_in_file])
-        coarse_ds_tmp.to_netcdf(step2_path)
-        coarse_ds_tmp.close()
+            coarse_ds[varname_in_file] = xr.where(coarse_ds[varname_in_file] < 1, 0, coarse_ds[varname_in_file]) #Less than 1 mm/day set to 0,, for noise control.. 
 
-    coarse_ds = open_chunked(step2_path)
+        netcdf(coarse_ds, step2_path)
+        coarse_ds.close()
 
-    methods = ["bicubic", "bilinear"]
-    step3_paths = {m: OUT_DIR / f"{varname}_step3_interp_{m}.nc" for m in methods}
-    missing_step3 = [m for m in methods if not step3_paths[m].exists()]
+    coarse_ds = chunking(step2_path)
 
-    if missing_step3:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmpdir = Path(tmpdir)
-            coarse_file = tmpdir / "coarse.nc"
-            target_file = tmpdir / "target_grid.nc"
 
-            # Write remap inputs once
-            coarse_ds[[varname_in_file]].transpose("time", "N", "E").to_netcdf(coarse_file)
-            highres_ds[[varname_in_file]].isel(time=slice(0, 1)).transpose("time", "N", "E").to_netcdf(target_file)
 
-            for interp_method in missing_step3:
-                print(f"[INFO] Step 3: {interp_method} interpolation for {varname}")
-                run_cdo_interpolation(coarse_file, target_file, step3_paths[interp_method], interp_method)
 
-    # Prepare target + split + stats once
-    highres = highres_ds[varname_in_file].sel(time=slice("1971-01-01", "2023-12-31"))
-    if varname == "RhiresD":
-        highres = xr.where(highres < 0.0, 0.0, highres)
 
-    years = highres["time.year"].values
-    train_mask = (years >= 1971) & (years <= 2004)
-    val_mask = (years >= 2005) & (years <= 2014)
-    test_mask = (years >= 2015) & (years <= 2023)
+    if not step3_bilinear_path.exists():
+        print(f"Step 3: interpolating '{varname}' with bilinear")
 
-    y_train = highres.isel(time=train_mask)
-    y_val = highres.isel(time=val_mask)
-    y_test = highres.isel(time=test_mask)
+        t0 = time.perf_counter()
+        bilinear_or_bicubic(coarse_ds, highres_ds, varname_in_file, step3_bilinear_path, "bilinear")
+        elapsed_time = time.perf_counter() - t0
+        
 
-    stats = get_stats(y_train, scale_type)
-    y_train_scaled = apply_scaling(y_train, stats, scale_type)
-    y_val_scaled = apply_scaling(y_val, stats, scale_type)
-    y_test_scaled = apply_scaling(y_test, stats, scale_type)
 
-    for interp_method in methods:
-        if final_outputs_exist(OUT_DIR, varname, interp_method):
-            print(f"[INFO] Skipping {varname}-{interp_method}: final files already exist")
-            continue
+        sypd_summary["bilinear"] = {"elapsed_seconds": elapsed_time,
+                                     "years_simulated": n_years, 
+                                     "sypd": sypd(elapsed_time, n_years)}
 
-        interp_ds = open_chunked(step3_paths[interp_method])
+
+
+    if not step3_bicubic_path.exists():
+        print(f"Step 3: interpolating '{varname}' with bicubic")
+        t0 = time.perf_counter()
+
+        bilinear_or_bicubic(coarse_ds, highres_ds, varname_in_file, step3_bicubic_path, "bicubic")
+        elapsed_time = time.perf_counter() - t0
+
+
+        sypd_summary["bicubic"] = {"elapsed_seconds": elapsed_time,
+                                    "years_simulated": n_years,
+                                    "sypd": sypd(elapsed_time, n_years)}
+
+    with open(OUT_DIR / f"{varname}_baselines_SYPD_summary.json", "w") as f:
+            json.dump(sypd_summary, f, indent=2)
+
+            
+    interp_datasets = {
+        "bilinear": chunking(step3_bilinear_path),
+        "bicubic":  chunking(step3_bicubic_path),
+    }
+
+    for method, interp_ds in interp_datasets.items():
+        if varname == "RhiresD":
+            interp_ds[varname_in_file] = xr.where(interp_ds[varname_in_file] < 1, 0, interp_ds[varname_in_file])
+
+
+
+
+        highres   = highres_ds[varname_in_file].sel(time=slice("1971-01-01", "2023-12-31"))
         upsampled = interp_ds[varname_in_file].sel(time=slice("1971-01-01", "2023-12-31"))
+        upsampled, highres = xr.align(upsampled, highres, join="exact")
 
-        if varname == "RhiresD":
-            upsampled = xr.where(upsampled < 0.0, 0.0, upsampled)
 
-        x_train = upsampled.isel(time=train_mask)
-        x_val = upsampled.isel(time=val_mask)
-        x_test = upsampled.isel(time=test_mask)
+        x_train = upsampled.sel(time=slice("1971-01-01", "2004-12-31"))
+        y_train = highres.sel(time=slice("1971-01-01", "2004-12-31"))
+        x_val   = upsampled.sel(time=slice("2005-01-01", "2014-12-31"))
+        y_val   = highres.sel(time=slice("2005-01-01", "2014-12-31"))
+        x_test  = upsampled.sel(time=slice("2015-01-01", "2023-12-31"))
+        y_test  = highres.sel(time=slice("2015-01-01", "2023-12-31"))
 
-        x_train_scaled = apply_scaling(x_train, stats, scale_type)
-        x_val_scaled = apply_scaling(x_val, stats, scale_type)
-        x_test_scaled = apply_scaling(x_test, stats, scale_type)
+        stats = get_stats(y_train, scale_type)
 
-        save_split(
-            x_train_scaled, y_train_scaled,
-            x_val_scaled, y_val_scaled,
-            x_test_scaled, y_test_scaled,
-            stats, OUT_DIR, varname, interp_method
-        )
+        save_split(x_train, y_train, stats, OUT_DIR, varname, "train", scale_type, method)
+        save_split(x_val,   y_val,   stats, OUT_DIR, varname, "val",   scale_type, method)
+        save_split(x_test,  y_test,  stats, OUT_DIR, varname, "test",  scale_type, method)
 
-        interp_ds.close()
+        with open(OUT_DIR / f"{varname}_{method}_scaling_params.json", "w") as f:
+            json.dump(stats, f, indent=2)
+
+    
+
+    print(f"Done: {varname} / {method}")
+
+    
 
     highres_ds.close()
     coarse_ds.close()
+    for ds in interp_datasets.values():
+        ds.close()
 
 
 if __name__ == "__main__":
