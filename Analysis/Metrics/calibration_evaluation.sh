@@ -33,5 +33,3 @@ python -c "import wandb; print(wandb.__version__)"
 #python DDIM_conditional_derived/Metrics_Test_Set/Empirical_PIT_precip.py 
 #python DDIM_conditional_derived/Metrics_Test_Set/Empirical_PIT_temp.py
 
-
-python DDIM_conditional_derived/Metrics_Test_Set/csv_metrics_poster_plot_cobweb.py
