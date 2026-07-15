@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Cobweb_Testset_SR_Metrics
-#SBATCH --output=logs/Cobweb_Testset_SR_Metrics_job_%j.log
-#SBATCH --error=logs/Cobweb_Testset_SR_Metrics_job_%j.log
+#SBATCH --job-name=SAL_SR_Metrics
+#SBATCH --output=logs/SAL_SR_Metrics_job_%j.log
+#SBATCH --error=logs/SAL_SR_Metrics_job_%j.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=15:00:00
@@ -28,9 +28,11 @@ which python
 python -c "import wandb; print(wandb.__version__)"
 
 
-python Analysis/Paper_Stats/cobweb_metrics.py
+#python Analysis/Paper_Stats/cobweb_metrics.py
 
-python Analysis/Paper_Stats/plot_cobweb.py
+#python Analysis/Paper_Stats/plot_cobweb.py
+
+python Analysis/Paper_Stats/sal.py
 
 
 

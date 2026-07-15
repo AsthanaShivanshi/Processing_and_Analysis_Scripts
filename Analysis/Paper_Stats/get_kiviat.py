@@ -244,7 +244,7 @@ def plot_kiviat_from_csv(
     add_bottom_legend(fig, handles, labels, ncol=len(models))
 
     fig.suptitle(
-        title,
+        Title,
         fontsize=20,
         fontweight="bold",
         y=1,
