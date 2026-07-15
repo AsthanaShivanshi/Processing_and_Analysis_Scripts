@@ -8,9 +8,13 @@ from tqdm.auto import tqdm as tqdm_auto
 
 
 
-#Notes from Wernli et al. 2008: and pysteps lib.. $
+#Notes from Wernli et al. 2008: and pysteps lib..https://pysteps.readthedocs.io/en/latest/generated/pysteps.verification.salscores.sal.html $$$$
+
+
+#thr_factor = 1/15 from the paper 
+
     # Framewise SAL averaged over all timesteps — deterministic.
-    # Skips dry frames (both obs and pred are zero).
+    # Skips totally dry frames (both obs and pred are zero).
     # Returns mean S, A, L over all valid frames.
     # S: size and shape of precipitation objects
     # A:  domain-average rainfall bias
@@ -47,6 +51,8 @@ sample_dim = "sample"
 
 test_precip_ddim_mean = test_precip_ddim_ensemble.mean(dim=sample_dim)
 
+# ------------------------------------------------------------------ #
+
 def get_best_member(obs_da, ens_da, sample_dim="sample"):
     T = obs_da.shape[0]
     n_members = ens_da.sizes[sample_dim]
@@ -64,9 +70,11 @@ def get_best_member(obs_da, ens_da, sample_dim="sample"):
     best_arr = np.stack(best_frames, axis=0)
     return xr.DataArray(best_arr, dims=obs_da.dims, coords=obs_da.coords)
 
-print("Selecting best member per timestep...")
+
+
 test_precip_ddim_best = get_best_member(test_precip_target, test_precip_ddim_ensemble, sample_dim)
 
+# ------------------------------------------------------------------ #
 
 def sal_timeseries(obs_da, pred_da, thr_factor=1/15, thr_quantile=0.95):
 
@@ -89,6 +97,7 @@ def sal_timeseries(obs_da, pred_da, thr_factor=1/15, thr_quantile=0.95):
     return np.nanmean(S_list), np.nanmean(A_list), np.nanmean(L_list)
 
 
+# ------------------------------------------------------------------ #
 def sal_probabilistic(obs_da, ens_da, sample_dim="sample", thr_factor=1/15, thr_quantile=0.95):
 
 
@@ -97,7 +106,7 @@ def sal_probabilistic(obs_da, ens_da, sample_dim="sample", thr_factor=1/15, thr_
     T = obs_da.shape[0]
     n_members = ens_da.sizes[sample_dim]
 
-    
+
     for t in tqdm_auto(range(T), desc="Probabilistic SAL", leave=False):
         obs_frame = np.nan_to_num(obs_da.isel(time=t).values.astype(float), nan=0.0)
         if obs_frame.max() == 0:
@@ -141,6 +150,8 @@ for name, pred in tqdm_auto(models_precip.items(), desc="SAL deterministic"):
 
 
 print("\nComputing Probabilistic SAL (all members × all timesteps)...")
+
+
 S, A, L = sal_probabilistic(test_precip_target, test_precip_ddim_ensemble, sample_dim)
 sal_results.append({"model": "DDIM_probabilistic", "type": "probabilistic", "S": S, "A": A, "L": L})
 print(f"  S={S:.4f}  A={A:.4f}  L={L:.4f}")
