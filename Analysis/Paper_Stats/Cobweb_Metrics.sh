@@ -30,5 +30,7 @@ python -c "import wandb; print(wandb.__version__)"
 
 python Analysis/Paper_Stats/cobweb_metrics.py
 
+python Analysis/Paper_Stats/plot_cobweb.py
+
 
 
