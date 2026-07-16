@@ -3,9 +3,9 @@
 #SBATCH --output=logs/SAL_SR_Metrics_job_%j.log
 #SBATCH --error=logs/SAL_SR_Metrics_job_%j.log
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --time=15:00:00
-#SBATCH --mem=128G
+#SBATCH --cpus-per-task=1
+#SBATCH --time=01-00:00:00
+#SBATCH --mem=64G
 #SBATCH --partition=cpu
 
 source ../Downscaling_Models/diffscaler.sh
