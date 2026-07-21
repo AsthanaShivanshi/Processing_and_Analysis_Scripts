@@ -60,7 +60,9 @@ def load_precip_frame_with_coords(file, varnames=["pr", "precip", "RhiresD"], da
     ds.close()
     return None, None, None
 
-# Load frames
+
+
+
 frames = []
 lats = []
 lons = []
@@ -118,19 +120,15 @@ frames += ddim_samples
 fig = plt.figure(figsize=(18, 16), facecolor='white')
 gs = gridspec.GridSpec(3, 6, figure=fig)  # 3 rows, 6 columns
 
-# Top row: 3 plots, each spans 2 columns
 axes = [fig.add_subplot(gs[0, i*2:(i+1)*2], projection=ccrs.PlateCarree()) for i in range(3)]
 
-# Middle row: 2 big plots, each spans 3 columns
 axes += [
     fig.add_subplot(gs[1, 0:3], projection=ccrs.PlateCarree()),  # UNet Mean (center left)
     fig.add_subplot(gs[1, 3:6], projection=ccrs.PlateCarree()),  # DDIM Sample 1 (center right)
 ]
 
-# Bottom row: 3 plots, each spans 2 columns
 axes += [fig.add_subplot(gs[2, i*2:(i+1)*2], projection=ccrs.PlateCarree()) for i in range(3)]
 
-# Map each plot to its position in the grid
 plot_frames = [
     (frames[0], lats[0], lons[0], labels[0], colors[0]),  # Top left
     (frames[1], lats[1], lons[1], labels[1], colors[1]),  # Top center

@@ -1,91 +1,94 @@
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 
+from plotstyle import apply_paper_style, get_model_color
 
-def plot_sal_seasonal(
-    csv_paths,
-    seasons=("DJF", "MAM", "JJA", "SON"),
-    metrics=("S", "A", "L"),
-    season_col="season",
-    model_col="model",
-    model_order=None,
-    model_colors=None,
-    model_markers=None,
+_METRIC_LABELS = {
+    "S": "Structure (S)",
+    "A": "Amplitude (A)",
+    "L": "Location (L)",
+}
+
+
+def plot_sal_box_seasonal(
+    csv_path,
+    season="JJA",
     save_path=None,
-    figsize=(15, 5),
-    dpi=300,
+    models=("Bilinear", "Bicubic", "UNet", "DDIM", "DDIM mean", "DDIM median"),
+    figsize=(14, 4),
+    dpi=1500,
 ):
-    if isinstance(csv_paths, (str,)):
-        csv_paths = [csv_paths]
+    apply_paper_style()
 
-    df = pd.concat([pd.read_csv(p) for p in csv_paths], ignore_index=True)
+    df = pd.read_csv(csv_path).copy()
+    df["season"] = df["season"].astype(str).str.strip().str.upper()
+    df["model_norm"] = df["model"].astype(str).str.strip().str.lower()
+    df["type_norm"] = df["type"].astype(str).str.strip().str.lower()
 
-    if model_order is None:
-        model_order = list(df[model_col].dropna().unique())
+    season = str(season).strip().upper()
+    df = df[df["season"] == season].copy()
 
-    if model_colors is None:
-        model_colors = {
-            "Bilinear": "#1f77b4",
-            "Bicubic": "#2ca02c",
-            "UNet": "#d62728",
-            "DDIM_median": "#9467bd",
-            "DDIM_mean": "#ff7f0e",
-        }
+    if df.empty:
+        raise ValueError(f"No rows found for season='{season}' in {csv_path}")
 
-    if model_markers is None:
-        model_markers = {
-            "Bilinear": "o",
-            "Bicubic": "s",
-            "UNet": "^",
-            "DDIM_median": "D",
-            "DDIM_mean": "P",
-        }
+    # Explicit plotting entries (no helper abstraction)
+    entries = []
 
-    season_x = np.arange(len(seasons))
-    offsets = np.linspace(-0.15, 0.15, len(model_order))
+    # Deterministic models as-is
+    for m in models:
+        if str(m).strip().lower() == "ddim":
+            continue
+        d = df[(df["model_norm"] == str(m).strip().lower()) & (df["type_norm"] == "deterministic")]
+        if not d.empty:
+            entries.append((m, d, get_model_color(m)))
 
-    fig, axes = plt.subplots(1, len(metrics), figsize=figsize, sharex=True)
+    # DDIM pooled samples + mean + median as separate boxes
+    d_samples = df[(df["model_norm"] == "ddim") & (df["type_norm"] == "ensemble_sample")]
+    d_mean = df[(df["model_norm"] == "ddim") & (df["type_norm"] == "ensemble_mean")]
+    d_median = df[(df["model_norm"] == "ddim") & (df["type_norm"] == "ensemble_median")]
 
-    if len(metrics) == 1:
-        axes = [axes]
+    if not d_samples.empty:
+        entries.append(("DDIM samples", d_samples, "#000000"))
+    if not d_mean.empty:
+        entries.append(("DDIM mean", d_mean, "#555555"))
+    if not d_median.empty:
+        entries.append(("DDIM median", d_median, "#999999"))
+
+    if not entries:
+        raise ValueError(f"No plottable groups found for season='{season}'")
+
+    labels = [e[0] for e in entries]
+
+    fig, axes = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
+    metrics = ["S", "A", "L"]
 
     for ax, metric in zip(axes, metrics):
-        for i, model in enumerate(model_order):
-            d = df[df[model_col] == model].set_index(season_col).reindex(seasons)
+        data = [e[1][metric].dropna().values for e in entries]
 
-            ax.scatter(
-                season_x + offsets[i],
-                d[metric],
-                s=90,
-                marker=model_markers.get(model, "o"),
-                color=model_colors.get(model, "gray"),
-                edgecolors="black",
-                linewidths=0.6,
-                zorder=3,
-                label=model,
-            )
+        bp = ax.boxplot(
+            data,
+            labels=labels,
+            patch_artist=True,
+            showfliers=False,
+            medianprops={"color": "black", "linewidth": 1.5},
+            whiskerprops={"linewidth": 1.2},
+            capprops={"linewidth": 1.2},
+        )
 
-        ax.axhline(0, color="gray", linestyle="--", linewidth=1)
-        ax.set_xticks(season_x)
-        ax.set_xticklabels(seasons)
-        ax.set_xlabel("Season")
+        for patch, (_, _, color) in zip(bp["boxes"], entries):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.30)
+            patch.set_edgecolor(color)
+            patch.set_linewidth(1.5)
+
+        ax.axhline(0.0, color="black", linestyle="--", linewidth=1.2, alpha=0.8)
+        ax.set_title(_METRIC_LABELS[metric])
         ax.set_ylabel(metric)
-        ax.set_title(f"Seasonal mean {metric}")
+        ax.tick_params(axis="x", rotation=20)
 
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(
-        handles,
-        labels,
-        loc="lower center",
-        ncol=len(model_order),
-        frameon=False,
-        bbox_to_anchor=(0.5, -0.02),
-    )
+    fig.suptitle(f"SAL distributions for {season}", y=1.04)
 
-    fig.tight_layout(rect=[0, 0.08, 1, 1])
-
-    if save_path:
-        plt.savefig(save_path, dpi=dpi, bbox_inches="tight")
+    if save_path is not None:
+        fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
 
     return fig, axes
