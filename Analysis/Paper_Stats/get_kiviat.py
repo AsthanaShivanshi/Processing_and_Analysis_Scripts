@@ -10,6 +10,7 @@ DEFAULT_METRICS = (
     ("SSIM", "1-SSIM (median) ↓"),
     ("RMSE", "RMSE (median) ↓"),
     ("MAE", "MAE (median) ↓"),
+    ("PITD", "PITD ↓"),
 )
 
 
@@ -72,7 +73,6 @@ def _extract_variable_data(
     if subset.empty:
         raise ValueError(f"No rows found for variable '{variable}'.")
 
-    # Use lowercase model names internally to avoid capitalization problems.
     subset["_model_key"] = (
         subset[model_col].astype(str).str.strip().str.lower()
     )
@@ -95,7 +95,6 @@ def _extract_variable_data(
         metric_col = _find_metric_column(df, metric_name)
         values = pd.to_numeric(subset[metric_col], errors="coerce").to_numpy()
 
-        # Convert SSIM so every radial axis means "lower is better".
         if metric_name.upper() == "SSIM":
             values = 1 - values
 
@@ -135,15 +134,21 @@ def _plot_kiviat_axis(ax, data, title, models, metric_labels):
     ).tolist()
     closed_angles = angles + angles[:1]
 
+    cfm_color = "#b6d627"  
+
     for index, model in enumerate(models):
         values = data[index].tolist()
         closed_values = values + values[:1]
+
+        line_kwargs = dict(style_model_line(model))
+        if model == "CFM":
+            line_kwargs["color"] = cfm_color
 
         ax.plot(
             closed_angles,
             closed_values,
             label=model,
-            **style_model_line(model),
+            **line_kwargs,
         )
 
         if model == "DDIM":
@@ -156,6 +161,27 @@ def _plot_kiviat_axis(ax, data, title, models, metric_labels):
                 closed_angles,
                 closed_values,
                 **style_highlight_scatter(model),
+            )
+
+        if model == "CFM":
+            fill_kwargs = dict(style_model_fill(model))
+            fill_kwargs["color"] = cfm_color
+            fill_kwargs["facecolor"] = cfm_color
+            fill_kwargs["edgecolor"] = cfm_color
+
+            scatter_kwargs = dict(style_highlight_scatter(model))
+            scatter_kwargs.pop("c", None)       # remove if present
+            scatter_kwargs["color"] = cfm_color # use only one
+
+            ax.fill(
+                closed_angles,
+                closed_values,
+                **fill_kwargs,
+            )
+            ax.scatter(
+                closed_angles,
+                closed_values,
+                **scatter_kwargs,
             )
 
     ax.set_ylim(0, 1)
@@ -178,7 +204,7 @@ def _plot_kiviat_axis(ax, data, title, models, metric_labels):
 def plot_kiviat_from_csv(
     csv_path,
     save_name=None,
-    models=("Coarse", "Bicubic", "Bilinear", "UNet", "DDIM"),
+    models=("Coarse", "Bicubic", "Bilinear", "UNet", "DDIM", "CFM"),
     metric_specs=DEFAULT_METRICS,
     temperature_name="temp",
     precipitation_name="precip",

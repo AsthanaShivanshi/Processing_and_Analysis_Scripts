@@ -5,7 +5,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --time=01-00:00:00
-#SBATCH --mem=64G
+#SBATCH --mem=128G
 #SBATCH --partition=cpu
 
 source ../Downscaling_Models/diffscaler.sh

@@ -4,17 +4,12 @@ import numpy as np
 from properscoring import crps_ensemble
 
 from pathlib import Path
-
-from joblib import Parallel, delayed, parallel
-
+from joblib import Parallel, delayed
 from skimage.metrics import structural_similarity
-
 from tqdm.auto import tqdm as tqdm_auto
-
 import seaborn as sns
 
 sns.set_style("whitegrid")
-
 
 # PWD: PAS
 
@@ -27,52 +22,56 @@ PROCESSING_ROOT = ANALYSIS_DIR.parent
 PROJECT_ROOT = PROCESSING_ROOT.parent
 
 
-def valid_mask_cell(mask, i, j):
+def _get_valid_cells(mask, N, E):
     if mask is None:
-        return True
-    value = mask.values[i, j]
-    return np.isfinite(value) and bool(value)
+        ii, jj = np.indices((N, E))
+        return np.column_stack((ii.ravel(), jj.ravel()))
+    m = mask.values
+    valid = np.isfinite(m) & (m != 0)
+    return np.argwhere(valid)
 
 
 # ----------------------------------------------- #
+# CRPS
 
-def gridwise_temporal_crps(obs, ens_pred, mask=None):
+def _crps_for_grid(i, j, obs_arr, ens_arr):
+    obs_series = obs_arr[:, i, j]
+    ens_series = ens_arr[:, :, i, j]  # (sample, time)
+
+    valid_time = np.isfinite(obs_series) & np.all(np.isfinite(ens_series), axis=0)
+    if np.sum(valid_time) < 2:
+        return np.nan
+
+    obs_valid = obs_series[valid_time]
+    ens_valid = ens_series[:, valid_time]
+    return np.nanmean(crps_ensemble(obs_valid, ens_valid.T))
+
+
+def gridwise_temporal_crps(obs, ens_pred, mask=None, n_jobs=-1):
     obs_arr = obs.values
     ens_arr = ens_pred.values if hasattr(ens_pred, "values") else ens_pred  # (sample, T, N, E)
 
     _, N, E = obs_arr.shape
-    crps_grid = np.full((N, E), np.nan)
+    cells = _get_valid_cells(mask, N, E)
 
-    for i in range(N):
-        for j in range(E):
-            if not valid_mask_cell(mask, i, j):
-                continue
+    results = Parallel(n_jobs=n_jobs, prefer="threads", require="sharedmem", batch_size=64)(
+        delayed(_crps_for_grid)(i, j, obs_arr, ens_arr) for i, j in cells
+    )
 
-            obs_series = obs_arr[:, i, j]
-            ens_series = ens_arr[:, :, i, j]
-
-            valid_time = np.isfinite(obs_series) & np.all(np.isfinite(ens_series), axis=0)
-
-            if np.sum(valid_time) < 2:
-                continue
-
-            obs_valid = obs_series[valid_time]
-            ens_valid = ens_series[:, valid_time]
-
-            crps_vals = crps_ensemble(obs_valid, ens_valid.T)
-            crps_grid[i, j] = np.nanmean(crps_vals)
-
+    crps_grid = np.full((N, E), np.nan, dtype=np.float64)
+    for (i, j), v in zip(cells, results):
+        crps_grid[i, j] = v
     return crps_grid
 
 
 # ----------------------------------------------- #
+# LSD
 
-def lsd_for_grid(i, j, obs_arr, pred_arr, n_fft=256, eps=1e-8):
+def _lsd_for_grid(i, j, obs_arr, pred_arr, n_fft=256, eps=1e-8):
     obs_series = obs_arr[:, i, j]
     pred_series = pred_arr[:, i, j]
 
     valid_time = np.isfinite(obs_series) & np.isfinite(pred_series)
-
     if np.sum(valid_time) < n_fft:
         return np.nan
 
@@ -93,34 +92,15 @@ def gridwise_temporal_lsd(obs, pred, n_fft=256, eps=1e-8, n_jobs=-1, mask=None):
     pred_arr = pred.values
     _, N, E = obs_arr.shape
 
-    tasks = []
-    for i in range(N):
-        for j in range(E):
-            if not valid_mask_cell(mask, i, j):
-                continue
-            tasks.append((i, j))
+    cells = _get_valid_cells(mask, N, E)
 
-    lsd_grid = np.full((N, E), np.nan)
-    original_callback = parallel.BatchCompletionCallBack
+    results = Parallel(n_jobs=n_jobs, prefer="threads", require="sharedmem", batch_size=64)(
+        delayed(_lsd_for_grid)(i, j, obs_arr, pred_arr, n_fft, eps) for i, j in cells
+    )
 
-    class TqdmBatchCompletionCallback(original_callback):
-        def __call__(self, *args, **kwargs):
-            tqdm_object.update(n=self.batch_size)
-            return super().__call__(*args, **kwargs)
-
-    try:
-        parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
-
-        with tqdm_auto(total=len(tasks), desc="Grid cells processed", unit="cell") as tqdm_object:
-            results = Parallel(n_jobs=n_jobs)(
-                delayed(lsd_for_grid)(i, j, obs_arr, pred_arr, n_fft, eps)
-                for i, j in tasks
-            )
-    finally:
-        parallel.BatchCompletionCallBack = original_callback
-
-    for idx, (i, j) in enumerate(tasks):
-        lsd_grid[i, j] = results[idx]
+    lsd_grid = np.full((N, E), np.nan, dtype=np.float64)
+    for (i, j), v in zip(cells, results):
+        lsd_grid[i, j] = v
 
     return lsd_grid
 
@@ -136,18 +116,14 @@ def spatial_mean_ts(da, mask=None):
 def rmse(a, b):
     diff = a - b
     rmse_grid = np.sqrt((diff ** 2).mean(dim="time", skipna=True))
-    spatial_mean_rmse = rmse_grid.mean(dim=["N", "E"], skipna=True).item()
-    return spatial_mean_rmse
+    return rmse_grid.mean(dim=["N", "E"], skipna=True).item()
 
-
-# ----------------------------------------------- #
 
 def mae(predictions, targets):
     diff = predictions - targets
-    return float(np.nanmean(np.abs(diff.values if hasattr(diff, "values") else diff)))
+    arr = diff.values if hasattr(diff, "values") else diff
+    return float(np.nanmean(np.abs(arr)))
 
-
-# ----------------------------------------------- #
 
 def psnr(predictions, targets):
     diff = predictions - targets
@@ -155,12 +131,10 @@ def psnr(predictions, targets):
     target_values = targets.values if hasattr(targets, "values") else targets
 
     mse = float(np.nanmean(diff_values ** 2))
-
     if mse == 0:
         return np.inf
 
     max_pixel_value = float(np.nanmax(target_values))
-
     if not np.isfinite(max_pixel_value) or max_pixel_value == 0:
         return np.nan
 
@@ -168,13 +142,13 @@ def psnr(predictions, targets):
 
 
 # ----------------------------------------------- #
+# PITD
 
-def pitd_for_grid(i, j, obs_arr, ens_arr, bins):
+def _pitd_for_grid(i, j, obs_arr, ens_arr, bins):
     obs_series = obs_arr[:, i, j]
     ens_series = ens_arr[:, :, i, j]
 
     valid_time = np.isfinite(obs_series) & np.all(np.isfinite(ens_series), axis=0)
-
     if np.sum(valid_time) < 2:
         return np.nan
 
@@ -183,21 +157,17 @@ def pitd_for_grid(i, j, obs_arr, ens_arr, bins):
 
     less_than = np.mean(ens_valid < obs_valid[None, :], axis=0)
     equal_to = np.mean(ens_valid == obs_valid[None, :], axis=0)
-
     pit = less_than + 0.5 * equal_to
 
     if pit.size == 0:
         return np.nan
 
-    bin_edges = np.linspace(0, 1, bins + 1)
-    pit_counts, _ = np.histogram(pit, bins=bin_edges)
-
+    pit_counts, _ = np.histogram(pit, bins=np.linspace(0, 1, bins + 1))
     if pit_counts.sum() == 0:
         return np.nan
 
     pit_prob = pit_counts / pit_counts.sum()
     uniform_prob = np.ones(bins) / bins
-
     return np.sqrt(np.mean((pit_prob - uniform_prob) ** 2))
 
 
@@ -206,58 +176,35 @@ def gridwise_temporal_pitd(obs, ens_pred, bins=20, n_jobs=-1, mask=None):
     ens_arr = ens_pred.values if hasattr(ens_pred, "values") else ens_pred
     _, N, E = obs_arr.shape
 
-    tasks = []
-    for i in range(N):
-        for j in range(E):
-            if not valid_mask_cell(mask, i, j):
-                continue
-            tasks.append((i, j))
+    cells = _get_valid_cells(mask, N, E)
 
-    pitd_grid_values = np.full((N, E), np.nan)
+    results = Parallel(n_jobs=n_jobs, prefer="threads", require="sharedmem", batch_size=64)(
+        delayed(_pitd_for_grid)(i, j, obs_arr, ens_arr, bins) for i, j in cells
+    )
 
-    original_callback = parallel.BatchCompletionCallBack
+    pitd_grid = np.full((N, E), np.nan, dtype=np.float64)
+    for (i, j), v in zip(cells, results):
+        pitd_grid[i, j] = v
 
-    class TqdmBatchCompletionCallback(original_callback):
-        def __call__(self, *args, **kwargs):
-            tqdm_object.update(n=self.batch_size)
-            return super().__call__(*args, **kwargs)
-
-    try:
-        parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
-
-        with tqdm_auto(total=len(tasks), desc="Grid cells processed", unit="cell") as tqdm_object:
-            results = Parallel(n_jobs=n_jobs)(
-                delayed(pitd_for_grid)(i, j, obs_arr, ens_arr, bins)
-                for i, j in tasks
-            )
-    finally:
-        parallel.BatchCompletionCallBack = original_callback
-
-    for idx, (i, j) in enumerate(tasks):
-        pitd_grid_values[i, j] = results[idx]
-
-    return pitd_grid_values
+    return pitd_grid
 
 
 # ----------------------------------------------- #
-
 # SSIM
 
 def framewise_ssim(obs, pred, mask2d=None):
     ssim_frames = []
+    spatial_mask = None
+    if mask2d is not None:
+        mv = mask2d.values
+        spatial_mask = np.isfinite(mv) & (mv != 0)
 
     for t in range(obs.shape[0]):
         obs_frame = obs.isel(time=t).values
         pred_frame = pred.isel(time=t).values
 
         finite_mask = np.isfinite(obs_frame) & np.isfinite(pred_frame)
-
-        if mask2d is not None:
-            mask_values = mask2d.values
-            spatial_mask = np.isfinite(mask_values) & (mask_values != 0)
-            valid_mask = spatial_mask & finite_mask
-        else:
-            valid_mask = finite_mask
+        valid_mask = finite_mask if spatial_mask is None else (spatial_mask & finite_mask)
 
         if not np.any(valid_mask):
             ssim_frames.append(np.nan)
@@ -275,11 +222,11 @@ def framewise_ssim(obs, pred, mask2d=None):
             continue
 
         try:
-            ssim = structural_similarity(obs_filled, pred_filled, data_range=data_range)
+            ssim_val = structural_similarity(obs_filled, pred_filled, data_range=data_range)
         except Exception:
-            ssim = np.nan
+            ssim_val = np.nan
 
-        ssim_frames.append(ssim)
+        ssim_frames.append(ssim_val)
 
     return np.nanmean(ssim_frames)
 
@@ -303,8 +250,12 @@ def prepare_ensemble_and_median(pred, pred_median=None):
     return pred_ens, pred_med
 
 
-# ----------------------------------------------- #
+def _load_all_models(models_dict):
+    for k in models_dict:
+        models_dict[k] = models_dict[k].load()
 
+
+# ----------------------------------------------- #
 # targets
 
 test_temp = (
@@ -317,9 +268,7 @@ test_precip = (
     .sel(time=slice("2015-01-01", "2023-12-31"))
 )
 
-
 # Masks
-
 Swiss_Mask_LR = xr.open_dataset(
     PROJECT_ROOT / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/Swiss_Mask_LR.nc"
 )["TabsD"]
@@ -328,9 +277,7 @@ Swiss_Mask_HR = xr.open_dataset(
     PROJECT_ROOT / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/Swiss_Mask_HR.nc"
 )["TabsD"]
 
-
 # Coarse
-
 test_coarse_temp = (
     xr.open_dataset(PROJECT_ROOT / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/TabsD_step2_coarse.nc")["TabsD"]
     .sel(time=slice("2015-01-01", "2023-12-31"))
@@ -346,7 +293,6 @@ test_coarse_temp_interp = test_coarse_temp.interp_like(Swiss_Mask_HR, method="ne
 test_coarse_precip_interp = test_coarse_precip.interp_like(Swiss_Mask_HR, method="nearest")
 
 # Bilinear files
-
 test_temp_bilinear = (
     xr.open_dataset(PROJECT_ROOT / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/TabsD_step3_interp_bilinear.nc")["TabsD"]
     .sel(time=slice("2015-01-01", "2023-12-31"))
@@ -357,11 +303,7 @@ test_precip_bilinear = (
     .sel(time=slice("2015-01-01", "2023-12-31"))
 ).where(Swiss_Mask_HR)
 
-test_temp_bilinear = test_temp_bilinear.where(Swiss_Mask_HR)
-test_precip_bilinear = test_precip_bilinear.where(Swiss_Mask_HR)
-
 # Bicubic files
-
 test_temp_bicubic = (
     xr.open_dataset(PROJECT_ROOT / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/TabsD_step3_interp_bicubic.nc")["TabsD"]
     .sel(time=slice("2015-01-01", "2023-12-31"))
@@ -372,12 +314,7 @@ test_precip_bicubic = (
     .sel(time=slice("2015-01-01", "2023-12-31"))
 ).where(Swiss_Mask_HR)
 
-test_temp_bicubic = test_temp_bicubic.where(Swiss_Mask_HR)
-test_precip_bicubic = test_precip_bicubic.where(Swiss_Mask_HR)
-
-
 # UNet
-
 test_temp_unet = (
     xr.open_dataset(PROJECT_ROOT / "Downscaling_Models/DDIM_conditional_derived/output_inference/unet_downscaled_test_set_2015_2023.nc")["temp"]
     .sel(time=slice("2015-01-01", "2023-12-31"))
@@ -388,11 +325,7 @@ test_precip_unet = (
     .sel(time=slice("2015-01-01", "2023-12-31"))
 ).where(Swiss_Mask_HR)
 
-test_temp_unet = test_temp_unet.where(Swiss_Mask_HR)
-test_precip_unet = test_precip_unet.where(Swiss_Mask_HR)
-
 # DDIM files
-
 test_temp_ddim = (
     xr.open_dataset(PROJECT_ROOT / "Downscaling_Models/DDIM_conditional_derived/output_inference/ddim_downscaled_test_set_S30_samples10_eta0.0.nc")["temp"]
     .sel(time=slice("2015-01-01", "2023-12-31"))
@@ -403,11 +336,7 @@ test_precip_ddim = (
     .sel(time=slice("2015-01-01", "2023-12-31"))
 ).where(Swiss_Mask_HR)
 
-test_temp_ddim = test_temp_ddim.where(Swiss_Mask_HR)
-test_precip_ddim = test_precip_ddim.where(Swiss_Mask_HR)
-
 # FM files
-
 test_temp_cfm = (
     xr.open_dataset(PROJECT_ROOT / "Downscaling_Models/FM_conditional_derived/output_inference/fm_downscaled_test_set_allframes_steps10_samples10.nc")["temp"]
     .sel(time=slice("2015-01-01", "2023-12-31"))
@@ -418,11 +347,7 @@ test_precip_cfm = (
     .sel(time=slice("2015-01-01", "2023-12-31"))
 ).where(Swiss_Mask_HR)
 
-test_temp_cfm = test_temp_cfm.where(Swiss_Mask_HR)
-test_precip_cfm = test_precip_cfm.where(Swiss_Mask_HR)
-
 # DDIM median files
-
 test_temp_ddim_median = (
     xr.open_dataset(PROJECT_ROOT / "Downscaling_Models/DDIM_conditional_derived/output_inference/ddim_downscaled_test_set_S30_samples10_eta0.0_median.nc")["temp"]
     .sel(time=slice("2015-01-01", "2023-12-31"))
@@ -434,7 +359,6 @@ test_precip_ddim_median = (
 ).where(Swiss_Mask_HR)
 
 # FM median files
-
 test_temp_cfm_median = (
     xr.open_dataset(PROJECT_ROOT / "Downscaling_Models/FM_conditional_derived/output_inference/fm_downscaled_test_set_allframes_steps10_samples10_median.nc")["temp"]
     .sel(time=slice("2015-01-01", "2023-12-31"))
@@ -444,9 +368,6 @@ test_precip_cfm_median = (
     xr.open_dataset(PROJECT_ROOT / "Downscaling_Models/FM_conditional_derived/output_inference/fm_downscaled_test_set_allframes_steps10_samples10_median.nc")["precip"]
     .sel(time=slice("2015-01-01", "2023-12-31"))
 ).where(Swiss_Mask_HR)
-
-test_temp_cfm_median = test_temp_cfm_median.where(Swiss_Mask_HR)
-test_precip_cfm_median = test_precip_cfm_median.where(Swiss_Mask_HR)
 
 # -------------------------------------------------------------------- #
 
@@ -472,6 +393,17 @@ models_precip = {
     "CFM_median": test_precip_cfm_median,
 }
 
+# Force one-time memory load (avoid repeated lazy I/O during metric loops)
+Swiss_Mask_HR = Swiss_Mask_HR.load()
+test_temp = test_temp.load()
+test_precip = test_precip.load()
+_load_all_models(models_temp)
+_load_all_models(models_precip)
+
+# Precompute obs spatial means once
+test_temp_spatial_mean = spatial_mean_ts(test_temp, Swiss_Mask_HR)
+test_precip_spatial_mean = spatial_mean_ts(test_precip, Swiss_Mask_HR)
+
 # -------------------------------------------------------------------- #
 
 metrics = {}
@@ -486,20 +418,15 @@ for name, pred in tqdm_auto(models_temp.items(), desc="Processing temp"):
     else:
         pred_ens, pred_med = prepare_ensemble_and_median(pred)
 
-    crps_grid = gridwise_temporal_crps(test_temp, pred_ens, mask=Swiss_Mask_HR)
-    pitd_grid = gridwise_temporal_pitd(test_temp, pred_ens, bins=20, mask=Swiss_Mask_HR)
-    lsd_grid = gridwise_temporal_lsd(test_temp, pred_med, mask=Swiss_Mask_HR)
+    crps_grid = gridwise_temporal_crps(test_temp, pred_ens, mask=Swiss_Mask_HR, n_jobs=-1)
+    pitd_grid = gridwise_temporal_pitd(test_temp, pred_ens, bins=20, mask=Swiss_Mask_HR, n_jobs=-1)
+    lsd_grid = gridwise_temporal_lsd(test_temp, pred_med, mask=Swiss_Mask_HR, n_jobs=-1)
     ssim_val = framewise_ssim(test_temp, pred_med, mask2d=Swiss_Mask_HR)
     rmse_val = rmse(test_temp, pred_med)
 
-    mae_val = mae(
-        spatial_mean_ts(pred_med, Swiss_Mask_HR),
-        spatial_mean_ts(test_temp, Swiss_Mask_HR),
-    )
-    psnr_val = psnr(
-        spatial_mean_ts(pred_med, Swiss_Mask_HR),
-        spatial_mean_ts(test_temp, Swiss_Mask_HR),
-    )
+    pred_spatial_mean = spatial_mean_ts(pred_med, Swiss_Mask_HR)
+    mae_val = mae(pred_spatial_mean, test_temp_spatial_mean)
+    psnr_val = psnr(pred_spatial_mean, test_temp_spatial_mean)
 
     metrics[f"{name}_temp"] = {
         "model": name,
@@ -525,20 +452,15 @@ for name, pred in tqdm_auto(models_precip.items(), desc="Processing precip"):
     else:
         pred_ens, pred_med = prepare_ensemble_and_median(pred)
 
-    crps_grid = gridwise_temporal_crps(test_precip, pred_ens, mask=Swiss_Mask_HR)
-    pitd_grid = gridwise_temporal_pitd(test_precip, pred_ens, bins=20, mask=Swiss_Mask_HR)
-    lsd_grid = gridwise_temporal_lsd(test_precip, pred_med, mask=Swiss_Mask_HR)
+    crps_grid = gridwise_temporal_crps(test_precip, pred_ens, mask=Swiss_Mask_HR, n_jobs=-1)
+    pitd_grid = gridwise_temporal_pitd(test_precip, pred_ens, bins=20, mask=Swiss_Mask_HR, n_jobs=-1)
+    lsd_grid = gridwise_temporal_lsd(test_precip, pred_med, mask=Swiss_Mask_HR, n_jobs=-1)
     ssim_val = framewise_ssim(test_precip, pred_med, mask2d=Swiss_Mask_HR)
     rmse_val = rmse(test_precip, pred_med)
 
-    mae_val = mae(
-        spatial_mean_ts(pred_med, Swiss_Mask_HR),
-        spatial_mean_ts(test_precip, Swiss_Mask_HR),
-    )
-    psnr_val = psnr(
-        spatial_mean_ts(pred_med, Swiss_Mask_HR),
-        spatial_mean_ts(test_precip, Swiss_Mask_HR),
-    )
+    pred_spatial_mean = spatial_mean_ts(pred_med, Swiss_Mask_HR)
+    mae_val = mae(pred_spatial_mean, test_precip_spatial_mean)
+    psnr_val = psnr(pred_spatial_mean, test_precip_spatial_mean)
 
     metrics[f"{name}_precip"] = {
         "model": name,
