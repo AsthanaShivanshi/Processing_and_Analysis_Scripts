@@ -8,12 +8,20 @@ import pandas as pd
 import xarray as xr
 
 import config
-from load_medians import ROW_ORDER, MASK_LEVEL, load_all_medians_masked, apply_mask_exact
-from ralsd import ralsd
-
-from rmse import _sanitize_obs, _subset_years , rmse_spatiotemporal
-
 from LHD import lhd
+from load_medians import ROW_ORDER, apply_mask_exact, load_all_medians_masked
+from ralsd import ralsd
+from rmse import rmse_spatiotemporal
+
+
+def _sanitize_obs(da: xr.DataArray, var: str) -> xr.DataArray:
+    da = da.squeeze(drop=True)
+    return da.clip(min=0) if var == "pr" else da
+
+
+def _subset_years(da: xr.DataArray, y1: int, y2: int) -> xr.DataArray:
+    yy = da["time"].dt.year
+    return da.where((yy >= y1) & (yy <= y2), drop=True)
 
 
 def main():
@@ -27,9 +35,7 @@ def main():
     p.add_argument("--obs_tas_var", default="TabsD")
     p.add_argument("--obs_pr_var", default="RhiresD")
     p.add_argument("--mask_hr_file", default=str(ds_root / "Swiss_Mask_HR.nc"))
-    p.add_argument("--mask_lr_file", default=str(ds_root / "Swiss_Mask_LR.nc"))
     p.add_argument("--mask_hr_var", default="TabsD")
-    p.add_argument("--mask_lr_var", default="TabsD")
     p.add_argument("--eval_start", type=int, default=2015)
     p.add_argument("--eval_end", type=int, default=2023)
     p.add_argument("--metrics_csv", default="Analysis/BCSR_Stats/Tables/distributional_dist_bcsr_Table_4.csv")
@@ -38,9 +44,7 @@ def main():
     loaded = load_all_medians_masked(
         ens_root=args.ens_root,
         mask_hr_file=args.mask_hr_file,
-        mask_lr_file=args.mask_lr_file,
         mask_hr_var=args.mask_hr_var,
-        mask_lr_var=args.mask_lr_var,
         eval_start=args.eval_start,
         eval_end=args.eval_end,
         variables=["tas", "pr"],
@@ -53,7 +57,7 @@ def main():
 
     rows = []
     for var in ["tas", "pr"]:
-        obs_eval_base = _subset_years(obs[var], args.eval_start, args.eval_end)
+        obs_eval = apply_mask_exact(_subset_years(obs[var], args.eval_start, args.eval_end), loaded.hr_mask)
 
         for baseline in ROW_ORDER:
             pred = loaded.data[var].get(baseline)
@@ -61,21 +65,14 @@ def main():
                 rows.append({"Baseline": baseline, "Variable": var, "RMSE": np.nan, "LHD": np.nan, "RALSD": np.nan})
                 continue
 
-            mask = loaded.lr_mask if MASK_LEVEL[baseline] == "lr" else loaded.hr_mask
-            obs_eval = apply_mask_exact(obs_eval_base, mask)
-
-            pred, obs_eval = xr.align(pred, obs_eval, join="inner")
-            if pred.sizes.get("time", 0) == 0:
-                rows.append({"Baseline": baseline, "Variable": var, "RMSE": np.nan, "LHD": np.nan, "RALSD": np.nan})
-                continue
-
+            pred, ref = xr.align(pred, obs_eval, join="inner")
             rows.append(
                 {
                     "Baseline": baseline,
                     "Variable": var,
-                    "RMSE": rmse_spatiotemporal(pred, obs_eval),
-                    "LHD": lhd(pred, obs_eval),
-                    "RALSD": ralsd(pred, obs_eval),
+                    "RMSE": rmse_spatiotemporal(pred, ref),
+                    "LHD": lhd(pred, ref),
+                    "RALSD": ralsd(pred, ref),
                 }
             )
 
