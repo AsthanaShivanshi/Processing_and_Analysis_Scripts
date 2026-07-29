@@ -19,21 +19,48 @@ def subset_season(da, season):
     return da.where(da.time.dt.season == season, drop=True)
 
 
+def _clip_negative_precip_da(da: xr.DataArray) -> xr.DataArray:
+    # Force physically valid precipitation values.
+    return da.clip(min=0).astype("float32")
+
+
+def _sanitize_frame(frame: np.ndarray) -> np.ndarray:
+    arr = np.nan_to_num(
+        np.asarray(frame, dtype=np.float32),
+        nan=0.0,
+        posinf=0.0,
+        neginf=0.0,
+    )
+    arr[arr < 0] = 0.0
+    return arr
+
+
 def sal_frame(obs_frame, pred_frame, thr_factor=1 / 15, thr_quantile=0.95):
-    obs_frame = np.nan_to_num(np.asarray(obs_frame, dtype=np.float32), nan=0.0)
-    pred_frame = np.nan_to_num(np.asarray(pred_frame, dtype=np.float32), nan=0.0)
+    obs_frame = _sanitize_frame(obs_frame)
+    pred_frame = _sanitize_frame(pred_frame)
 
     if obs_frame.max() == 0 and pred_frame.max() == 0:
         return np.nan, np.nan, np.nan
 
     try:
         S, A, L = sal(pred_frame, obs_frame, thr_factor=thr_factor, thr_quantile=thr_quantile)
-        if np.isfinite(S) and np.isfinite(A) and np.isfinite(L):
-            return float(S), float(A), float(L)
-    except Exception:
-        pass
 
-    return np.nan, np.nan, np.nan
+        if not (np.isfinite(S) and np.isfinite(A) and np.isfinite(L)):
+            return np.nan, np.nan, np.nan
+
+        # SAL theoretical bounds in pysteps:
+        # S in [-2, 2], A in [-2, 2], L (L1+L2) in [0, 2]
+        eps = 1e-6
+        if not (-2 - eps <= S <= 2 + eps):
+            return np.nan, np.nan, np.nan
+        if not (-2 - eps <= A <= 2 + eps):
+            return np.nan, np.nan, np.nan
+        if not (0 - eps <= L <= 2 + eps):
+            return np.nan, np.nan, np.nan
+
+        return float(S), float(A), float(L)
+    except Exception:
+        return np.nan, np.nan, np.nan
 
 
 def sal_timeseries(obs_arr, pred_arr, times=None, sample_id=None, thr_factor=1 / 15, thr_quantile=0.95):
@@ -57,7 +84,8 @@ def sal_timeseries(obs_arr, pred_arr, times=None, sample_id=None, thr_factor=1 /
 
 
 def sal_timeseries_ensemble(obs_arr, pred_arr, times=None, thr_factor=1 / 15, thr_quantile=0.95):
-    # pred_arr expected shape: (time, sample, N, E)
+
+
     raw_rows = []
     mean_rows = []
     median_rows = []
@@ -127,6 +155,16 @@ def _append_ensemble_rows(raw_rows, season, model_name, obs_s, ens_s):
     raw_rows.extend(median_e)
 
 
+def _load_precip(path, var_name, swiss_mask):
+    da = (
+        xr.open_dataset(path)[var_name]
+        .sel(time=slice("2015-01-01", "2023-12-31"))
+        .where(swiss_mask)
+        .load()
+    )
+    return _clip_negative_precip_da(da)
+
+
 def main():
     out_dir = "Analysis/Paper_Stats"
     os.makedirs(out_dir, exist_ok=True)
@@ -135,62 +173,40 @@ def main():
         "../Downscaling_Models/Dataset_Setup_I_Chronological_12km/Swiss_Mask_HR.nc"
     )["TabsD"].load()
 
-    obs = (
-        xr.open_dataset("data_1971_2023/HR_files_full/RhiresD_1971_2023.nc")["RhiresD"]
-        .sel(time=slice("2015-01-01", "2023-12-31"))
-        .where(swiss_mask)
-        .load()
-        .astype("float32")
+    obs = _load_precip(
+        "data_1971_2023/HR_files_full/RhiresD_1971_2023.nc",
+        "RhiresD",
+        swiss_mask,
     )
 
-    bilinear = (
-        xr.open_dataset(
-            "../Downscaling_Models/Dataset_Setup_I_Chronological_12km/RhiresD_step3_interp_bilinear.nc"
-        )["RhiresD"]
-        .sel(time=slice("2015-01-01", "2023-12-31"))
-        .where(swiss_mask)
-        .load()
-        .astype("float32")
+    bilinear = _load_precip(
+        "../Downscaling_Models/Dataset_Setup_I_Chronological_12km/RhiresD_step3_interp_bilinear.nc",
+        "RhiresD",
+        swiss_mask,
     )
 
-    bicubic = (
-        xr.open_dataset(
-            "../Downscaling_Models/Dataset_Setup_I_Chronological_12km/RhiresD_step3_interp_bicubic.nc"
-        )["RhiresD"]
-        .sel(time=slice("2015-01-01", "2023-12-31"))
-        .where(swiss_mask)
-        .load()
-        .astype("float32")
+    bicubic = _load_precip(
+        "../Downscaling_Models/Dataset_Setup_I_Chronological_12km/RhiresD_step3_interp_bicubic.nc",
+        "RhiresD",
+        swiss_mask,
     )
 
-    unet = (
-        xr.open_dataset(
-            "../Downscaling_Models/DDIM_conditional_derived/output_inference/unet_downscaled_test_set_2015_2023.nc"
-        )["precip"]
-        .sel(time=slice("2015-01-01", "2023-12-31"))
-        .where(swiss_mask)
-        .load()
-        .astype("float32")
+    unet = _load_precip(
+        "../Downscaling_Models/DDIM_conditional_derived/output_inference/unet_downscaled_test_set_2015_2023.nc",
+        "precip",
+        swiss_mask,
     )
 
-    ddim_ens = (
-        xr.open_dataset(
-            "../Downscaling_Models/DDIM_conditional_derived/output_inference/ddim_downscaled_test_set_S30_samples10_eta0.0.nc"
-        )["precip"]
-        .sel(time=slice("2015-01-01", "2023-12-31"))
-        .where(swiss_mask)
-        .load()
-        .astype("float32")
+    ddim_ens = _load_precip(
+        "../Downscaling_Models/DDIM_conditional_derived/output_inference/ddim_downscaled_test_set_S30_samples10_eta0.0.nc",
+        "precip",
+        swiss_mask,
     )
 
-    cfm_ens = (
-        xr.open_dataset(
-            "../Downscaling_Models/FM_conditional_derived/output_inference/fm_downscaled_test_set_allframes_steps10_samples10.nc"
-        )["precip"]
-        .sel(time=slice("2015-01-01", "2023-12-31"))
-        .where(swiss_mask)
-        .load()
-        .astype("float32")
+    cfm_ens = _load_precip(
+        "../Downscaling_Models/FM_conditional_derived/output_inference/fm_downscaled_test_set_allframes_steps10_samples10.nc",
+        "precip",
+        swiss_mask,
     )
 
     models_det = {
@@ -221,7 +237,7 @@ def main():
         _append_ensemble_rows(raw_rows, season, "CFM", obs_s, cfm_s)
 
     sal_raw_df = pd.DataFrame(raw_rows)
-    sal_raw_df.to_csv(f"{out_dir}/SAL_precip_seasonal_daily_values_including_cfm.csv", index=False)
+    sal_raw_df.to_csv(f"{out_dir}/SAL_precip_seasonal_daily_values.csv", index=False)
 
     print(sal_raw_df.head().to_string(index=False))
 
