@@ -16,11 +16,9 @@ DEFAULT_METRICS = (
 
 def _find_column(df, candidates):
     columns = {col.strip().lower(): col for col in df.columns}
-
     for candidate in candidates:
         if candidate.lower() in columns:
             return columns[candidate.lower()]
-
     raise ValueError(
         f"Could not find any of {candidates}. "
         f"Available columns: {df.columns.tolist()}"
@@ -28,38 +26,21 @@ def _find_column(df, candidates):
 
 
 def _find_metric_column(df, metric):
-
-
     metric = metric.lower()
-
     for col in df.columns:
-        clean_col = (
-            col.replace("↓", "")
-            .replace("↑", "")
-            .strip()
-            .lower()
-        )
+        clean_col = col.replace("↓", "").replace("↑", "").strip().lower()
         if clean_col == metric:
             return col
-
     for col in df.columns:
         if metric in col.lower():
             return col
-
     raise ValueError(
         f"Could not find metric '{metric}'. "
         f"Available columns: {df.columns.tolist()}"
     )
 
 
-def _extract_variable_data(
-    df,
-    variable,
-    models,
-    metric_specs,
-    model_col,
-    variable_col,
-):
+def _extract_variable_data(df, variable, models, metric_specs, model_col, variable_col):
     variable_mask = (
         df[variable_col]
         .astype(str)
@@ -67,53 +48,25 @@ def _extract_variable_data(
         .str.lower()
         .str.contains(variable.lower(), na=False)
     )
-
     subset = df.loc[variable_mask].copy()
-
-    if subset.empty:
-        raise ValueError(f"No rows found for variable '{variable}'.")
-
-    subset["_model_key"] = (
-        subset[model_col].astype(str).str.strip().str.lower()
-    )
+    subset["_model_key"] = subset[model_col].astype(str).str.strip().str.lower()
     model_keys = [model.lower() for model in models]
     subset = subset.set_index("_model_key").reindex(model_keys)
 
-    missing_models = [
-        model
-        for model, key in zip(models, model_keys)
-        if key not in df[model_col].astype(str).str.strip().str.lower().values
-    ]
-    if missing_models:
-        raise ValueError(
-            f"Missing models for '{variable}': {missing_models}"
-        )
-
     metric_values = []
-
     for metric_name, _ in metric_specs:
         metric_col = _find_metric_column(df, metric_name)
         values = pd.to_numeric(subset[metric_col], errors="coerce").to_numpy()
-
         if metric_name.upper() == "SSIM":
             values = 1 - values
-
         metric_values.append(values)
 
     data = np.asarray(metric_values, dtype=float).T
-
-    if np.isnan(data).any():
-        raise ValueError(
-            f"Missing or non-numeric metric values for '{variable}'."
-        )
-
     return data
 
 
 def _normalise_metrics(data):
-
     maxima = np.nanmax(data, axis=0)
-
     return np.divide(
         data,
         maxima,
@@ -122,19 +75,11 @@ def _normalise_metrics(data):
     )
 
 
-def _plot_kiviat_axis(ax, data, title, models, metric_labels):
-
+def _plot_kiviat_axis(ax, data, models, metric_labels):
     number_of_metrics = len(metric_labels)
-
-    angles = np.linspace(
-        0,
-        2 * np.pi,
-        number_of_metrics,
-        endpoint=False,
-    ).tolist()
+    angles = np.linspace(0, 2 * np.pi, number_of_metrics, endpoint=False).tolist()
     closed_angles = angles + angles[:1]
-
-    cfm_color = "#b6d627"  
+    cfm_color = "#b6d627"
 
     for index, model in enumerate(models):
         values = data[index].tolist()
@@ -144,24 +89,11 @@ def _plot_kiviat_axis(ax, data, title, models, metric_labels):
         if model == "CFM":
             line_kwargs["color"] = cfm_color
 
-        ax.plot(
-            closed_angles,
-            closed_values,
-            label=model,
-            **line_kwargs,
-        )
+        ax.plot(closed_angles, closed_values, label=model, **line_kwargs)
 
         if model == "DDIM":
-            ax.fill(
-                closed_angles,
-                closed_values,
-                **style_model_fill(model),
-            )
-            ax.scatter(
-                closed_angles,
-                closed_values,
-                **style_highlight_scatter(model),
-            )
+            ax.fill(closed_angles, closed_values, **style_model_fill(model))
+            ax.scatter(closed_angles, closed_values, **style_highlight_scatter(model))
 
         if model == "CFM":
             fill_kwargs = dict(style_model_fill(model))
@@ -170,19 +102,11 @@ def _plot_kiviat_axis(ax, data, title, models, metric_labels):
             fill_kwargs["edgecolor"] = cfm_color
 
             scatter_kwargs = dict(style_highlight_scatter(model))
-            scatter_kwargs.pop("c", None)       # remove if present
-            scatter_kwargs["color"] = cfm_color # use only one
+            scatter_kwargs.pop("c", None)
+            scatter_kwargs["color"] = cfm_color
 
-            ax.fill(
-                closed_angles,
-                closed_values,
-                **fill_kwargs,
-            )
-            ax.scatter(
-                closed_angles,
-                closed_values,
-                **scatter_kwargs,
-            )
+            ax.fill(closed_angles, closed_values, **fill_kwargs)
+            ax.scatter(closed_angles, closed_values, **scatter_kwargs)
 
     ax.set_ylim(0, 1)
     ax.set_yticks([0.25, 0.50, 0.75, 1.00])
@@ -190,15 +114,9 @@ def _plot_kiviat_axis(ax, data, title, models, metric_labels):
     ax.set_rlabel_position(90)
 
     ax.set_xticks(angles)
-    ax.set_xticklabels(
-        metric_labels,
-        fontsize=12,
-        fontweight="bold",
-    )
-
+    ax.set_xticklabels(metric_labels, fontsize=12, fontweight="bold")
     ax.tick_params(axis="x", pad=20)
     ax.grid(True, linestyle="--", linewidth=1, alpha=0.65)
-    ax.set_title(title, fontsize=18, fontweight="bold", y=1.15)
 
 
 def plot_kiviat_from_csv(
@@ -208,19 +126,12 @@ def plot_kiviat_from_csv(
     metric_specs=DEFAULT_METRICS,
     temperature_name="temp",
     precipitation_name="precip",
-    Title=None,
 ):
     df = pd.read_csv(csv_path)
     df.columns = df.columns.str.strip()
 
-    model_col = _find_column(
-        df,
-        ["model", "models", "method", "methods"],
-    )
-    variable_col = _find_column(
-        df,
-        ["var", "variable", "variables"],
-    )
+    model_col = _find_column(df, ["model", "models", "method", "methods"])
+    variable_col = _find_column(df, ["var", "variable", "variables"])
 
     temperature = _extract_variable_data(
         df,
@@ -251,30 +162,11 @@ def plot_kiviat_from_csv(
         subplot_kw={"polar": True},
     )
 
-    _plot_kiviat_axis(
-        axes[0],
-        temperature,
-        "Temperature",
-        models,
-        metric_labels,
-    )
-    _plot_kiviat_axis(
-        axes[1],
-        precipitation,
-        "Precipitation",
-        models,
-        metric_labels,
-    )
+    _plot_kiviat_axis(axes[0], temperature, models, metric_labels)
+    _plot_kiviat_axis(axes[1], precipitation, models, metric_labels)
 
     handles, labels = axes[0].get_legend_handles_labels()
     add_bottom_legend(fig, handles, labels, ncol=len(models))
-
-    fig.suptitle(
-        Title,
-        fontsize=20,
-        fontweight="bold",
-        y=1,
-    )
 
     fig.tight_layout(rect=[0, 0.10, 1, 0.96])
 

@@ -3,9 +3,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
@@ -34,19 +31,22 @@ def _daily_spatial_mean(da: xr.DataArray) -> xr.DataArray:
     return da.mean(dim=[d for d in da.dims if d != "time"], skipna=True)
 
 
-def _remove_seasonal_mean(ts: xr.DataArray) -> xr.DataArray:
-    clim = ts.groupby("time.season").mean("time", skipna=True)
-    return ts.groupby("time.season") - clim
-
-
-def _seasonal_spearman(tas_ts: xr.DataArray, pr_ts: xr.DataArray) -> dict[str, float]:
+def _seasonal_anomaly_spearman(tas_ts: xr.DataArray, pr_ts: xr.DataArray) -> dict[str, float]:
     tas_ts, pr_ts = xr.align(tas_ts, pr_ts, join="inner")
     out: dict[str, float] = {}
+
     for s in SEASONS:
-        t = tas_ts.where(tas_ts.time.dt.season == s, drop=True).values
-        p = pr_ts.where(pr_ts.time.dt.season == s, drop=True).values
-        m = np.isfinite(t) & np.isfinite(p)
-        out[s] = float(spearmanr(t[m], p[m]).correlation) if m.sum() >= 3 else np.nan
+        t = tas_ts.where(tas_ts.time.dt.season == s, drop=True)
+        p = pr_ts.where(pr_ts.time.dt.season == s, drop=True)
+
+        t_anom = t - t.mean("time", skipna=True)
+        p_anom = p - p.mean("time", skipna=True)
+
+        tv = t_anom.values
+        pv = p_anom.values
+        m = np.isfinite(tv) & np.isfinite(pv)
+        out[s] = float(spearmanr(tv[m], pv[m]).correlation) if m.sum() >= 3 else np.nan
+
     return out
 
 
@@ -81,9 +81,9 @@ def main() -> None:
     obs_tas = apply_mask_exact(_subset_years(_sanitize(obs_tas, "tas"), args.eval_start, args.eval_end), loaded.hr_mask)
     obs_pr = apply_mask_exact(_subset_years(_sanitize(obs_pr, "pr"), args.eval_start, args.eval_end), loaded.hr_mask)
 
-    obs_corr = _seasonal_spearman(
-        _remove_seasonal_mean(_daily_spatial_mean(obs_tas)),
-        _remove_seasonal_mean(_daily_spatial_mean(obs_pr)),
+    obs_corr = _seasonal_anomaly_spearman(
+        _daily_spatial_mean(obs_tas),
+        _daily_spatial_mean(obs_pr),
     )
 
     corr = pd.DataFrame(index=TABLE_ROWS, columns=SEASONS, dtype=float)
@@ -92,47 +92,19 @@ def main() -> None:
         pr = loaded.data.get("pr", {}).get(b)
         if tas is None or pr is None:
             continue
-        vals = _seasonal_spearman(
-            _remove_seasonal_mean(_daily_spatial_mean(tas)),
-            _remove_seasonal_mean(_daily_spatial_mean(pr)),
+        vals = _seasonal_anomaly_spearman(
+            _daily_spatial_mean(tas),
+            _daily_spatial_mean(pr),
         )
         for s in SEASONS:
             corr.loc[b, s] = vals[s]
 
-    corr.loc["Observations", SEASONS] = [obs_corr[s] for s in SEASONS]
+    corr.loc["MCH (spatial analysis)", SEASONS] = [obs_corr[s] for s in SEASONS]
 
     out_csv = Path(args.out_csv)
     out_csv.parent.mkdir(parents=True, exist_ok=True)
-    corr.to_csv(out_csv, float_format="%.4f")
-
-    colors = plt.get_cmap("tab10")(np.linspace(0, 1, len(TABLE_ROWS)))
-    fig, axes = plt.subplots(2, 2, figsize=(13, 7.5), sharey=True)
-    axes = axes.ravel()
-    x = np.arange(len(TABLE_ROWS))
-
-    for i, s in enumerate(SEASONS):
-        ax = axes[i]
-        ax.axhline(obs_corr[s], color="black", lw=2)
-        for j, b in enumerate(TABLE_ROWS):
-            ax.scatter(j, corr.loc[b, s], color=colors[j], s=40)
-        ax.set_title(s)
-        ax.set_xticks(x)
-        ax.set_xticklabels(TABLE_ROWS, rotation=55, ha="right", fontsize=8)
-        ax.set_ylabel("Spearman r (tas vs pr)")
-        ax.grid(alpha=0.25)
-
-    handles = [plt.Line2D([0], [0], color="black", lw=2, label="Observations")]
-    handles += [plt.Line2D([0], [0], marker="o", linestyle="", color=colors[j], label=TABLE_ROWS[j]) for j in range(len(TABLE_ROWS))]
-    fig.legend(handles=handles, loc="upper center", ncol=3, frameon=False)
-    fig.tight_layout(rect=[0, 0, 1, 0.92])
-
-    out_png = Path(args.out_png)
-    out_png.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_png, dpi=400)
-    plt.close(fig)
-
+    corr.to_csv(out_csv, float_format="%.3f")
     print(f"[ok] wrote {out_csv}")
-    print(f"[ok] wrote {out_png}")
 
 
 if __name__ == "__main__":

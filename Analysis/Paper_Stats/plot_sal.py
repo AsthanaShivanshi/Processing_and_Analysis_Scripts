@@ -191,12 +191,6 @@ def plot_sal_box_seasonal(
         ax.tick_params(axis="y", labelsize=y_tick_fontsize)
         ax.grid(axis="y", alpha=0.25)
 
-    fig.suptitle(
-        f"Pooled framewise SAL values for {season_label} (test set, 2015-2023)",
-        y=1.04,
-        fontsize=suptitle_fontsize,
-        fontweight="bold",
-    )
     fig.tight_layout()
 
     if save_path is not None:
