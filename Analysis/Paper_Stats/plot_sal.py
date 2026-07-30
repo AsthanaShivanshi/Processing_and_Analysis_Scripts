@@ -29,6 +29,28 @@ _ENSEMBLE_COLORS = {
 }
 
 
+def _resolve_label(model_norm: str, type_norm: str, model_raw: str) -> str:
+    key = (model_norm, type_norm)
+    if key in _ENSEMBLE_LABELS:
+        return _ENSEMBLE_LABELS[key]
+    return str(model_raw).strip()
+
+
+def _resolve_color(model_norm: str, type_norm: str, label: str) -> str:
+    key = (model_norm, type_norm)
+    if key in _ENSEMBLE_COLORS:
+        return _ENSEMBLE_COLORS[key]
+
+    l = label.strip().lower()
+    if l == "bilinear":
+        return get_model_color("Bilinear")
+    if l == "bicubic":
+        return get_model_color("Bicubic")
+    if l == "unet":
+        return get_model_color("UNet")
+    return "#808080"
+
+
 def plot_sal_box_seasonal(
     csv_path,
     season="JJA",
@@ -51,6 +73,7 @@ def plot_sal_box_seasonal(
     x_tick_rotation=30,
     plot_kind="violin",
     x_spacing=1.25,
+    combine_mam_jja=False,
 ):
     apply_paper_style()
 
@@ -59,112 +82,122 @@ def plot_sal_box_seasonal(
     df["model_norm"] = df["model"].astype(str).str.strip().str.lower()
     df["type_norm"] = df["type"].astype(str).str.strip().str.lower()
 
-    season = str(season).strip().upper()
-    df = df[df["season"] == season].copy()
+    if combine_mam_jja:
+        if "time" in df.columns:
+            df["time"] = pd.to_datetime(df["time"], errors="coerce")
+            df = df[df["time"].dt.month.isin([3, 4, 5, 6, 7, 8])].copy()
+            season_label = "Mar-Aug"
+        else:
+            df = df[df["season"].isin(["MAM", "JJA"])].copy()
+            season_label = "MAM+JJA"
+    else:
+        season = str(season).strip().upper()
+        df = df[df["season"] == season].copy()
+        season_label = season
 
     if df.empty:
-        raise ValueError(f"No rows found for season='{season}' in {csv_path}")
+        raise ValueError(f"No rows found for requested period in {csv_path}")
 
-    requested = {str(m).strip().lower() for m in models}
+    requested = [str(m).strip() for m in models]
+    requested_norm = {m.lower() for m in requested}
+
     entries = []
+    grouped = df.groupby(["model_norm", "type_norm", "model"], dropna=False)
 
-    for m in models:
-        m_clean = str(m).strip()
-        m_norm = m_clean.lower()
-        if "ddim" in m_norm or "cfm" in m_norm:
+    for (model_norm, type_norm, model_raw), g in grouped:
+        label = _resolve_label(model_norm, type_norm, model_raw)
+        if label.lower() not in requested_norm:
             continue
-        d = df[(df["model_norm"] == m_norm) & (df["type_norm"] == "deterministic")]
-        if not d.empty:
-            entries.append((m_clean, d, get_model_color(m_clean)))
 
-    for (model_norm, type_norm), label in _ENSEMBLE_LABELS.items():
-        if label.lower() not in requested:
+        vals = {}
+        valid = True
+        for metric in ("S", "A", "L"):
+            arr = pd.to_numeric(g[metric], errors="coerce").to_numpy(dtype=float)
+            arr = arr[np.isfinite(arr)]
+            if arr.size == 0:
+                valid = False
+                break
+            vals[metric] = arr
+
+        if not valid:
             continue
-        d = df[(df["model_norm"] == model_norm) & (df["type_norm"] == type_norm)]
-        if not d.empty:
-            entries.append((label, d, _ENSEMBLE_COLORS[(model_norm, type_norm)]))
+
+        entries.append(
+            {
+                "label": label,
+                "color": _resolve_color(model_norm, type_norm, label),
+                "S": vals["S"],
+                "A": vals["A"],
+                "L": vals["L"],
+            }
+        )
+
+    order = {m.lower(): i for i, m in enumerate(requested)}
+    entries.sort(key=lambda e: order.get(e["label"].lower(), 10_000))
 
     if not entries:
-        raise ValueError(f"No plottable groups found for season='{season}'")
+        raise ValueError("No model entries left after filtering.")
 
-    labels = [e[0] for e in entries]
-    metrics = ["S", "A", "L"]
+    fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi, sharex=True)
+    x = np.arange(len(entries)) * x_spacing
+    labels = [e["label"] for e in entries]
 
-    plot_kind = str(plot_kind).strip().lower()
-    if plot_kind not in {"violin", "box"}:
-        raise ValueError("plot_kind must be either 'violin' or 'box'")
+    for ax, metric in zip(axes, ("S", "A", "L")):
+        for i, e in enumerate(entries):
+            y = e[metric]
+            color = e["color"]
 
-    fig, axes = plt.subplots(1, 3, figsize=figsize, constrained_layout=True)
+            if plot_kind == "box":
+                bp = ax.boxplot(
+                    [y],
+                    positions=[x[i]],
+                    widths=0.75,
+                    patch_artist=True,
+                    showfliers=False,
+                    medianprops={"color": "black", "linewidth": 1.2},
+                )
+                for patch in bp["boxes"]:
+                    patch.set_facecolor(color)
+                    patch.set_alpha(0.85)
+                    patch.set_edgecolor("black")
+                    patch.set_linewidth(0.8)
+                for w in bp["whiskers"] + bp["caps"]:
+                    w.set_color("black")
+                    w.set_linewidth(0.8)
+            else:
+                vp = ax.violinplot(
+                    [y],
+                    positions=[x[i]],
+                    widths=0.9,
+                    showmeans=False,
+                    showmedians=False,
+                    showextrema=False,
+                )
+                for b in vp["bodies"]:
+                    b.set_facecolor(color)
+                    b.set_edgecolor("black")
+                    b.set_alpha(0.8)
+                    b.set_linewidth(0.6)
 
-    for ax, metric in zip(axes, metrics):
-        data = [e[1][metric].dropna().values for e in entries]
-        positions = np.arange(len(labels)) * x_spacing + 1
+                q1, med, q3 = np.percentile(y, [25, 50, 75])
+                ax.vlines(x[i], q1, q3, color="black", linewidth=1.3, zorder=3)
+                ax.scatter(x[i], med, color="black", s=14, zorder=4)
 
-        if plot_kind == "violin":
-            vp = ax.violinplot(
-                data,
-                positions=positions,
-                widths=min(0.8, 0.75 * x_spacing),
-                showmeans=False,
-                showmedians=False,
-                showextrema=False,
-            )
-
-            for body, (_, _, color) in zip(vp["bodies"], entries):
-                body.set_facecolor(color)
-                body.set_edgecolor(color)
-                body.set_alpha(0.25)
-                body.set_linewidth(1.2)
-
-            for x, vals in zip(positions, data):
-                if len(vals) == 0:
-                    continue
-                q1, med, q3 = np.percentile(vals, [25, 50, 75])
-                ax.vlines(x, q1, q3, color="black", linewidth=2.0, zorder=3)
-                ax.scatter([x], [med], color="black", s=18, zorder=4)
-
-        else:
-            bp = ax.boxplot(
-                data,
-                positions=positions,
-                widths=min(0.6, 0.55 * x_spacing),
-                patch_artist=True,
-                showfliers=False,
-                medianprops={"color": "black", "linewidth": 1.5},
-                whiskerprops={"linewidth": 1.2},
-                capprops={"linewidth": 1.2},
-            )
-
-            for patch, (_, _, color) in zip(bp["boxes"], entries):
-                patch.set_facecolor(color)
-                patch.set_alpha(0.30)
-                patch.set_edgecolor(color)
-                patch.set_linewidth(1.5)
-
-        ax.set_title("")
-        ax.set_xticks(positions)
-        ax.set_xticklabels(labels, fontsize=x_tick_fontsize, fontweight="bold")
-        ax.set_ylabel(_METRIC_LABELS[metric], fontsize=y_label_fontsize, fontweight="bold")
-        ax.axhline(0.0, color="black", linestyle="--", linewidth=1.0, alpha=0.7)
-
-        ax.tick_params(axis="x", labelsize=x_tick_fontsize, rotation=x_tick_rotation, pad=8)
+        ax.axhline(0.0, color="black", linestyle="--", linewidth=0.9, alpha=0.8)
+        ax.set_title(_METRIC_LABELS[metric], fontsize=y_label_fontsize)
+        ax.set_ylabel(metric, fontsize=y_label_fontsize)
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=x_tick_rotation, ha="right", fontsize=x_tick_fontsize)
         ax.tick_params(axis="y", labelsize=y_tick_fontsize)
-
-        for tick in ax.get_xticklabels():
-            tick.set_horizontalalignment("right")
-            tick.set_fontweight("bold")
-
-        ax.grid(axis="y", linestyle="--", linewidth=1.0, alpha=0.3)
-        ax.set_axisbelow(True)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
+        ax.grid(axis="y", alpha=0.25)
 
     fig.suptitle(
-        f"Pooled framewise SAL values for {season} (test set, 2015-2023)",
+        f"Pooled framewise SAL values for {season_label} (test set, 2015-2023)",
         y=1.04,
         fontsize=suptitle_fontsize,
         fontweight="bold",
     )
+    fig.tight_layout()
 
     if save_path is not None:
         save_paper_figure(fig, save_path)
