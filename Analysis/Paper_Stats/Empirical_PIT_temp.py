@@ -76,7 +76,6 @@ for eta, ds_path in zip(etas, downscaled_paths):
     ax.plot([0, 1], [1, 1], color='gray', linestyle='-', linewidth=2)
     ax.set_xlabel("PIT")
     ax.set_ylabel("Density")
-    ax.set_title("PIT Histogram of Spatial Means")
     ax.annotate(f"Time steps: {n_timesteps}\nSamples: {n_samples}",
                 xy=(0.99, 0.97), xycoords='axes fraction', ha='right', va='top',
                 fontsize=11, bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.7))

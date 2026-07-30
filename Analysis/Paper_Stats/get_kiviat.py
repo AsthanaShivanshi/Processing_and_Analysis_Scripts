@@ -6,10 +6,10 @@ from plotstyle import add_bottom_legend, save_paper_figure
 
 DEFAULT_METRICS = (
     ("CRPS", "CRPS ↓"),
-    ("LSD", "LSD (median) ↓"),
-    ("SSIM", "1-SSIM (median) ↓"),
-    ("RMSE", "RMSE (median) ↓"),
-    ("MAE", "MAE (median) ↓"),
+    ("LSD", " temporal-LSD (m) ↓"),
+    ("SSIM", "1-SSIM (m) ↓"),
+    ("RMSE", "RMSE (m) ↓"),
+    ("MAE", "MAE (m) ↓"),
     ("PITD", "PITD ↓"),
 )
 
@@ -168,7 +168,10 @@ def plot_kiviat_from_csv(
     handles, labels = axes[0].get_legend_handles_labels()
     add_bottom_legend(fig, handles, labels, ncol=len(models))
 
-    fig.tight_layout(rect=[0, 0.10, 1, 0.96])
+
+    fig.legends[-1].set_bbox_to_anchor((0.5, 0.07), transform=fig.transFigure)
+
+    fig.tight_layout(rect=[0, 0.05, 1, 0.96])
 
     if save_name is not None:
         save_paper_figure(fig, save_name)
