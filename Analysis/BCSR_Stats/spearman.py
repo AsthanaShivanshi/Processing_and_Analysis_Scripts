@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import warnings
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import xarray as xr
-from scipy.stats import spearmanr
+from scipy.stats import ConstantInputWarning, spearmanr
 
 import config
 from load_medians import apply_mask_exact, load_all_medians_masked, _subset_years, _sanitize
@@ -27,25 +28,93 @@ TABLE_ROWS = [
 ]
 
 
-def _daily_spatial_mean(da: xr.DataArray) -> xr.DataArray:
-    return da.mean(dim=[d for d in da.dims if d != "time"], skipna=True)
+def _spatial_mean_all_dims(da: xr.DataArray) -> float:
+    dims = list(da.dims)
+    if not dims:
+        v = float(da.values)
+        return v if np.isfinite(v) else np.nan
+    return float(da.mean(dim=dims, skipna=True).values)
 
 
-def _seasonal_anomaly_spearman(tas_ts: xr.DataArray, pr_ts: xr.DataArray) -> dict[str, float]:
-    tas_ts, pr_ts = xr.align(tas_ts, pr_ts, join="inner")
+def _daily_climatology(da: xr.DataArray) -> xr.DataArray:
+    if "time" not in da.dims:
+        return da
+
+    clim = da.groupby("time.dayofyear").mean("time", skipna=True)
+    return clim.reindex(dayofyear=np.arange(1, 367))
+
+
+def _season_for_doy(doy: int) -> str:
+    if doy is None:
+        return np.nan
+
+    date = pd.Timestamp(year=2000, month=1, day=1) + pd.Timedelta(days=doy - 1)
+    month = date.month
+    if month in [12, 1, 2]:
+        return "DJF"
+    if month in [3, 4, 5]:
+        return "MAM"
+    if month in [6, 7, 8]:
+        return "JJA"
+    return "SON"
+
+
+def _spearman_map_over_dayofyear(a: xr.DataArray, b: xr.DataArray) -> xr.DataArray:
+    def _rho_1d(x: np.ndarray, y: np.ndarray) -> float:
+        x = np.asarray(x).ravel()
+        y = np.asarray(y).ravel()
+        m = np.isfinite(x) & np.isfinite(y)
+        if m.sum() < 3:
+            return np.nan
+
+        x = x[m]
+        y = y[m]
+
+        if x.size < 2 or y.size < 2:
+            return np.nan
+
+        if np.nanstd(x) <= 1e-12 or np.nanstd(y) <= 1e-12:
+            return np.nan
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ConstantInputWarning)
+            r = spearmanr(x, y).statistic
+
+        return float(r) if np.isfinite(r) else np.nan
+
+    return xr.apply_ufunc(
+        _rho_1d,
+        a,
+        b,
+        input_core_dims=[["dayofyear"], ["dayofyear"]],
+        output_core_dims=[[]],
+        vectorize=True,
+        dask="parallelized",
+        output_dtypes=[float],
+    )
+
+
+def _seasonal_daily_climatology_spearman_gridwise_spatial_mean(
+    tas_da: xr.DataArray, pr_da: xr.DataArray
+) -> dict[str, float]:
+    tas_da, pr_da = xr.align(tas_da, pr_da, join="inner")
+
+    clim_tas = _daily_climatology(tas_da)
+    clim_pr = _daily_climatology(pr_da)
+
     out: dict[str, float] = {}
 
     for s in SEASONS:
-        t = tas_ts.where(tas_ts.time.dt.season == s, drop=True)
-        p = pr_ts.where(pr_ts.time.dt.season == s, drop=True)
+        doy_vals = [int(d) for d in clim_tas["dayofyear"].values if _season_for_doy(int(d)) == s]
+        if not doy_vals:
+            out[s] = np.nan
+            continue
 
-        t_anom = t - t.mean("time", skipna=True)
-        p_anom = p - p.mean("time", skipna=True)
+        tas_s = clim_tas.sel(dayofyear=doy_vals)
+        pr_s = clim_pr.sel(dayofyear=doy_vals)
 
-        tv = t_anom.values
-        pv = p_anom.values
-        m = np.isfinite(tv) & np.isfinite(pv)
-        out[s] = float(spearmanr(tv[m], pv[m]).correlation) if m.sum() >= 3 else np.nan
+        rho_map = _spearman_map_over_dayofyear(tas_s, pr_s)
+        out[s] = _spatial_mean_all_dims(rho_map)
 
     return out
 
@@ -81,10 +150,7 @@ def main() -> None:
     obs_tas = apply_mask_exact(_subset_years(_sanitize(obs_tas, "tas"), args.eval_start, args.eval_end), loaded.hr_mask)
     obs_pr = apply_mask_exact(_subset_years(_sanitize(obs_pr, "pr"), args.eval_start, args.eval_end), loaded.hr_mask)
 
-    obs_corr = _seasonal_anomaly_spearman(
-        _daily_spatial_mean(obs_tas),
-        _daily_spatial_mean(obs_pr),
-    )
+    obs_corr = _seasonal_daily_climatology_spearman_gridwise_spatial_mean(obs_tas, obs_pr)
 
     corr = pd.DataFrame(index=TABLE_ROWS, columns=SEASONS, dtype=float)
     for b in TABLE_ROWS:
@@ -92,10 +158,7 @@ def main() -> None:
         pr = loaded.data.get("pr", {}).get(b)
         if tas is None or pr is None:
             continue
-        vals = _seasonal_anomaly_spearman(
-            _daily_spatial_mean(tas),
-            _daily_spatial_mean(pr),
-        )
+        vals = _seasonal_daily_climatology_spearman_gridwise_spatial_mean(tas, pr)
         for s in SEASONS:
             corr.loc[b, s] = vals[s]
 
