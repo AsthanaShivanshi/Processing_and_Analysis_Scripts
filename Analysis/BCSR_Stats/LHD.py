@@ -6,16 +6,25 @@ import xarray as xr
 from rmse import _daily_climatology
 
 
-def lhd(pred: xr.DataArray, ref: xr.DataArray, bins=50, min_count=10, eps=1e-12) -> float:
-    p = np.asarray(pred.values).ravel()
-    r = np.asarray(ref.values).ravel()
+def _to_1d_array(x) -> np.ndarray:
+    if isinstance(x, xr.DataArray):
+        x = x.values
+    arr = np.asarray(x)
+    return arr.ravel()
+
+
+def lhd(pred, ref, bins=50, min_count=10, eps=1e-12) -> float:
+    p = _to_1d_array(pred)
+    r = _to_1d_array(ref)
+
     m = np.isfinite(p) & np.isfinite(r)
     p, r = p[m], r[m]
-    if p.size == 0:
+
+    if p.size == 0 or r.size == 0:
         return np.nan
 
     vmin, vmax = np.nanmin(np.r_[p, r]), np.nanmax(np.r_[p, r])
-    if vmax <= vmin:
+    if not np.isfinite(vmin) or not np.isfinite(vmax) or vmax <= vmin:
         return np.nan
 
     edges = np.linspace(vmin, vmax, bins + 1)
@@ -47,7 +56,7 @@ def lhd_gridwise_spatial_mean(
 
     spatial_dims = [d for d in clim_pred.dims if d != "dayofyear"]
 
-    def _lhd_1d(p: xr.DataArray, r: xr.DataArray) -> float:
+    def _lhd_1d(p, r) -> float:
         return lhd(p, r, bins=bins, min_count=min_count, eps=eps)
 
     lhd_map = xr.apply_ufunc(
