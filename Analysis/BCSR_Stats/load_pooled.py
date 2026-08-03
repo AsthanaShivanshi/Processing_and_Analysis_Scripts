@@ -8,6 +8,7 @@ import xarray as xr
 
 import config
 
+
 ROW_ORDER = [
     "EQM + Bilinear",
     "CDF-t + Bilinear",
@@ -28,6 +29,7 @@ MASK_LEVEL = {k: "hr" for k in ROW_ORDER}
 class LoadedPooled:
     data: Dict[str, Dict[str, xr.DataArray]]
     hr_mask: xr.DataArray
+    missing: Dict[str, List[str]]
 
 
 def _default_base_dir() -> Path:
@@ -59,8 +61,8 @@ def _load_mask(mask_file: str | Path, mask_var: str) -> xr.DataArray:
 
 def _apply_mask(da: xr.DataArray, mask: xr.DataArray) -> xr.DataArray:
     m = mask.isel(time=0, drop=True) if "time" in mask.dims else mask
-    da2 = da.isel(time=0, drop=True) if "time" in da.dims else da
-    m2 = xr.DataArray(m.values, coords=da2.coords, dims=da2.dims)
+    spatial_dims = tuple(d for d in da.dims if d != "time" and d != "member")
+    m2 = xr.DataArray(m.values, coords={d: da.coords[d] for d in spatial_dims}, dims=spatial_dims)
     return da.where(m2 > 0)
 
 
@@ -112,20 +114,24 @@ def _build_case_templates() -> Dict[str, List[str]]:
     }
 
 
-def _open_case_var(ens_root: Path, rels: List[str], var: str) -> xr.DataArray | None:
+def _open_baseline_var(ens_root: Path, rels: List[str], var: str) -> xr.DataArray | None:
     files = [ens_root / r.format(var=var) for r in rels]
     files = [f for f in files if f.exists()]
     if not files:
         return None
 
     if len(files) == 1:
-        ds = xr.open_dataset(files[0])
+        ds = xr.open_dataset(files[0], chunks={"time": 365}, cache=False)
     else:
-        ds = xr.open_mfdataset([str(f) for f in sorted(files)], combine="by_coords")
+        ds = xr.open_mfdataset(
+            [str(f) for f in sorted(files)],
+            combine="by_coords",
+            chunks={"time": 365},
+            cache=False,
+        )
 
     vn = _first_var(ds, var)
-    da = _sanitize(ds[vn], var).load()
-    ds.close()
+    da = _sanitize(ds[vn], var)
     return da
 
 
@@ -144,19 +150,19 @@ def load_all_pooled_masked(
     hr_mask = _load_mask(mask_hr_file, mask_hr_var)
     templates = _build_case_templates()
 
-    data: Dict[str, Dict[str, xr.DataArray]] = {v: {} for v in variables}
+    data = {v: {} for v in variables}
+    missing = {v: [] for v in variables}
 
     for var in variables:
-        for case_name, rels in templates.items():
-            da = _open_case_var(ens_root, rels, var)
+        for baseline in ROW_ORDER:
+            da = _open_baseline_var(ens_root, templates[baseline], var)
             if da is None:
+                missing[var].append(baseline)
                 continue
             da = _subset_years(da, eval_start, eval_end)
-            da = _sanitize(da, var)
-            da = apply_mask_exact(da, hr_mask)
-            data[var][case_name] = da
+            data[var][baseline] = _apply_mask(da, hr_mask)
 
-    return LoadedPooled(data=data, hr_mask=hr_mask)
+    return LoadedPooled(data=data, hr_mask=hr_mask, missing=missing)
 
 
 def load_all_pooled_masked_defaults(
@@ -166,12 +172,9 @@ def load_all_pooled_masked_defaults(
     variables: List[str] | None = None,
 ) -> LoadedPooled:
     base = _default_base_dir()
-    ens_root = base / "GCM_pipeline/ALP-FINEv1.0/EnsPooled"
-    ds_root = base / "Downscaling_Models/Dataset_Setup_I_Chronological_12km"
     return load_all_pooled_masked(
-        ens_root,
-        ds_root / "Swiss_Mask_HR.nc",
-        mask_hr_var="TabsD",
+        ens_root=base / "GCM_pipeline/ALP-FINEv1.0/EnsPooled",
+        mask_hr_file=base / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/Swiss_Mask_HR.nc",
         eval_start=eval_start,
         eval_end=eval_end,
         variables=variables,

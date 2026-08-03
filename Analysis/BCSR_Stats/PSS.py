@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 import xarray as xr
 import numpy as np
+
+SAMPLE_DIM_CANDIDATES = ("member", "sample")
 
 
 def daily_climatology(arr, time_coord=None):
@@ -20,13 +24,12 @@ def daily_climatology(arr, time_coord=None):
 
     clim = np.full((366, *values.shape[1:]), np.nan)
     for doy in range(1, 367):
-        mask = (dayofyear == doy)
+        mask = dayofyear == doy
         if np.any(mask):
             clim[doy - 1] = np.nanmean(values[mask], axis=0)
         else:
             clim[doy - 1] = np.nan
     return clim
-
 
 
 def gridwise_perkins_skill_score(a, b, nbins=50):
@@ -76,7 +79,19 @@ def _spatial_dims(da):
     return [d for d in da.dims if d != "time"]
 
 
-def pss_gridwise_spatial_mean(pred, ref, nbins=50):
+def _resolve_sample_dim(da: xr.DataArray, sample_dim: str = "auto") -> str | None:
+    if sample_dim != "auto":
+        if sample_dim not in da.dims:
+            raise ValueError(f"sample dimension '{sample_dim}' not found in dims={da.dims}")
+        return sample_dim
+
+    for d in SAMPLE_DIM_CANDIDATES:
+        if d in da.dims:
+            return d
+    return None
+
+
+def _single_sample_pss_gridwise_spatial_mean(pred, ref, nbins=50):
     pred, ref = xr.align(pred, ref, join="inner")
     if pred.sizes.get("time", 0) == 0:
         return np.nan
@@ -85,15 +100,23 @@ def pss_gridwise_spatial_mean(pred, ref, nbins=50):
     clim_b = daily_climatology(ref, ref["time"])
 
     pss_map = gridwise_perkins_skill_score(clim_a, clim_b, nbins=nbins)
+    return float(np.nanmean(pss_map))
 
-    spatial_dims = _spatial_dims(pred)
-    if not spatial_dims:
-        return float(np.nanmean(pss_map))
 
-    pss_da = xr.DataArray(
-        pss_map,
-        dims=spatial_dims,
-        coords={dim: pred.coords[dim] for dim in spatial_dims if dim in pred.coords},
-    )
+def pss_gridwise_spatial_mean(pred, ref, nbins=50, sample_dim="auto"):
+    sd = _resolve_sample_dim(pred, sample_dim)
 
-    return float(pss_da.mean(dim=spatial_dims, skipna=True).values)
+    if sd is None:
+        return _single_sample_pss_gridwise_spatial_mean(pred, ref, nbins=nbins)
+
+    if sd in ref.dims and ref.sizes[sd] != pred.sizes[sd]:
+        raise ValueError(f"sample dimension '{sd}' size mismatch: {pred.sizes[sd]} vs {ref.sizes[sd]}")
+
+    vals = []
+    for i in range(pred.sizes[sd]):
+        pred_i = pred.isel({sd: i}, drop=True)
+        ref_i = ref.isel({sd: i}, drop=True) if sd in ref.dims else ref
+        vals.append(_single_sample_pss_gridwise_spatial_mean(pred_i, ref_i, nbins=nbins))
+
+    arr = np.asarray(vals, dtype=float)
+    return float(np.nanmean(arr)) if np.isfinite(arr).any() else np.nan
