@@ -10,24 +10,12 @@ import xarray as xr
 from scipy.stats import ConstantInputWarning, spearmanr
 
 import config
-from load_pooled import apply_mask_exact, load_all_pooled_masked, _subset_years, _sanitize
+from load_means import ROW_ORDER, apply_mask_exact, load_all_means_masked, _subset_years, _sanitize
 
 SEASONS = ["DJF", "MAM", "JJA", "SON"]
-SAMPLE_DIM_CANDIDATES = ("member", "sample", "realization", "ensemble", "ens")
 
-TABLE_ROWS = [
-    "EQM + Bilinear",
-    "CDF-t + Bilinear",
-    "dOTC + Bilinear",
-    "EQM + Bilinear + U-Net",
-    "CDF-t + Bilinear + U-Net",
-    "dOTC + Bilinear + U-Net",
-    "EQM + Bilinear + U-Net + DDIM",
-    "CDF-t + Bilinear + U-Net + DDIM",
-    "dOTC + Bilinear + U-Net + DDIM",
-    "CH2025 methodological baseline",
-]
 
+TABLE_ROWS = ROW_ORDER
 OBS_ROW = "MCH (spatial analysis)"
 
 
@@ -62,20 +50,6 @@ def _season_for_doy(doy: int) -> str:
     return "SON"
 
 
-def _resolve_sample_dim_pair(tas_da: xr.DataArray, pr_da: xr.DataArray, sample_dim: str) -> str | None:
-    if sample_dim != "auto":
-        if sample_dim not in tas_da.dims or sample_dim not in pr_da.dims:
-            raise ValueError(
-                f"sample dimension '{sample_dim}' must exist in both tas/pr. "
-                f"tas dims={tas_da.dims}, pr dims={pr_da.dims}"
-            )
-        return sample_dim
-    for d in SAMPLE_DIM_CANDIDATES:
-        if d in tas_da.dims and d in pr_da.dims:
-            return d
-    return None
-
-
 def _spearman_map_over_dayofyear(a: xr.DataArray, b: xr.DataArray) -> xr.DataArray:
     def _rho_1d(x: np.ndarray, y: np.ndarray) -> float:
         x = np.asarray(x).ravel()
@@ -85,8 +59,6 @@ def _spearman_map_over_dayofyear(a: xr.DataArray, b: xr.DataArray) -> xr.DataArr
             return np.nan
         x = x[m]
         y = y[m]
-        if x.size < 2 or y.size < 2:
-            return np.nan
         if np.nanstd(x) <= 1e-12 or np.nanstd(y) <= 1e-12:
             return np.nan
         with warnings.catch_warnings():
@@ -111,21 +83,11 @@ def _spearman_map_over_dayofyear(a: xr.DataArray, b: xr.DataArray) -> xr.DataArr
     )
 
 
-def _seasonal_daily_climatology_spearman_membermean(
+def _seasonal_daily_climatology_spearman_spatialmean(
     tas_da: xr.DataArray,
     pr_da: xr.DataArray,
-    sample_dim: str = "auto",
 ) -> dict[str, float]:
-    """
-    Fully vectorized across sample/spatial dimensions:
-    - align once
-    - climatology once
-    - Spearman map once per season (no per-member Python loop)
-    - spatial mean, then sample mean (if sample dim exists)
-    """
-    sd = _resolve_sample_dim_pair(tas_da, pr_da, sample_dim)
     tas_da, pr_da = xr.align(tas_da, pr_da, join="inner")
-
     clim_tas = _daily_climatology(tas_da)
     clim_pr = _daily_climatology(pr_da)
 
@@ -138,20 +100,26 @@ def _seasonal_daily_climatology_spearman_membermean(
         if doy_vals.size == 0:
             out[s] = np.nan
             continue
-
         tas_s = clim_tas.sel(dayofyear=doy_vals.tolist())
         pr_s = clim_pr.sel(dayofyear=doy_vals.tolist())
         rho_map = _spearman_map_over_dayofyear(tas_s, pr_s)
-
-        if sd is None:
-            out[s] = _spatial_mean_all_dims(rho_map)
-            continue
-
-        spatial_dims = [d for d in rho_map.dims if d != sd]
-        rho_spatial = rho_map.mean(dim=spatial_dims, skipna=True) if spatial_dims else rho_map
-        out[s] = _to_float_scalar(rho_spatial.mean(dim=sd, skipna=True))
-
+        out[s] = _spatial_mean_all_dims(rho_map)
     return out
+
+
+def _year_coverage(da: xr.DataArray) -> tuple[int | None, int | None]:
+    if "time" not in da.coords or da.sizes.get("time", 0) == 0:
+        return None, None
+    years = da["time"].dt.year.values
+    return int(np.nanmin(years)), int(np.nanmax(years))
+
+
+def _resolve_out_csv(args: argparse.Namespace) -> Path:
+    if args.out_csv:
+        return Path(args.out_csv)
+    return Path(
+        f"Analysis/BCSR_Stats/Tables/intervariable_spearman_ensmeans_{args.eval_start}_{args.eval_end}.csv"
+    )
 
 
 def main() -> None:
@@ -159,7 +127,7 @@ def main() -> None:
     ds_root = base / "Downscaling_Models/Dataset_Setup_I_Chronological_12km"
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ens_root", default=str(base / "GCM_pipeline/ALP-FINEv1.0/EnsPooled"))
+    ap.add_argument("--ens_root", default=str(base / "GCM_pipeline/ALP-FINEv1.0/Ensmeans"))
     ap.add_argument("--obs_tas_file", default=str(ds_root / "TabsD_step1_latlon.nc"))
     ap.add_argument("--obs_pr_file", default=str(ds_root / "RhiresD_step1_latlon.nc"))
     ap.add_argument("--obs_tas_var", default="TabsD")
@@ -168,14 +136,13 @@ def main() -> None:
     ap.add_argument("--mask_hr_var", default="TabsD")
     ap.add_argument("--eval_start", type=int, default=2015)
     ap.add_argument("--eval_end", type=int, default=2023)
-    ap.add_argument("--sample_dim", default="auto")
-    ap.add_argument(
-        "--out_csv",
-        default="Analysis/BCSR_Stats/Tables/intervariable_spearman_pooled_2015_2023.csv",
-    )
+    ap.add_argument("--out_csv", default=None)
     args = ap.parse_args()
 
-    loaded = load_all_pooled_masked(
+    if args.eval_start > args.eval_end:
+        raise ValueError("eval_start must be <= eval_end")
+
+    loaded = load_all_means_masked(
         ens_root=args.ens_root,
         mask_hr_file=args.mask_hr_file,
         mask_hr_var=args.mask_hr_var,
@@ -185,41 +152,38 @@ def main() -> None:
     )
 
     if loaded.missing.get("tas"):
-        print(f"[warn] missing pooled tas baselines: {loaded.missing['tas']}")
+        print(f"[warn] missing ensmean tas baselines: {loaded.missing['tas']}")
     if loaded.missing.get("pr"):
-        print(f"[warn] missing pooled pr baselines: {loaded.missing['pr']}")
+        print(f"[warn] missing ensmean pr baselines: {loaded.missing['pr']}")
 
     with xr.open_dataset(args.obs_tas_file) as ds_tas:
         obs_tas = ds_tas[args.obs_tas_var].load()
     with xr.open_dataset(args.obs_pr_file) as ds_pr:
         obs_pr = ds_pr[args.obs_pr_var].load()
 
-    obs_tas = apply_mask_exact(
-        _subset_years(_sanitize(obs_tas, "tas"), args.eval_start, args.eval_end),
-        loaded.hr_mask,
-    )
-    obs_pr = apply_mask_exact(
-        _subset_years(_sanitize(obs_pr, "pr"), args.eval_start, args.eval_end),
-        loaded.hr_mask,
-    )
-
-    obs_corr = _seasonal_daily_climatology_spearman_membermean(obs_tas, obs_pr, sample_dim="auto")
+    obs_tas = apply_mask_exact(_subset_years(_sanitize(obs_tas, "tas"), args.eval_start, args.eval_end), loaded.hr_mask)
+    obs_pr = apply_mask_exact(_subset_years(_sanitize(obs_pr, "pr"), args.eval_start, args.eval_end), loaded.hr_mask)
 
     corr = pd.DataFrame(index=TABLE_ROWS + [OBS_ROW], columns=SEASONS, dtype=float)
+    obs_corr = _seasonal_daily_climatology_spearman_spatialmean(obs_tas, obs_pr)
+    for s in SEASONS:
+        corr.loc[OBS_ROW, s] = obs_corr[s]
 
     for b in TABLE_ROWS:
         tas = loaded.data.get("tas", {}).get(b)
         pr = loaded.data.get("pr", {}).get(b)
         if tas is None or pr is None:
             continue
-        vals = _seasonal_daily_climatology_spearman_membermean(tas, pr, sample_dim=args.sample_dim)
+
+        y0_t, y1_t = _year_coverage(tas)
+        y0_p, y1_p = _year_coverage(pr)
+        print(f"[info] {b} | tas={y0_t}..{y1_t} | pr={y0_p}..{y1_p}")
+
+        vals = _seasonal_daily_climatology_spearman_spatialmean(tas, pr)
         for s in SEASONS:
             corr.loc[b, s] = vals[s]
 
-    for s in SEASONS:
-        corr.loc[OBS_ROW, s] = obs_corr[s]
-
-    out_csv = Path(args.out_csv)
+    out_csv = _resolve_out_csv(args)
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     corr.to_csv(out_csv, float_format="%.3f")
     print(f"[ok] wrote {out_csv}")

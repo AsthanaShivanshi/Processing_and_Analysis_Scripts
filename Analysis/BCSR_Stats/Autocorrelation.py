@@ -8,22 +8,16 @@ import pandas as pd
 import xarray as xr
 
 import config
-from load_pooled import apply_mask_exact, load_all_pooled_masked, _sanitize, _subset_years
+from load_means import (
+    ROW_ORDER,
+    apply_mask_exact,
+    load_all_means_masked,
+    _sanitize,
+    _subset_years,
+)
 
 VARS = ["tas", "pr"]
-
-TABLE_ROWS = [
-    "EQM + Bilinear",
-    "CDF-t + Bilinear",
-    "dOTC + Bilinear",
-    "EQM + Bilinear + U-Net",
-    "CDF-t + Bilinear + U-Net",
-    "dOTC + Bilinear + U-Net",
-    "EQM + Bilinear + U-Net + DDIM",
-    "CDF-t + Bilinear + U-Net + DDIM",
-    "dOTC + Bilinear + U-Net + DDIM",
-    "CH2025 methodological baseline",
-]
+TABLE_ROWS = ROW_ORDER
 
 OBS_ROW = "MCH (spatial analysis)"
 SAMPLE_DIM_CANDIDATES = ("member", "sample")
@@ -66,12 +60,6 @@ def _monthly_mean_autocorr_spatial_mean(
     lags: list[int],
     sample_dim: str = "auto",
 ) -> dict[int, float]:
-    """
-    Fast vectorized autocorrelation:
-    - monthly mean computed once
-    - correlation computed over full field per lag
-    - Fisher-z mean over space, then mean across sample dim (if present)
-    """
     sd = _resolve_sample_dim(da, sample_dim)
     monthly = da.resample(time="MS").mean("time", skipna=True).chunk({"time": -1})
 
@@ -121,13 +109,30 @@ def _load_obs(args, var: str, hr_mask: xr.DataArray) -> xr.DataArray:
     return da
 
 
+def _resolve_out_csv(args: argparse.Namespace, var: str, n_vars: int) -> Path:
+    if args.out_csv:
+        p = Path(args.out_csv)
+        if n_vars == 1:
+            return p
+        if p.suffix.lower() == ".csv":
+            return p.with_name(f"{p.stem}_{var}{p.suffix}")
+        return p / f"autocorrelation_monthly_mean_ensmeans_{var}_{args.eval_start}_{args.eval_end}.csv"
+    return Path(
+        f"Analysis/BCSR_Stats/Tables/autocorrelation_monthly_mean_ensmeans_{var}_{args.eval_start}_{args.eval_end}.csv"
+    )
+
+
 def main() -> None:
     base = Path(config.BASE_DIR) / "sasthana/Downscaling"
     ds_root = base / "Downscaling_Models/Dataset_Setup_I_Chronological_12km"
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ens_root", default=str(base / "GCM_pipeline/ALP-FINEv1.0/EnsPooled"))
-    ap.add_argument("--var", choices=VARS, required=True)
+    ap.add_argument("--ens_root", default=str(base / "GCM_pipeline/ALP-FINEv1.0/Ensmeans"))
+
+    # Backward-compatible: --var still works; default run is both vars
+    ap.add_argument("--var", choices=VARS, default=None)
+    ap.add_argument("--vars", nargs="+", choices=VARS, default=VARS)
+
     ap.add_argument("--obs_tas_file", default=str(ds_root / "TabsD_step1_latlon.nc"))
     ap.add_argument("--obs_pr_file", default=str(ds_root / "RhiresD_step1_latlon.nc"))
     ap.add_argument("--obs_tas_var", default="TabsD")
@@ -137,47 +142,47 @@ def main() -> None:
     ap.add_argument("--eval_start", type=int, default=2015)
     ap.add_argument("--eval_end", type=int, default=2023)
     ap.add_argument("--lags", default="1,2,3,4,5")
-    ap.add_argument("--sample_dim", default="member", choices=["auto", "member", "sample"])
+    ap.add_argument("--sample_dim", default="auto", choices=["auto", "member", "sample"])
     ap.add_argument("--out_csv", default=None)
     args = ap.parse_args()
 
     lags = _parse_lags(args.lags)
+    vars_to_run = [args.var] if args.var else args.vars
+    vars_to_run = list(dict.fromkeys(vars_to_run))
 
-    loaded = load_all_pooled_masked(
+    loaded = load_all_means_masked(
         ens_root=args.ens_root,
         mask_hr_file=args.mask_hr_file,
         mask_hr_var=args.mask_hr_var,
         eval_start=args.eval_start,
         eval_end=args.eval_end,
-        variables=[args.var],
+        variables=vars_to_run,
     )
 
-    if loaded.missing.get(args.var):
-        print(f"[warn] missing pooled baselines for {args.var}: {loaded.missing[args.var]}")
+    for var in vars_to_run:
+        if loaded.missing.get(var):
+            print(f"[warn] missing ensmean baselines for {var}: {loaded.missing[var]}")
 
-    obs = _load_obs(args, args.var, loaded.hr_mask)
+        obs = _load_obs(args, var, loaded.hr_mask)
+        cols = [_col(lag) for lag in lags]
+        table = pd.DataFrame(index=TABLE_ROWS + [OBS_ROW], columns=cols, dtype=float)
 
-    cols = [_col(lag) for lag in lags]
-    table = pd.DataFrame(index=TABLE_ROWS + [OBS_ROW], columns=cols, dtype=float)
-
-    obs_vals = _monthly_mean_autocorr_spatial_mean(obs, lags, sample_dim="auto")
-    for lag in lags:
-        table.loc[OBS_ROW, _col(lag)] = obs_vals[lag]
-
-    for baseline in TABLE_ROWS:
-        da = loaded.data.get(args.var, {}).get(baseline)
-        if da is None:
-            continue
-        vals = _monthly_mean_autocorr_spatial_mean(da, lags, sample_dim=args.sample_dim)
+        obs_vals = _monthly_mean_autocorr_spatial_mean(obs, lags, sample_dim="auto")
         for lag in lags:
-            table.loc[baseline, _col(lag)] = vals[lag]
+            table.loc[OBS_ROW, _col(lag)] = obs_vals[lag]
 
-    out_csv = Path(args.out_csv) if args.out_csv else Path(
-        f"Analysis/BCSR_Stats/Tables/autocorrelation_monthly_mean_pooled_{args.var}_{args.eval_start}_{args.eval_end}.csv"
-    )
-    out_csv.parent.mkdir(parents=True, exist_ok=True)
-    table.to_csv(out_csv, float_format="%.3f")
-    print(f"[ok] wrote {out_csv}")
+        for baseline in TABLE_ROWS:
+            da = loaded.data.get(var, {}).get(baseline)
+            if da is None:
+                continue
+            vals = _monthly_mean_autocorr_spatial_mean(da, lags, sample_dim=args.sample_dim)
+            for lag in lags:
+                table.loc[baseline, _col(lag)] = vals[lag]
+
+        out_csv = _resolve_out_csv(args, var, len(vars_to_run))
+        out_csv.parent.mkdir(parents=True, exist_ok=True)
+        table.to_csv(out_csv, float_format="%.3f")
+        print(f"[ok] wrote {out_csv}")
 
 
 if __name__ == "__main__":

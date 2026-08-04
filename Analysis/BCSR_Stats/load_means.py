@@ -26,9 +26,14 @@ ROW_ORDER = [
 
 MASK_LEVEL = {k: "hr" for k in ROW_ORDER}
 
+COORD_ALIASES = {
+    "lat": ("lat", "latitude", "nav_lat"),
+    "lon": ("lon", "longitude", "nav_lon"),
+}
+
 
 @dataclass
-class LoadedPooled:
+class LoadedMeans:
     data: Dict[str, Dict[str, xr.DataArray]]
     hr_mask: xr.DataArray
     missing: Dict[str, List[str]]
@@ -73,11 +78,10 @@ def _apply_mask(da: xr.DataArray, mask: xr.DataArray) -> xr.DataArray:
         if d in anchor.dims:
             anchor = anchor.isel({d: 0}, drop=True)
 
-    m_aligned, anchor_aligned = xr.align(m, anchor, join="inner")
-    if m_aligned.size == 0 or anchor_aligned.size == 0:
-        raise ValueError("Mask/data alignment produced empty overlap. Check grid/coords.")
-
-    m2 = m_aligned.broadcast_like(anchor_aligned)
+    m_al, a_al = xr.align(m, anchor, join="inner")
+    if m_al.size == 0 or a_al.size == 0:
+        raise ValueError("Mask/data alignment produced empty overlap.")
+    m2 = m_al.broadcast_like(a_al)
     return da.where(m2 > 0)
 
 
@@ -88,45 +92,45 @@ def apply_mask_exact(da: xr.DataArray, mask: xr.DataArray) -> xr.DataArray:
 def _build_case_templates() -> Dict[str, List[str]]:
     return {
         "EQM + Bilinear": [
-            "BC+SR/Bilinear/EQM_C/historical/day/{var}/v20250415/MME_pooled_EQM_C_historical_{var}_*.nc",
-            "BC+SR/Bilinear/EQM_C/ssp370/day/{var}/v20250415/MME_pooled_EQM_C_ssp370_{var}_*.nc",
+            "BC+SR/Bilinear/EQM_C/historical/day/{var}/v20250415/MME_mean_EQM_C_historical_{var}_*.nc",
+            "BC+SR/Bilinear/EQM_C/ssp370/day/{var}/v20250415/MME_mean_EQM_C_ssp370_{var}_*.nc",
         ],
         "CDF-t + Bilinear": [
-            "BC+SR/Bilinear/CDF-t/historical/day/{var}/v20250415/MME_pooled_CDF-t_historical_{var}_*.nc",
-            "BC+SR/Bilinear/CDF-t/ssp370/day/{var}/v20250415/MME_pooled_CDF-t_ssp370_{var}_*.nc",
+            "BC+SR/Bilinear/CDF-t/historical/day/{var}/v20250415/MME_mean_CDF-t_historical_{var}_*.nc",
+            "BC+SR/Bilinear/CDF-t/ssp370/day/{var}/v20250415/MME_mean_CDF-t_ssp370_{var}_*.nc",
         ],
         "dOTC + Bilinear": [
-            "BC+SR/Bilinear/dOTC/historical/day/{var}/v20250415/MME_pooled_dOTC_historical_{var}_*.nc",
-            "BC+SR/Bilinear/dOTC/ssp370/day/{var}/v20250415/MME_pooled_dOTC_ssp370_{var}_*.nc",
+            "BC+SR/Bilinear/dOTC/historical/day/{var}/v20250415/MME_mean_dOTC_historical_{var}_*.nc",
+            "BC+SR/Bilinear/dOTC/ssp370/day/{var}/v20250415/MME_mean_dOTC_ssp370_{var}_*.nc",
         ],
         "EQM + Bilinear + U-Net": [
-            "BC+SR/Bilinear_UNet/EQM_C/historical/day/{var}/v20250415/MME_pooled_EQM_C_historical_{var}_*.nc",
-            "BC+SR/Bilinear_UNet/EQM_C/ssp370/day/{var}/v20250415/MME_pooled_EQM_C_ssp370_{var}_*.nc",
+            "BC+SR/Bilinear_UNet/EQM_C/historical/day/{var}/v20250415/MME_mean_EQM_C_historical_{var}_*.nc",
+            "BC+SR/Bilinear_UNet/EQM_C/ssp370/day/{var}/v20250415/MME_mean_EQM_C_ssp370_{var}_*.nc",
         ],
         "CDF-t + Bilinear + U-Net": [
-            "BC+SR/Bilinear_UNet/CDF-t/historical/day/{var}/v20250415/MME_pooled_CDF-t_historical_{var}_*.nc",
-            "BC+SR/Bilinear_UNet/CDF-t/ssp370/day/{var}/v20250415/MME_pooled_CDF-t_ssp370_{var}_*.nc",
+            "BC+SR/Bilinear_UNet/CDF-t/historical/day/{var}/v20250415/MME_mean_CDF-t_historical_{var}_*.nc",
+            "BC+SR/Bilinear_UNet/CDF-t/ssp370/day/{var}/v20250415/MME_mean_CDF-t_ssp370_{var}_*.nc",
         ],
         "dOTC + Bilinear + U-Net": [
-            "BC+SR/Bilinear_UNet/dOTC/historical/day/{var}/v20250415/MME_pooled_dOTC_historical_{var}_*.nc",
-            "BC+SR/Bilinear_UNet/dOTC/ssp370/day/{var}/v20250415/MME_pooled_dOTC_ssp370_{var}_*.nc",
+            "BC+SR/Bilinear_UNet/dOTC/historical/day/{var}/v20250415/MME_mean_dOTC_historical_{var}_*.nc",
+            "BC+SR/Bilinear_UNet/dOTC/ssp370/day/{var}/v20250415/MME_mean_dOTC_ssp370_{var}_*.nc",
         ],
         "EQM + Bilinear + U-Net + DDIM": [
-            "BC+SR/Bilinear_UNet_DDIM/EQM_C/historical/day/{var}/v20250415/MME_pooled_EQM_C_historical_{var}_*.nc",
-            "BC+SR/Bilinear_UNet_DDIM/EQM_C/ssp370/day/{var}/v20250415/MME_pooled_EQM_C_ssp370_{var}_*.nc",
+            "BC+SR/Bilinear_UNet_DDIM/EQM_C/historical/day/{var}/v20250415/MME_mean_EQM_C_historical_{var}_*.nc",
+            "BC+SR/Bilinear_UNet_DDIM/EQM_C/ssp370/day/{var}/v20250415/MME_mean_EQM_C_ssp370_{var}_*.nc",
         ],
         "CDF-t + Bilinear + U-Net + DDIM": [
-            "BC+SR/Bilinear_UNet_DDIM/CDF-t/historical/day/{var}/v20250415/MME_pooled_CDF-t_historical_{var}_*.nc",
-            "BC+SR/Bilinear_UNet_DDIM/CDF-t/ssp370/day/{var}/v20250415/MME_pooled_CDF-t_ssp370_{var}_*.nc",
+            "BC+SR/Bilinear_UNet_DDIM/CDF-t/historical/day/{var}/v20250415/MME_mean_CDF-t_historical_{var}_*.nc",
+            "BC+SR/Bilinear_UNet_DDIM/CDF-t/ssp370/day/{var}/v20250415/MME_mean_CDF-t_ssp370_{var}_*.nc",
         ],
         "dOTC + Bilinear + U-Net + DDIM": [
-            "BC+SR/Bilinear_UNet_DDIM/dOTC/historical/day/{var}/v20250415/MME_pooled_dOTC_historical_{var}_*.nc",
-            "BC+SR/Bilinear_UNet_DDIM/dOTC/ssp370/day/{var}/v20250415/MME_pooled_dOTC_ssp370_{var}_*.nc",
+            "BC+SR/Bilinear_UNet_DDIM/dOTC/historical/day/{var}/v20250415/MME_mean_dOTC_historical_{var}_*.nc",
+            "BC+SR/Bilinear_UNet_DDIM/dOTC/ssp370/day/{var}/v20250415/MME_mean_dOTC_ssp370_{var}_*.nc",
         ],
         "CH2025 methodological baseline": [
-            "BC/EQM/historical/day/{var}/v20250415/MME_pooled_EQM_historical_{var}_*.nc",
-            "BC/EQM/ssp370/day/{var}/v20250415/MME_pooled_EQM_ssp370_{var}_all.nc",
-            "BC/EQM/ssp370/day/{var}/v20250415/MME_pooled_EQM_ssp370_{var}_*.nc",
+            "BC/EQM/historical/day/{var}/v20250415/MME_mean_EQM_historical_{var}_*.nc",
+            "BC/EQM/ssp370/day/{var}/v20250415/MME_mean_EQM_ssp370_{var}_all.nc",
+            "BC/EQM/ssp370/day/{var}/v20250415/MME_mean_EQM_ssp370_{var}_*.nc",
         ],
     }
 
@@ -155,7 +159,6 @@ def _select_files_for_window(files: List[Path], eval_start: int, eval_end: int) 
     if not files:
         return []
 
-    # Prefer *_all.nc for ssp370 if present; keep historical files too.
     ssp_all = [f for f in files if f.name.endswith("_all.nc")]
     if ssp_all:
         non_ssp370 = [f for f in files if "_ssp370_" not in f.name]
@@ -163,15 +166,65 @@ def _select_files_for_window(files: List[Path], eval_start: int, eval_end: int) 
 
     picked: List[Path] = []
     for f in files:
-        yrs = _extract_year_range_from_name(f.name)
-        if yrs is None:
-            picked.append(f)  # keep *_all.nc
+        yr = _extract_year_range_from_name(f.name)
+        if yr is None:
+            picked.append(f)
             continue
-        y0, y1 = yrs
+        y0, y1 = yr
         if not (y1 < eval_start or y0 > eval_end):
             picked.append(f)
 
     return sorted({p.resolve() for p in picked}, key=lambda x: str(x))
+
+
+def _promote_and_standardize_coords(ds: xr.Dataset) -> xr.Dataset:
+    rename_map = {}
+    for canon, aliases in COORD_ALIASES.items():
+        found = None
+        for a in aliases:
+            if a in ds.dims or a in ds.coords or a in ds.data_vars:
+                found = a
+                break
+        if found is not None and found != canon:
+            rename_map[found] = canon
+    if rename_map:
+        ds = ds.rename(rename_map)
+
+    for c in ("lat", "lon"):
+        if c in ds.data_vars and c not in ds.coords:
+            ds = ds.set_coords(c)
+
+    return ds
+
+
+def _get_reference_spatial_coords(files: List[Path]) -> dict[str, xr.DataArray]:
+    for f in files:
+        with xr.open_dataset(f) as ds:
+            ds = _promote_and_standardize_coords(ds)
+            out: dict[str, xr.DataArray] = {}
+            if "lat" in ds.coords:
+                out["lat"] = ds["lat"].load()
+            if "lon" in ds.coords:
+                out["lon"] = ds["lon"].load()
+            if out:
+                return out
+    return {}
+
+
+def _assign_missing_spatial_from_reference(
+    ds: xr.Dataset, ref_coords: dict[str, xr.DataArray]
+) -> xr.Dataset:
+    for c in ("lat", "lon"):
+        if c in ds.coords or c not in ref_coords:
+            continue
+        ref = ref_coords[c]
+
+        # assign only if all ref dims exist in ds
+        if all(d in ds.dims for d in ref.dims):
+            ds = ds.assign_coords({c: ref})
+        elif c in ds.dims and ref.ndim == 1 and ref.dims == (c,):
+            ds = ds.assign_coords({c: ref})
+    return ds
 
 
 def _sort_and_unique_time(da: xr.DataArray) -> xr.DataArray:
@@ -193,17 +246,30 @@ def _open_baseline_var(
     eval_end: int,
 ) -> xr.DataArray | None:
     files = _expand_relpaths(ens_root, rels, var)
-    files = _select_files_for_window(files, eval_start, eval_end)
+    files = _select_files_for_window(files, eval_start=eval_start, eval_end=eval_end)
     if not files:
         return None
 
+    ref_coords = _get_reference_spatial_coords(files)
+
+    def _pre(ds: xr.Dataset) -> xr.Dataset:
+        ds = _promote_and_standardize_coords(ds)
+        ds = _assign_missing_spatial_from_reference(ds, ref_coords)
+        return ds
+
     if len(files) == 1:
-        ds = xr.open_dataset(files[0], chunks={"time": 365}, cache=False)
+        ds = xr.open_dataset(files[0], chunks={"time": 180}, cache=False)
+        ds = _pre(ds)
     else:
         ds = xr.open_mfdataset(
             [str(f) for f in files],
             combine="by_coords",
-            chunks={"time": 365},
+            preprocess=_pre,
+            coords="minimal",
+            data_vars="minimal",
+            compat="override",
+            join="outer",
+            chunks={"time": 180},
             cache=False,
         )
 
@@ -213,7 +279,7 @@ def _open_baseline_var(
     return da
 
 
-def load_all_pooled_masked(
+def load_all_means_masked(
     ens_root: str | Path,
     mask_hr_file: str | Path,
     *,
@@ -221,8 +287,7 @@ def load_all_pooled_masked(
     eval_start: int = 2015,
     eval_end: int = 2023,
     variables: List[str] | None = None,
-    verbose: bool = False,
-) -> LoadedPooled:
+) -> LoadedMeans:
     ens_root = Path(ens_root)
     variables = variables or ["pr", "tas"]
 
@@ -234,20 +299,9 @@ def load_all_pooled_masked(
 
     for var in variables:
         for baseline in ROW_ORDER:
-            rels = templates[baseline]
-            files = _select_files_for_window(
-                _expand_relpaths(ens_root, rels, var),
-                eval_start=eval_start,
-                eval_end=eval_end,
-            )
-            if verbose:
-                print(f"[info] {var} | {baseline} | files={len(files)}")
-                for f in files:
-                    print(f"       - {f}")
-
             da = _open_baseline_var(
                 ens_root=ens_root,
-                rels=rels,
+                rels=templates[baseline],
                 var=var,
                 eval_start=eval_start,
                 eval_end=eval_end,
@@ -263,22 +317,20 @@ def load_all_pooled_masked(
 
             data[var][baseline] = _apply_mask(da, hr_mask)
 
-    return LoadedPooled(data=data, hr_mask=hr_mask, missing=missing)
+    return LoadedMeans(data=data, hr_mask=hr_mask, missing=missing)
 
 
-def load_all_pooled_masked_defaults(
+def load_all_means_masked_defaults(
     *,
     eval_start: int = 2015,
     eval_end: int = 2023,
     variables: List[str] | None = None,
-    verbose: bool = False,
-) -> LoadedPooled:
+) -> LoadedMeans:
     base = _default_base_dir()
-    return load_all_pooled_masked(
-        ens_root=base / "GCM_pipeline/ALP-FINEv1.0/EnsPooled",
+    return load_all_means_masked(
+        ens_root=base / "GCM_pipeline/ALP-FINEv1.0/Ensmeans",
         mask_hr_file=base / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/Swiss_Mask_HR.nc",
         eval_start=eval_start,
         eval_end=eval_end,
         variables=variables,
-        verbose=verbose,
     )

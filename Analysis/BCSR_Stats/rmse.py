@@ -47,7 +47,19 @@ def _single_sample_rmse_gridwise_spatial_mean(pred: xr.DataArray, ref: xr.DataAr
     return float(rmse_map.mean(dim=dims, skipna=True).values)
 
 
-def rmse_gridwise_spatial_mean(pred: xr.DataArray, ref: xr.DataArray, sample_dim: str = "auto") -> float:
+def rmse_gridwise_spatial_mean(
+    pred: xr.DataArray,
+    ref: xr.DataArray,
+    sample_dim: str = "auto",
+    mode: str = "per_sample_mean",
+) -> float:
+    """
+    mode='per_sample_mean':
+      Compute RMSE per sample/member, then average across samples.
+    """
+    if mode != "per_sample_mean":
+        raise ValueError("Only mode='per_sample_mean' is supported in this configuration.")
+
     sd = _resolve_sample_dim(pred, sample_dim)
 
     if sd is None:
