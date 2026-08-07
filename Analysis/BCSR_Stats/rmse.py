@@ -10,14 +10,6 @@ def _spatial_dims(da: xr.DataArray) -> list[str]:
     return [d for d in da.dims if d != "time"]
 
 
-def _daily_climatology(da: xr.DataArray) -> xr.DataArray:
-    if "time" not in da.dims:
-        return da
-
-    clim = da.groupby(da["time"].dt.dayofyear).mean(dim="time")
-    return clim.reindex(dayofyear=np.arange(1, 367))
-
-
 def _resolve_sample_dim(da: xr.DataArray, sample_dim: str = "auto") -> str | None:
     if sample_dim != "auto":
         if sample_dim not in da.dims:
@@ -32,13 +24,15 @@ def _resolve_sample_dim(da: xr.DataArray, sample_dim: str = "auto") -> str | Non
 
 def _single_sample_rmse_gridwise_spatial_mean(pred: xr.DataArray, ref: xr.DataArray) -> float:
     pred, ref = xr.align(pred, ref, join="inner")
-    if pred.sizes.get("time", 0) == 0:
+    if pred.size == 0 or ref.size == 0:
         return np.nan
 
-    clim_pred = _daily_climatology(pred)
-    clim_ref = _daily_climatology(ref)
+    diff2 = (pred - ref) ** 2
 
-    rmse_map = np.sqrt(((clim_pred - clim_ref) ** 2).mean(dim="dayofyear", skipna=True))
+    if "time" in diff2.dims:
+        rmse_map = np.sqrt(diff2.mean(dim="time", skipna=True))
+    else:
+        rmse_map = np.sqrt(diff2)
 
     dims = _spatial_dims(rmse_map)
     if not dims:
@@ -54,9 +48,14 @@ def rmse_gridwise_spatial_mean(
     mode: str = "per_sample_mean",
 ) -> float:
     """
-    mode='per_sample_mean':
-      Compute RMSE per sample/member, then average across samples.
+    Compute RMSE gridwise over time, then spatially average.
+
+    For pooled data:
+    - compute RMSE separately for each sample/member
+    - average the resulting scalar RMSEs
     """
+
+    
     if mode != "per_sample_mean":
         raise ValueError("Only mode='per_sample_mean' is supported in this configuration.")
 
