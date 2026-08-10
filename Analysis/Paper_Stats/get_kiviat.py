@@ -1,16 +1,27 @@
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from matplotlib import pyplot as plt
-from plotstyle import style_model_line, style_model_fill, style_highlight_scatter
-from plotstyle import add_bottom_legend, save_paper_figure
+
+from plotstyle import (
+    add_bottom_legend,
+    save_paper_figure,
+    style_highlight_scatter,
+    style_model_fill,
+    style_model_line,
+)
+
+sns.set_style("whitegrid")
 
 DEFAULT_METRICS = (
-    ("CRPS", "CRPS ↓"),
-    ("LSD", " temporal-LSD (m) ↓"),
-    ("SSIM", "1-SSIM (m) ↓"),
-    ("RMSE", "RMSE (m) ↓"),
-    ("MAE", "MAE (m) ↓"),
-    ("PITD", "PITD ↓"),
+    (("CRPS",), "CRPS ↓", False),
+    (("RALSD", "LSD"), "RALSD ↓", False),
+    (("SSIM_ensmean", "SSIM"), "1-SSIM (m) ↓", True),
+    (("RMSE_ensmean", "RMSE"), "RMSE (m) ↓", False),
+    (("MAE_ensmean", "MAE"), "MAE (m)↓", False),
+    (("PITD",), "PITD ↓", False),
 )
 
 
@@ -25,17 +36,25 @@ def _find_column(df, candidates):
     )
 
 
-def _find_metric_column(df, metric):
-    metric = metric.lower()
+def _find_metric_column(df, candidates):
+    if isinstance(candidates, str):
+        candidates = (candidates,)
+
+    normalized_candidates = [c.lower() for c in candidates]
+
     for col in df.columns:
         clean_col = col.replace("↓", "").replace("↑", "").strip().lower()
-        if clean_col == metric:
+        if clean_col in normalized_candidates:
             return col
+
     for col in df.columns:
-        if metric in col.lower():
-            return col
+        clean_col = col.replace("↓", "").replace("↑", "").strip().lower()
+        for candidate in normalized_candidates:
+            if candidate in clean_col:
+                return col
+
     raise ValueError(
-        f"Could not find metric '{metric}'. "
+        f"Could not find any of {candidates}. "
         f"Available columns: {df.columns.tolist()}"
     )
 
@@ -54,11 +73,11 @@ def _extract_variable_data(df, variable, models, metric_specs, model_col, variab
     subset = subset.set_index("_model_key").reindex(model_keys)
 
     metric_values = []
-    for metric_name, _ in metric_specs:
-        metric_col = _find_metric_column(df, metric_name)
+    for metric_candidates, _, invert in metric_specs:
+        metric_col = _find_metric_column(df, metric_candidates)
         values = pd.to_numeric(subset[metric_col], errors="coerce").to_numpy()
-        if metric_name.upper() == "SSIM":
-            values = 1 - values
+        if invert:
+            values = 1.0 - values
         metric_values.append(values)
 
     data = np.asarray(metric_values, dtype=float).T
@@ -153,7 +172,7 @@ def plot_kiviat_from_csv(
     temperature = _normalise_metrics(temperature)
     precipitation = _normalise_metrics(precipitation)
 
-    metric_labels = [label for _, label in metric_specs]
+    metric_labels = [label for _, label, _ in metric_specs]
 
     fig, axes = plt.subplots(
         1,
@@ -167,8 +186,6 @@ def plot_kiviat_from_csv(
 
     handles, labels = axes[0].get_legend_handles_labels()
     add_bottom_legend(fig, handles, labels, ncol=len(models))
-
-
     fig.legends[-1].set_bbox_to_anchor((0.5, 0.07), transform=fig.transFigure)
 
     fig.tight_layout(rect=[0, 0.05, 1, 0.96])

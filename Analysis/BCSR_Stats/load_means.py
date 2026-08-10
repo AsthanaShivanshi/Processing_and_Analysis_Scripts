@@ -287,6 +287,7 @@ def load_all_means_masked(
     eval_start: int = 2015,
     eval_end: int = 2023,
     variables: List[str] | None = None,
+    verbose: bool = False,
 ) -> LoadedMeans:
     ens_root = Path(ens_root)
     variables = variables or ["pr", "tas"]

@@ -5,18 +5,28 @@ import xarray as xr
 
 EPS = 1e-30
 
+import matplotlib.pyplot as plt
+
 
 def _radial_average(array_2d: np.ndarray) -> np.ndarray:
     y, x = np.indices(array_2d.shape)
-    center = np.array([(x.max() - x.min()) / 2.0, (y.max() - y.min()) / 2.0])
-    r = np.hypot(x - center[0], y - center[1]).astype(np.int32)
+    center_x = (array_2d.shape[1] - 1) / 2.0
+    center_y = (array_2d.shape[0] - 1) / 2.0
+    r = np.hypot(x - center_x, y - center_y).astype(np.int32)
+
     tbin = np.bincount(r.ravel(), array_2d.ravel())
     nr = np.bincount(r.ravel())
     return tbin / np.maximum(nr, 1)
 
 
 def _field_profile(field_2d: np.ndarray) -> np.ndarray:
-    fft_field = np.fft.fftshift(np.fft.fft2(field_2d, axes=(-2, -1)), axes=(-2, -1))
+    field_2d = np.asarray(field_2d, dtype=np.float64)
+    field_2d = np.nan_to_num(field_2d, nan=0.0)
+
+    if field_2d.ndim != 2:
+        raise ValueError(f"_field_profile expects a 2D field, got shape {field_2d.shape}")
+
+    fft_field = np.fft.fftshift(np.fft.fft2(field_2d), axes=(-2, -1))
     power = np.abs(fft_field) ** 2
     return _radial_average(power)
 
@@ -26,8 +36,11 @@ def _average_profiles(profiles: list[np.ndarray]) -> tuple[np.ndarray, np.ndarra
         return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
 
     min_len = min(p.size for p in profiles)
-    profiles = [p[:min_len] for p in profiles]
-    ps_mean = np.mean(np.stack(profiles, axis=0), axis=0)
+    if min_len == 0:
+        return np.array([], dtype=np.float64), np.array([], dtype=np.float64)
+
+    trimmed = [p[:min_len] for p in profiles]
+    ps_mean = np.mean(np.stack(trimmed, axis=0), axis=0)
     k = np.arange(min_len, dtype=np.float64)
     return k, ps_mean
 
@@ -38,6 +51,7 @@ def _to_realizations(da: xr.DataArray) -> np.ndarray:
     of realizations formed by flattening all leading non-spatial dimensions.
     """
     arr = np.asarray(np.nan_to_num(da.values, nan=0.0), dtype=np.float64)
+    arr = np.squeeze(arr)
 
     if arr.ndim < 2:
         raise ValueError("RAPSD requires at least two spatial dimensions.")
@@ -48,6 +62,11 @@ def _to_realizations(da: xr.DataArray) -> np.ndarray:
     return arr.reshape(-1, arr.shape[-2], arr.shape[-1])
 
 
+def _profiles_from_dataarray(da: xr.DataArray) -> list[np.ndarray]:
+    arr = _to_realizations(da)
+    return [_field_profile(arr[i]) for i in range(arr.shape[0])]
+
+
 def rapsd(
     da: xr.DataArray,
     time_dim: str | None = None,
@@ -55,23 +74,32 @@ def rapsd(
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Compute the mean Radially Averaged Power Spectral Density (RAPSD).
+
+    Behavior:
+    - time_dim is None:
+        Compute RAPSD over all realizations by flattening leading dimensions.
+    - time_dim is provided:
+        Group by time, compute a RAPSD for each time slice, then average over time.
+    - sample_dim is provided:
+        Within each time slice, compute RAPSD for each sample/member, average
+        over members, then average over time.
+
+    For ensemble means, call this on the ensemble-mean DataArray with no
+    sample_dim.
     """
     if time_dim is None:
-        arr = _to_realizations(da)
-
-        profiles = []
-        for i in range(arr.shape[0]):
-            profiles.append(_field_profile(arr[i]))
-
+        profiles = _profiles_from_dataarray(da)
         k, ps_mean = _average_profiles(profiles)
         keep = (k > 0) & np.isfinite(ps_mean) & (ps_mean > 0)
         return k[keep], ps_mean[keep]
 
     if time_dim not in da.dims:
-        raise ValueError(f"time_dim='{time_dim}' not found in DataArray dims.")
+        raise ValueError(f"time_dim='{time_dim}' not found in DataArray dims={da.dims}")
 
     if sample_dim is not None and sample_dim not in da.dims:
-        raise ValueError(f"sample_dim='{sample_dim}' not found in DataArray dims.")
+        raise ValueError(
+            f"sample_dim='{sample_dim}' not found in DataArray dims={da.dims}"
+        )
 
     time_profiles: list[np.ndarray] = []
 
@@ -79,32 +107,18 @@ def rapsd(
         da_t = da_t.squeeze(drop=True)
 
         if sample_dim is not None and sample_dim in da_t.dims:
-            sample_profiles = []
+            sample_profiles: list[np.ndarray] = []
             for s in da_t[sample_dim].values:
                 field_da = da_t.sel({sample_dim: s}).squeeze(drop=True)
-                field = np.asarray(np.nan_to_num(field_da.values, nan=0.0), dtype=np.float64)
-                field = np.squeeze(field)
-
-                if field.ndim != 2:
-                    raise ValueError(
-                        "Each timestep/sample selection must reduce to a 2D field. "
-                        f"Got shape {field.shape} — check that lat/lon are the only "
-                        "remaining dims after selecting time and sample."
-                    )
-                sample_profiles.append(_field_profile(field))
+                sample_profiles.extend(_profiles_from_dataarray(field_da))
 
             _, ps_t = _average_profiles(sample_profiles)
-            time_profiles.append(ps_t)
+            if ps_t.size:
+                time_profiles.append(ps_t)
         else:
-            field = np.asarray(np.nan_to_num(da_t.values, nan=0.0), dtype=np.float64)
-            field = np.squeeze(field)
-
-            if field.ndim == 2:
-                time_profiles.append(_field_profile(field))
-            else:
-                arr_t = field.reshape(-1, field.shape[-2], field.shape[-1])
-                sub_profiles = [_field_profile(arr_t[i]) for i in range(arr_t.shape[0])]
-                _, ps_t = _average_profiles(sub_profiles)
+            profiles = _profiles_from_dataarray(da_t)
+            _, ps_t = _average_profiles(profiles)
+            if ps_t.size:
                 time_profiles.append(ps_t)
 
     k, ps_mean = _average_profiles(time_profiles)
@@ -124,12 +138,13 @@ def spectral_ratio(
     """
     Plot spectral ratio (pred/obs) vs wavenumber k using rapsd().
     """
-    import matplotlib.pyplot as plt
-
     k_pred, ps_pred = rapsd(da_pred, time_dim=time_dim, sample_dim=sample_dim)
     k_obs, ps_obs = rapsd(da_obs, time_dim=time_dim, sample_dim=None)
 
     n = min(k_pred.size, k_obs.size)
+    if n == 0:
+        raise ValueError("Empty spectra returned by rapsd().")
+
     k_grid = k_pred[:n]
     ps_pred_i = np.interp(k_grid, k_pred, ps_pred)
     ps_obs_i = np.interp(k_grid, k_obs, ps_obs)

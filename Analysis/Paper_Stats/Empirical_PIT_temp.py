@@ -52,6 +52,8 @@ for eta, ds_path in zip(etas, downscaled_paths):
     temp_spatial_mean = np.nanmean(temp_masked, axis=(2, 3))
 
     all_pit = []
+
+    
     for s in range(temp_spatial_mean.shape[1]):
         pit_s = ecdf_ref_spatial(temp_spatial_mean[:, s])
         all_pit.append(pit_s)

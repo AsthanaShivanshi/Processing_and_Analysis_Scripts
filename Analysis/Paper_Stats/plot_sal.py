@@ -10,36 +10,29 @@ _METRIC_LABELS = {
     "L": "Location",
 }
 
-_ENSEMBLE_LABELS = {
-    ("ddim", "ensemble_sample"): "DDIM samples",
-    ("ddim", "ensemble_mean"): "DDIM mean",
-    ("ddim", "ensemble_median"): "DDIM median",
-    ("cfm", "ensemble_sample"): "CFM samples",
-    ("cfm", "ensemble_mean"): "CFM mean",
-    ("cfm", "ensemble_median"): "CFM median",
+_POOLED_LABELS = {
+    ("ddim", "pooled"): "DDIM pooled",
+    ("cfm", "pooled"): "CFM pooled",
 }
 
-_ENSEMBLE_COLORS = {
-    ("ddim", "ensemble_sample"): "#000000",
-    ("ddim", "ensemble_mean"): "#555555",
-    ("ddim", "ensemble_median"): "#999999",
-    ("cfm", "ensemble_sample"): "#7e9f1f",
-    ("cfm", "ensemble_mean"): "#9fbe34",
-    ("cfm", "ensemble_median"): "#c2db66",
+_POOLED_COLORS = {
+    ("ddim", "pooled"): "#000000",
+    ("cfm", "pooled"): "#7e9f1f",
 }
 
 
 def _resolve_label(model_norm: str, type_norm: str, model_raw: str) -> str:
-    key = (model_norm, type_norm)
-    if key in _ENSEMBLE_LABELS:
-        return _ENSEMBLE_LABELS[key]
+    if model_norm == "ddim" and type_norm in {"pooled", "ensemble_sample"}:
+        return "DDIM pooled"
+    if model_norm == "cfm" and type_norm in {"pooled", "ensemble_sample"}:
+        return "CFM pooled"
     return str(model_raw).strip()
 
 
 def _resolve_color(model_norm: str, type_norm: str, label: str) -> str:
     key = (model_norm, type_norm)
-    if key in _ENSEMBLE_COLORS:
-        return _ENSEMBLE_COLORS[key]
+    if key in _POOLED_COLORS:
+        return _POOLED_COLORS[key]
 
     l = label.strip().lower()
     if l == "bilinear":
@@ -48,6 +41,8 @@ def _resolve_color(model_norm: str, type_norm: str, label: str) -> str:
         return get_model_color("Bicubic")
     if l == "unet":
         return get_model_color("UNet")
+    if l == "coarse":
+        return get_model_color("Coarse")
     return "#808080"
 
 
@@ -59,12 +54,10 @@ def plot_sal_box_seasonal(
         "Bilinear",
         "Bicubic",
         "UNet",
-        "DDIM samples",
-        "DDIM median",
-        "CFM samples",
-        "CFM median",
+        "DDIM pooled",
+        "CFM pooled",
     ),
-    figsize=(14, 4.8),
+    figsize=(12, 4.8),
     dpi=1500,
     x_tick_fontsize=12,
     y_tick_fontsize=12,

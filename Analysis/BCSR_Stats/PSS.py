@@ -3,41 +3,61 @@ from __future__ import annotations
 import numpy as np
 import xarray as xr
 
-SAMPLE_DIM_CANDIDATES = ("member", "sample")
+SAMPLE_DIM_CANDIDATES = ("member", "sample", "samples")
 
 
-def daily_climatology(arr, time_coord=None):
-    if isinstance(arr, xr.DataArray):
-        if time_coord is None:
-            time_coord = arr["time"]
-        values = arr.values
-    else:
-        values = np.asarray(arr)
+def _resolve_sample_dim(da: xr.DataArray, sample_dim: str | None = "auto") -> str | None:
+    if sample_dim is None:
+        return None
 
-    if time_coord is None:
-        raise ValueError("time_coord is required")
+    if sample_dim != "auto":
+        if sample_dim not in da.dims:
+            raise ValueError(f"sample dimension '{sample_dim}' not found in dims={da.dims}")
+        return sample_dim
 
-    if hasattr(time_coord, "dt"):
-        dayofyear = np.asarray(time_coord.dt.dayofyear)
-    else:
-        dayofyear = np.asarray(time_coord)
-
-    clim = np.full((366, *values.shape[1:]), np.nan)
-    for doy in range(1, 367):
-        mask = dayofyear == doy
-        if np.any(mask):
-            clim[doy - 1] = np.nanmean(values[mask], axis=0)
-        else:
-            clim[doy - 1] = np.nan
-    return clim
+    for d in SAMPLE_DIM_CANDIDATES:
+        if d in da.dims:
+            return d
+    return None
 
 
-def gridwise_perkins_skill_score_unpaired(a, b, nbins=50, min_count=10):
-    """
-    Perkins Skill Score on grid, allowing different sample lengths:
-      a.shape = (n_a, ...spatial...)
-      b.shape = (n_b, ...spatial...)
-    """
+def _single_sample_pss_gridwise_spatial_mean(pred, ref, nbins=50):
+    pred, ref = xr.align(pred, ref, join="inner")
+    if pred.sizes.get("time", 0) == 0 or ref.sizes.get("time", 0) == 0:
+        return np.nan
+
+    a = np.asarray(pred.values)
+    b = np.asarray(ref.values)
+
+    if a.ndim < 2 or b.ndim < 2:
+        raise ValueError("Inputs must be at least 2D")
+
+    if a.shape[1:] != b.shape[1:]:
+        raise ValueError(f"Spatial shapes do not match: {a.shape[1:]} vs {b.shape[1:]}")
+
+    pss_map = gridwise_perkins_skill_score_unpaired(a, b, nbins=nbins)
+    return float(np.nanmean(pss_map))
+
+
+def _to_time_first_values(da: xr.DataArray, sample_dim: str | None, pool_sample: bool) -> np.ndarray:
+    if "time" not in da.dims:
+        raise ValueError("DataArray must have 'time' dimension")
+
+    dims = list(da.dims)
+    t_ax = dims.index("time")
+
+    if pool_sample and sample_dim is not None and sample_dim in da.dims:
+        s_ax = dims.index(sample_dim)
+        order = [t_ax, s_ax] + [i for i in range(da.ndim) if i not in (t_ax, s_ax)]
+        vals = np.transpose(da.values, order)
+        nt, ns = vals.shape[:2]
+        return vals.reshape(nt * ns, *vals.shape[2:])
+
+    order = [t_ax] + [i for i in range(da.ndim) if i != t_ax]
+    return np.transpose(da.values, order)
+
+
+def gridwise_perkins_skill_score_unpaired(a, b, nbins=50, min_count=5):
     a = np.asarray(a)
     b = np.asarray(b)
 
@@ -65,8 +85,8 @@ def gridwise_perkins_skill_score_unpaired(a, b, nbins=50, min_count=10):
                 vmax = vmin + 1e-6
 
             bins = np.linspace(vmin, vmax, nbins + 1)
-            hist_a, _ = np.histogram(a_valid, bins=bins, density=True)
-            hist_b, _ = np.histogram(b_valid, bins=bins, density=True)
+            hist_a, _ = np.histogram(a_valid, bins=bins)
+            hist_b, _ = np.histogram(b_valid, bins=bins)
 
             sa = hist_a.sum()
             sb = hist_b.sum()
@@ -80,52 +100,6 @@ def gridwise_perkins_skill_score_unpaired(a, b, nbins=50, min_count=10):
     return pss
 
 
-def _spatial_dims(da):
-    return [d for d in da.dims if d != "time"]
-
-
-def _resolve_sample_dim(da: xr.DataArray, sample_dim: str = "auto") -> str | None:
-    if sample_dim != "auto":
-        if sample_dim not in da.dims:
-            raise ValueError(f"sample dimension '{sample_dim}' not found in dims={da.dims}")
-        return sample_dim
-
-    for d in SAMPLE_DIM_CANDIDATES:
-        if d in da.dims:
-            return d
-    return None
-
-
-def _to_time_first_values(da: xr.DataArray, sample_dim: str | None, pool_sample: bool) -> np.ndarray:
-    if "time" not in da.dims:
-        raise ValueError("DataArray must have 'time' dimension")
-
-    dims = list(da.dims)
-    t_ax = dims.index("time")
-
-    if pool_sample and sample_dim is not None and sample_dim in da.dims:
-        s_ax = dims.index(sample_dim)
-        order = [t_ax, s_ax] + [i for i in range(da.ndim) if i not in (t_ax, s_ax)]
-        vals = np.transpose(da.values, order)
-        nt, ns = vals.shape[:2]
-        return vals.reshape(nt * ns, *vals.shape[2:])
-
-    order = [t_ax] + [i for i in range(da.ndim) if i != t_ax]
-    return np.transpose(da.values, order)
-
-
-def _single_sample_pss_gridwise_spatial_mean(pred, ref, nbins=50):
-    pred, ref = xr.align(pred, ref, join="inner")
-    if pred.sizes.get("time", 0) == 0:
-        return np.nan
-
-    clim_a = daily_climatology(pred, pred["time"])
-    clim_b = daily_climatology(ref, ref["time"])
-
-    pss_map = gridwise_perkins_skill_score_unpaired(clim_a, clim_b, nbins=nbins)
-    return float(np.nanmean(pss_map))
-
-
 def _pooled_pss_gridwise_spatial_mean(pred, ref, nbins=50, sample_dim="auto"):
     pred, ref = xr.align(pred, ref, join="inner")
     if pred.sizes.get("time", 0) == 0 or ref.sizes.get("time", 0) == 0:
@@ -134,20 +108,22 @@ def _pooled_pss_gridwise_spatial_mean(pred, ref, nbins=50, sample_dim="auto"):
     sd_pred = _resolve_sample_dim(pred, sample_dim)
     sd_ref = _resolve_sample_dim(ref, "auto")
 
-    # Pool generated draws over (time, sample); obs stays over time (unless it also has sample, then pool it too)
     a = _to_time_first_values(pred, sample_dim=sd_pred, pool_sample=(sd_pred is not None))
     b = _to_time_first_values(ref, sample_dim=sd_ref, pool_sample=(sd_ref is not None))
+
+    if a.ndim > 3:
+        a = a.reshape(-1, a.shape[-2], a.shape[-1])
+    if b.ndim > 3:
+        b = b.reshape(-1, b.shape[-2], b.shape[-1])
+
+    if a.ndim != 3 or b.ndim != 3:
+        raise ValueError(f"Pooled PSS expects 3D arrays, got {a.shape} and {b.shape}")
 
     pss_map = gridwise_perkins_skill_score_unpaired(a, b, nbins=nbins)
     return float(np.nanmean(pss_map))
 
 
 def pss_gridwise_spatial_mean(pred, ref, nbins=50, sample_dim="auto", mode="pooled"):
-    """
-    mode:
-      - 'pooled'          : pool pred draws over (time,sample), compare to ref over time
-      - 'per_sample_mean' : old behavior (mean of per-sample scores using daily climatology)
-    """
     if mode not in {"pooled", "per_sample_mean"}:
         raise ValueError("mode must be one of {'pooled', 'per_sample_mean'}")
 

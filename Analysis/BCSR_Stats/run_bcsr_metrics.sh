@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=logpdf
-#SBATCH --output=logs/logpdf_%j.log
-#SBATCH --error=logs/logpdf_%j.log
+#SBATCH --job-name=Spectra
+#SBATCH --output=logs/Spectra_%j.log
+#SBATCH --error=logs/Spectra_%j.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=128G
-#SBATCH --time=12:00:00
+#SBATCH --time=01-00:00:00
 #SBATCH --partition=cpu
 
 
@@ -43,32 +43,32 @@ cd ../Processing_and_Analysis_Scripts
 
 
 
+#deltapdf
+
+#python Analysis/BCSR_Stats/delta_log_pdf.py
+
+
 #with Enspools
 
-python Analysis/BCSR_Stats/logpdf.py  #Requires pooling
+#python Analysis/BCSR_Stats/logpdf.py  #Requires pooling
 
 
 
-#python Analysis/BCSR_Stats/metrics_table_4.py \
-  #--mode rmse_pss \
-  #--eval_start 2015 --eval_end 2023 \
-  #--verbose_loader
+
+#Only for table 4 metrics 
 
 
 
-#python Analysis/BCSR_Stats/metrics_table_4.py \
-  #--mode ralsd \
-  #--eval_start 2015 --eval_end 2023 \
-  #--verbose_loader
+
+#---------------------------------#
 
 
+MODE="${MODE:-rapsd}"
 
-#python Analysis/BCSR_Stats/metrics_table_4.py \
-  #--mode merge \
-  #--eval_start 2015 --eval_end 2023 \
-  #--verbose_loader
-
-
+python Analysis/BCSR_Stats/metrics_table_4.py \
+  --mode "$MODE" \
+  --eval_start 2015 --eval_end 2023 \
+  --verbose_loader
 
 
 

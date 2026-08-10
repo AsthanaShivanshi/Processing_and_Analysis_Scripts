@@ -9,6 +9,9 @@ import pandas as pd
 import xarray as xr
 
 import config
+from PSS import pss_gridwise_spatial_mean
+from RAPSD import EPS, ralsd, rapsd
+from load_means import load_all_means_masked
 from load_pooled import (
     ROW_ORDER,
     _sanitize,
@@ -16,9 +19,9 @@ from load_pooled import (
     apply_mask_exact,
     load_all_pooled_masked,
 )
-from PSS import pss_gridwise_spatial_mean
 from rmse import rmse_gridwise_spatial_mean
-from RAPSD import ralsd, rapsd, EPS
+
+SAMPLE_DIMS = ("member", "sample", "samples")
 
 
 def _norm_name(s: str) -> str:
@@ -37,19 +40,23 @@ def _resolve_baseline_da(
         if _norm_name(k) == target:
             return v
 
-    cands = [(k, v) for k, v in data_map.items() if target in _norm_name(k) or _norm_name(k) in target]
+    cands = [
+        (k, v)
+        for k, v in data_map.items()
+        if target in _norm_name(k) or _norm_name(k) in target
+    ]
     if not cands:
         return None
+
     cands.sort(key=lambda kv: len(_norm_name(kv[0])), reverse=True)
     return cands[0][1]
 
 
-def _build_table() -> pd.DataFrame:
-    return pd.DataFrame(
-        index=ROW_ORDER,
-        columns=["RMSE_tas", "PSS_tas", "RALSD_tas", "RMSE_pr", "PSS_pr", "RALSD_pr"],
-        dtype=float,
-    )
+def _resolve_sample_dim(da: xr.DataArray) -> str | None:
+    for d in SAMPLE_DIMS:
+        if d in da.dims:
+            return d
+    return None
 
 
 def _load_obs(args, loaded):
@@ -69,14 +76,12 @@ def _load_obs(args, loaded):
     return {"tas": obs_tas, "pr": obs_pr}
 
 
-def _compute_rmse_pss(args, loaded, obs_map) -> pd.DataFrame:
-    table = _build_table()
+def _compute_rmse_for_var(args, loaded, obs_eval: xr.DataArray, var: str) -> pd.DataFrame:
+    table = pd.DataFrame(index=ROW_ORDER, columns=["RMSE_pooled", "RMSE_mean"], dtype=float)
+    available = loaded.data.get(var, {})
 
-    for var in ("tas", "pr"):
-        obs_eval = obs_map[var]
-        available = loaded.data.get(var, {})
-        rmse_col = f"RMSE_{var}"
-        pss_col = f"PSS_{var}"
+    for suffix, use_sample_dim in (("pooled", True), ("mean", False)):
+        rmse_col = f"RMSE_{suffix}"
 
         for baseline in ROW_ORDER:
             pred = _resolve_baseline_da(available, baseline)
@@ -87,11 +92,40 @@ def _compute_rmse_pss(args, loaded, obs_map) -> pd.DataFrame:
             if pred_eval.sizes.get("time", 0) == 0:
                 continue
 
+            sample_dim = _resolve_sample_dim(pred_eval) if use_sample_dim else None
             table.loc[baseline, rmse_col] = rmse_gridwise_spatial_mean(
-                pred_eval, ref_eval, sample_dim="auto", mode="per_sample_mean"
+                pred_eval,
+                ref_eval,
+                sample_dim=sample_dim if sample_dim is not None else None,
+                mode="per_sample_mean",
             )
+
+    return table
+
+
+def _compute_pss_for_var(args, loaded, obs_eval: xr.DataArray, var: str) -> pd.DataFrame:
+    table = pd.DataFrame(index=ROW_ORDER, columns=["PSS_pooled", "PSS_mean"], dtype=float)
+    available = loaded.data.get(var, {})
+
+    for suffix, use_sample_dim in (("pooled", True), ("mean", False)):
+        pss_col = f"PSS_{suffix}"
+
+        for baseline in ROW_ORDER:
+            pred = _resolve_baseline_da(available, baseline)
+            if pred is None:
+                continue
+
+            pred_eval, ref_eval = xr.align(pred, obs_eval, join="inner")
+            if pred_eval.sizes.get("time", 0) == 0:
+                continue
+
+            sample_dim = _resolve_sample_dim(pred_eval) if use_sample_dim else None
             table.loc[baseline, pss_col] = pss_gridwise_spatial_mean(
-                pred_eval, ref_eval, nbins=args.nbins, sample_dim="auto", mode="pooled"
+                pred_eval,
+                ref_eval,
+                nbins=args.nbins,
+                sample_dim=sample_dim if sample_dim is not None else None,
+                mode="pooled",
             )
 
     return table
@@ -132,11 +166,6 @@ def _plot_spectral_ratio(
     spectra: dict[str, tuple[np.ndarray, np.ndarray, float]],
     out: Path,
 ) -> None:
-    """
-    Plot spectral ratio (pred / obs) vs wavenumber for all baselines.
-    ratio > 1  →  pred has more energy at that scale (over-energetic)
-    ratio < 1  →  pred is smoother than obs at that scale
-    """
     out.parent.mkdir(parents=True, exist_ok=True)
 
     fig, ax = plt.subplots(figsize=(8, 5.5))
@@ -146,9 +175,8 @@ def _plot_spectral_ratio(
         if k_mod.size == 0 or k_ref.size == 0:
             continue
 
-        # Interpolate both onto the shorter common k grid
         n = min(k_ref.size, k_mod.size)
-        k_grid   = k_ref[:n]
+        k_grid = k_ref[:n]
         ps_ref_i = np.interp(k_grid, k_ref, ps_ref)
         ps_mod_i = np.interp(k_grid, k_mod, ps_mod)
 
@@ -166,16 +194,13 @@ def _plot_spectral_ratio(
     print(f"[ok] saved spectral ratio plot → {out}")
 
 
+def _compute_ralsd_for_var(args, loaded, obs_eval: xr.DataArray, var: str) -> pd.DataFrame:
+    table = pd.DataFrame(index=ROW_ORDER, columns=["RALSD_pooled", "RALSD_mean"], dtype=float)
+    available = loaded.data.get(var, {})
+    k_ref, ps_ref = rapsd(obs_eval, time_dim="time")
 
-def _compute_ralsd(args, loaded, obs_map) -> pd.DataFrame:
-    table = _build_table()
-
-    for var in ("tas", "pr"):
-        obs_eval = obs_map[var]
-        available = loaded.data.get(var, {})
-        ralsd_col = f"RALSD_{var}"
-
-        k_ref, ps_ref = rapsd(obs_eval, time_dim="time")
+    for suffix, use_sample_dim in (("pooled", True), ("mean", False)):
+        ralsd_col = f"RALSD_{suffix}"
         spectra: dict[str, tuple[np.ndarray, np.ndarray, float]] = {}
 
         for baseline in ROW_ORDER:
@@ -187,8 +212,7 @@ def _compute_ralsd(args, loaded, obs_map) -> pd.DataFrame:
             if pred_eval.sizes.get("time", 0) == 0:
                 continue
 
-            # Use member dim if present (pooled ensemble)
-            sample_dim = "member" if "member" in pred_eval.dims else None
+            sample_dim = _resolve_sample_dim(pred_eval) if use_sample_dim else None
             k_mod, ps_mod = rapsd(pred_eval, time_dim="time", sample_dim=sample_dim)
             score = ralsd(k_ref, ps_ref, k_mod, ps_mod)
 
@@ -197,23 +221,19 @@ def _compute_ralsd(args, loaded, obs_map) -> pd.DataFrame:
 
         if spectra:
             plot_dir = Path(args.rapsd_plot_dir)
-
-            # 1 — power spectra
             _plot_rapsd(
-                var=var,
+                var=f"{var}_{suffix}",
                 k_ref=k_ref,
                 ps_ref=ps_ref,
                 spectra=spectra,
-                out=plot_dir / f"rapsd_{var}.png",
+                out=plot_dir / f"rapsd_{var}_{suffix}.png",
             )
-
-            # 2 — spectral ratio
             _plot_spectral_ratio(
-                var=var,
+                var=f"{var}_{suffix}",
                 k_ref=k_ref,
                 ps_ref=ps_ref,
                 spectra=spectra,
-                out=plot_dir / f"spectral_ratio_{var}.png",
+                out=plot_dir / f"spectral_ratio_{var}_{suffix}.png",
             )
 
     return table
@@ -222,16 +242,20 @@ def _compute_ralsd(args, loaded, obs_map) -> pd.DataFrame:
 def _write_table(table: pd.DataFrame, out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     table = table.reindex(ROW_ORDER)
-    table.to_csv(out, float_format="%.6f")
+    table.to_csv(out, float_format="%.3f")
 
 
-def _load_partial_table(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        return _build_table()
-    table = pd.read_csv(path, index_col=0)
-    table.index = table.index.astype(str)
-    table = table.reindex(ROW_ORDER)
-    return table
+def _resolve_means_root(path_str: str) -> Path:
+    p = Path(path_str)
+    if p.exists():
+        return p
+    alt = p.parent / "Ensmeans"
+    if alt.exists():
+        return alt
+    alt2 = p.parent / "EnsMeans"
+    if alt2.exists():
+        return alt2
+    return p
 
 
 def main() -> None:
@@ -239,8 +263,9 @@ def main() -> None:
     ds_root = base / "Downscaling_Models/Dataset_Setup_I_Chronological_12km"
 
     ap = argparse.ArgumentParser()
-    ap.add_argument("--mode", choices=["rmse_pss", "ralsd", "merge"], required=True)
+    ap.add_argument("--mode", choices=["rmse", "pss", "rapsd"], required=True)
     ap.add_argument("--ens_root", default=str(base / "GCM_pipeline/ALP-FINEv1.0/EnsPooled"))
+    ap.add_argument("--ens_means_root", default=str(base / "GCM_pipeline/ALP-FINEv1.0/Ensmeans"))
     ap.add_argument("--obs_tas_file", default=str(ds_root / "TabsD_step1_latlon.nc"))
     ap.add_argument("--obs_pr_file", default=str(ds_root / "RhiresD_step1_latlon.nc"))
     ap.add_argument("--obs_tas_var", default="TabsD")
@@ -250,29 +275,19 @@ def main() -> None:
     ap.add_argument("--eval_start", type=int, default=2015)
     ap.add_argument("--eval_end", type=int, default=2023)
     ap.add_argument("--nbins", type=int, default=50)
-    ap.add_argument(
-        "--rmse_pss_csv",
-        default="Analysis/BCSR_Stats/Tables/metrics_rmse_pss_partial.csv",
-    )
-    ap.add_argument(
-        "--ralsd_csv",
-        default="Analysis/BCSR_Stats/Tables/metrics_ralsd_partial.csv",
-    )
-    ap.add_argument(
-        "--metrics_csv",
-        default="Analysis/BCSR_Stats/Tables/metrics_rmse_pss_ralsd_pooled_2015_2023.csv",
-    )
-    ap.add_argument(
-        "--rapsd_plot_dir",
-        default="Analysis/BCSR_Stats/Plots",
-    )
+    ap.add_argument("--rmse_csv", default="Analysis/BCSR_Stats/Tables/metrics_rmse.csv")
+    ap.add_argument("--pss_csv", default="Analysis/BCSR_Stats/Tables/metrics_pss.csv")
+    ap.add_argument("--ralsd_csv", default="Analysis/BCSR_Stats/Tables/metrics_rapsd.csv")
+    ap.add_argument("--rapsd_plot_dir", default="Analysis/BCSR_Stats/Figures")
     ap.add_argument("--verbose_loader", action="store_true")
     args = ap.parse_args()
 
     if args.eval_start > args.eval_end:
         raise ValueError("eval_start must be <= eval_end")
 
-    loaded = load_all_pooled_masked(
+    means_root = _resolve_means_root(args.ens_means_root)
+
+    loaded_pooled = load_all_pooled_masked(
         ens_root=args.ens_root,
         mask_hr_file=args.mask_hr_file,
         mask_hr_var=args.mask_hr_var,
@@ -281,41 +296,62 @@ def main() -> None:
         variables=["tas", "pr"],
         verbose=args.verbose_loader,
     )
+    loaded_means = load_all_means_masked(
+        ens_root=means_root,
+        mask_hr_file=args.mask_hr_file,
+        mask_hr_var=args.mask_hr_var,
+        eval_start=args.eval_start,
+        eval_end=args.eval_end,
+        variables=["tas", "pr"],
+        verbose=args.verbose_loader,
+    )
 
-    if loaded.missing.get("tas"):
-        print(f"[warn] missing pooled tas baselines: {loaded.missing['tas']}")
-    if loaded.missing.get("pr"):
-        print(f"[warn] missing pooled pr baselines: {loaded.missing['pr']}")
+    obs_map = _load_obs(args, loaded_pooled)
 
-    obs_map = _load_obs(args, loaded)
+    if args.mode == "rmse":
+        tas_pooled = _compute_rmse_for_var(args, loaded_pooled, obs_map["tas"], "tas")
+        tas_mean = _compute_rmse_for_var(args, loaded_means, obs_map["tas"], "tas")
+        pr_pooled = _compute_rmse_for_var(args, loaded_pooled, obs_map["pr"], "pr")
+        pr_mean = _compute_rmse_for_var(args, loaded_means, obs_map["pr"], "pr")
 
-    if args.mode == "rmse_pss":
-        table = _compute_rmse_pss(args, loaded, obs_map)
-        out = Path(args.rmse_pss_csv)
-        _write_table(table, out)
-        print(f"[ok] wrote {out}")
+        out = pd.DataFrame(index=ROW_ORDER)
+        out["tas_RMSE_pooled"] = tas_pooled["RMSE_pooled"]
+        out["tas_RMSE_mean"] = tas_mean["RMSE_mean"]
+        out["pr_RMSE_pooled"] = pr_pooled["RMSE_pooled"]
+        out["pr_RMSE_mean"] = pr_mean["RMSE_mean"]
+        _write_table(out, Path(args.rmse_csv))
+        print(f"[ok] wrote {args.rmse_csv}")
         return
 
-    if args.mode == "ralsd":
-        table = _compute_ralsd(args, loaded, obs_map)
-        out = Path(args.ralsd_csv)
-        _write_table(table, out)
-        print(f"[ok] wrote {out}")
+    if args.mode == "pss":
+        tas_pooled = _compute_pss_for_var(args, loaded_pooled, obs_map["tas"], "tas")
+        tas_mean = _compute_pss_for_var(args, loaded_means, obs_map["tas"], "tas")
+        pr_pooled = _compute_pss_for_var(args, loaded_pooled, obs_map["pr"], "pr")
+        pr_mean = _compute_pss_for_var(args, loaded_means, obs_map["pr"], "pr")
+
+        out = pd.DataFrame(index=ROW_ORDER)
+        out["tas_PSS_pooled"] = tas_pooled["PSS_pooled"]
+        out["tas_PSS_mean"] = tas_mean["PSS_mean"]
+        out["pr_PSS_pooled"] = pr_pooled["PSS_pooled"]
+        out["pr_PSS_mean"] = pr_mean["PSS_mean"]
+        _write_table(out, Path(args.pss_csv))
+        print(f"[ok] wrote {args.pss_csv}")
         return
 
-    rmse_pss_table = _load_partial_table(Path(args.rmse_pss_csv))
-    ralsd_table = _load_partial_table(Path(args.ralsd_csv))
+    if args.mode == "rapsd":
+        tas_pooled = _compute_ralsd_for_var(args, loaded_pooled, obs_map["tas"], "tas")
+        tas_mean = _compute_ralsd_for_var(args, loaded_means, obs_map["tas"], "tas")
+        pr_pooled = _compute_ralsd_for_var(args, loaded_pooled, obs_map["pr"], "pr")
+        pr_mean = _compute_ralsd_for_var(args, loaded_means, obs_map["pr"], "pr")
 
-    merged = _build_table()
-    for col in merged.columns:
-        if col.startswith("RMSE") or col.startswith("PSS"):
-            merged[col] = rmse_pss_table[col]
-        elif col.startswith("RALSD"):
-            merged[col] = ralsd_table[col]
-
-    out = Path(args.metrics_csv)
-    _write_table(merged, out)
-    print(f"[ok] wrote {out}")
+        out = pd.DataFrame(index=ROW_ORDER)
+        out["tas_RALSD_pooled"] = tas_pooled["RALSD_pooled"]
+        out["tas_RALSD_mean"] = tas_mean["RALSD_mean"]
+        out["pr_RALSD_pooled"] = pr_pooled["RALSD_pooled"]
+        out["pr_RALSD_mean"] = pr_mean["RALSD_mean"]
+        _write_table(out, Path(args.ralsd_csv))
+        print(f"[ok] wrote {args.ralsd_csv}")
+        return
 
 
 if __name__ == "__main__":
