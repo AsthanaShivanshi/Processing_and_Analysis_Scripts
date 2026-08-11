@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Spectra
-#SBATCH --output=logs/Spectra_%j.log
-#SBATCH --error=logs/Spectra_%j.log
+#SBATCH --job-name=EMBE
+#SBATCH --output=logs/EMBE_%j.log
+#SBATCH --error=logs/EMBE_%j.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=128G
@@ -63,7 +63,7 @@ cd ../Processing_and_Analysis_Scripts
 #---------------------------------#
 
 
-MODE="${MODE:-rapsd}"
+MODE="${MODE:-mbe}"
 
 python Analysis/BCSR_Stats/metrics_table_4.py \
   --mode "$MODE" \

@@ -21,27 +21,9 @@ def _resolve_sample_dim(da: xr.DataArray, sample_dim: str | None = "auto") -> st
     return None
 
 
-def _single_sample_pss_gridwise_spatial_mean(pred, ref, nbins=50):
-    pred, ref = xr.align(pred, ref, join="inner")
-    if pred.sizes.get("time", 0) == 0 or ref.sizes.get("time", 0) == 0:
-        return np.nan
-
-    a = np.asarray(pred.values)
-    b = np.asarray(ref.values)
-
-    if a.ndim < 2 or b.ndim < 2:
-        raise ValueError("Inputs must be at least 2D")
-
-    if a.shape[1:] != b.shape[1:]:
-        raise ValueError(f"Spatial shapes do not match: {a.shape[1:]} vs {b.shape[1:]}")
-
-    pss_map = gridwise_perkins_skill_score_unpaired(a, b, nbins=nbins)
-    return float(np.nanmean(pss_map))
-
-
-def _to_time_first_values(da: xr.DataArray, sample_dim: str | None, pool_sample: bool) -> np.ndarray:
+def _time_sample_flattened_values(da: xr.DataArray, sample_dim: str | None, pool_sample: bool) -> np.ndarray:
     if "time" not in da.dims:
-        raise ValueError("DataArray must have 'time' dimension")
+        raise ValueError("DataArray must have a 'time' dimension")
 
     dims = list(da.dims)
     t_ax = dims.index("time")
@@ -50,11 +32,12 @@ def _to_time_first_values(da: xr.DataArray, sample_dim: str | None, pool_sample:
         s_ax = dims.index(sample_dim)
         order = [t_ax, s_ax] + [i for i in range(da.ndim) if i not in (t_ax, s_ax)]
         vals = np.transpose(da.values, order)
-        nt, ns = vals.shape[:2]
-        return vals.reshape(nt * ns, *vals.shape[2:])
+        n = vals.shape[0] * vals.shape[1]
+        return vals.reshape(n, *vals.shape[2:])
 
     order = [t_ax] + [i for i in range(da.ndim) if i != t_ax]
-    return np.transpose(da.values, order)
+    vals = np.transpose(da.values, order)
+    return vals.reshape(vals.shape[0], *vals.shape[1:])
 
 
 def gridwise_perkins_skill_score_unpaired(a, b, nbins=50, min_count=5):
@@ -77,27 +60,36 @@ def gridwise_perkins_skill_score_unpaired(a, b, nbins=50, min_count=5):
         if a_valid.size <= min_count or b_valid.size <= min_count:
             continue
 
-        try:
-            combined = np.concatenate([a_valid, b_valid])
-            vmin = np.nanmin(combined)
-            vmax = np.nanmax(combined)
-            if np.isclose(vmin, vmax):
-                vmax = vmin + 1e-6
+        combined = np.concatenate([a_valid, b_valid])
+        vmin = np.nanmin(combined)
+        vmax = np.nanmax(combined)
+        if np.isclose(vmin, vmax):
+            vmax = vmin + 1e-6
 
-            bins = np.linspace(vmin, vmax, nbins + 1)
-            hist_a, _ = np.histogram(a_valid, bins=bins)
-            hist_b, _ = np.histogram(b_valid, bins=bins)
+        bins = np.linspace(vmin, vmax, nbins + 1)
+        hist_a, _ = np.histogram(a_valid, bins=bins)
+        hist_b, _ = np.histogram(b_valid, bins=bins)
 
-            sa = hist_a.sum()
-            sb = hist_b.sum()
-            if sa > 0 and sb > 0:
-                hist_a = hist_a / sa
-                hist_b = hist_b / sb
-                pss[idx] = np.minimum(hist_a, hist_b).sum()
-        except Exception:
-            pss[idx] = np.nan
+        sa = hist_a.sum()
+        sb = hist_b.sum()
+        if sa > 0 and sb > 0:
+            hist_a = hist_a / sa
+            hist_b = hist_b / sb
+            pss[idx] = np.minimum(hist_a, hist_b).sum()
 
     return pss
+
+
+def _single_sample_pss_gridwise_spatial_mean(pred, ref, nbins=50):
+    pred, ref = xr.align(pred, ref, join="inner")
+    if pred.sizes.get("time", 0) == 0 or ref.sizes.get("time", 0) == 0:
+        return np.nan
+
+    a = _time_sample_flattened_values(pred, sample_dim=None, pool_sample=False)
+    b = _time_sample_flattened_values(ref, sample_dim=None, pool_sample=False)
+
+    pss_map = gridwise_perkins_skill_score_unpaired(a, b, nbins=nbins)
+    return float(np.nanmean(pss_map))
 
 
 def _pooled_pss_gridwise_spatial_mean(pred, ref, nbins=50, sample_dim="auto"):
@@ -108,16 +100,8 @@ def _pooled_pss_gridwise_spatial_mean(pred, ref, nbins=50, sample_dim="auto"):
     sd_pred = _resolve_sample_dim(pred, sample_dim)
     sd_ref = _resolve_sample_dim(ref, "auto")
 
-    a = _to_time_first_values(pred, sample_dim=sd_pred, pool_sample=(sd_pred is not None))
-    b = _to_time_first_values(ref, sample_dim=sd_ref, pool_sample=(sd_ref is not None))
-
-    if a.ndim > 3:
-        a = a.reshape(-1, a.shape[-2], a.shape[-1])
-    if b.ndim > 3:
-        b = b.reshape(-1, b.shape[-2], b.shape[-1])
-
-    if a.ndim != 3 or b.ndim != 3:
-        raise ValueError(f"Pooled PSS expects 3D arrays, got {a.shape} and {b.shape}")
+    a = _time_sample_flattened_values(pred, sample_dim=sd_pred, pool_sample=True)
+    b = _time_sample_flattened_values(ref, sample_dim=sd_ref, pool_sample=True)
 
     pss_map = gridwise_perkins_skill_score_unpaired(a, b, nbins=nbins)
     return float(np.nanmean(pss_map))
