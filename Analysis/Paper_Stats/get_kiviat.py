@@ -13,15 +13,19 @@ from plotstyle import add_bottom_legend, save_paper_figure, style_model_line
 sns.set_style("whitegrid")
 
 DEFAULT_METRICS = (
-    ("CRPS", "CRPS"),
-    ("RALSD", "RALSD"),
-    ("SSIM", "SSIM"),
-    ("RMSE", "RMSE"),
-    ("MAE", "MAE"),
-    ("PITD", "PITD"),
+    ("CRPS", "CRPS ↓"),
+    ("SSIM", "1-SSIM ↓"),
+    ("RMSE", "RMSE ↓"),
+    ("MAE", "MAE ↓"),
+    ("PITD", "PITD ↓"),
 )
 
 FALLBACK_METRICS = {"CRPS", "PITD"}
+
+MODEL_STYLE_OVERRIDES = {
+    "DDIM": {"color": "black", "linewidth": 3.2},
+    "CFM": {"color": "green", "linewidth": 2.4},
+}
 
 
 def _find_column(df: pd.DataFrame, candidates: tuple[str, ...] | list[str]) -> str:
@@ -80,6 +84,9 @@ def _extract_variable_data(
                 else np.full(len(subset), np.nan)
             )
 
+        if metric_name == "SSIM":
+            mean = 1.0 - mean
+
         mean_values.append(mean)
 
     return np.asarray(mean_values, dtype=float).T
@@ -99,18 +106,22 @@ def _normalise_metric_data(mean_data: np.ndarray) -> np.ndarray:
     return norm_mean
 
 
+def _style_for_model(model: str) -> dict:
+    base = dict(style_model_line(model))
+    base.pop("zorder", None)
+    base.update(MODEL_STYLE_OVERRIDES.get(model, {}))
+    return base
+
+
 def _plot_kiviat_axis(ax: plt.Axes, mean_data: np.ndarray, models, metric_labels):
     n_metrics = len(metric_labels)
     angles = np.linspace(0, 2 * np.pi, n_metrics, endpoint=False).tolist()
     closed_angles = angles + angles[:1]
 
     for i, model in enumerate(models):
-        line_kwargs = dict(style_model_line(model))
-        line_kwargs.pop("zorder", None)
-
+        line_kwargs = _style_for_model(model)
         values = mean_data[i].tolist()
         closed_values = values + values[:1]
-
         ax.plot(closed_angles, closed_values, label=model, zorder=3, **line_kwargs)
 
     ax.set_ylim(0, 1)
@@ -119,7 +130,8 @@ def _plot_kiviat_axis(ax: plt.Axes, mean_data: np.ndarray, models, metric_labels
     ax.set_rlabel_position(90)
     ax.set_xticks(angles)
     ax.set_xticklabels(metric_labels, fontsize=12, fontweight="bold")
-    ax.tick_params(axis="x", pad=20)
+    ax.tick_params(axis="x", pad=18)
+    ax.tick_params(axis="y", labelsize=10)
     ax.grid(True, linestyle="--", linewidth=1, alpha=0.65)
 
 
@@ -145,15 +157,22 @@ def plot_kiviat_from_csv(
 
     metric_labels = [label for _, label in metric_specs]
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 8), subplot_kw={"polar": True})
+    fig, axes = plt.subplots(
+        1,
+        2,
+        figsize=(14, 7.5),
+        subplot_kw={"polar": True},
+    )
+
     _plot_kiviat_axis(axes[0], temp_mean, models, metric_labels)
     _plot_kiviat_axis(axes[1], pr_mean, models, metric_labels)
 
+    fig.subplots_adjust(wspace=0.35, bottom=0.18, top=0.92)
+
     handles, labels = axes[0].get_legend_handles_labels()
     add_bottom_legend(fig, handles, labels, ncol=len(models))
-    fig.legends[-1].set_bbox_to_anchor((0.5, 0.07), transform=fig.transFigure)
-
-    fig.tight_layout(rect=[0, 0.05, 1, 0.96])
+    if fig.legends:
+        fig.legends[-1].set_bbox_to_anchor((0.5, 0.06), transform=fig.transFigure)
 
     if save_name is not None:
         save_paper_figure(fig, save_name)
