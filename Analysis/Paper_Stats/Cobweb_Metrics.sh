@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Spectra_Method_I
-#SBATCH --output=logs/Spectra_Method_I_job_%j.log
-#SBATCH --error=logs/Spectra_Method_I_job_%j.log
+#SBATCH --job-name=Spectra_Method_II
+#SBATCH --output=logs/Spectra_Method_II_job_%j.log
+#SBATCH --error=logs/Spectra_Method_II_job_%j.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --time=8:00:00
@@ -35,4 +35,4 @@ python -c "import wandb; print(wandb.__version__)"
 #python Analysis/Paper_Stats/sal.py
 #python Analysis/Paper_Stats/rapsd_method_I.py
 
-python Analysis/Paper_Stats/rapsd_method_I.py
+python Analysis/Paper_Stats/rapsd_method_II.py

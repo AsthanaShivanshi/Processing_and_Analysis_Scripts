@@ -10,7 +10,7 @@ import xarray as xr
 
 import config
 from PSS import pss_gridwise_spatial_mean
-from RAPSD import EPS, ralsd, rapsd
+from RAPSD import EPS, PRECIP_MIN_MEAN, ralsd, rapsd, wavenumber_to_wavelength_km
 from mbe import mbe_gridwise_spatial_mean
 from load_means import load_all_means_masked
 from load_pooled import (
@@ -22,6 +22,28 @@ from load_pooled import (
 )
 
 SAMPLE_DIMS = ("member", "sample", "samples")
+
+# Spectral-ratio panels: identical, fixed y-range on ALL ratio subplots.
+RATIO_YLIM = (0.0, 1.75)
+
+# Broken x-axis (wavelength, km): continuous 50 -> 12 km, zoom 12 -> 2 km.
+# WL_MIN_KM is the Nyquist wavelength for a 1 km grid; nothing exists below it,
+# so the zoom panel must not extend past it (otherwise it renders blank).
+WL_LEFT_MAX_KM = 50.0
+WL_BREAK_KM = 12.0
+WL_MIN_KM = 2.0
+
+LEFT_TICKS_KM = np.array([50, 40, 30, 20, 12], dtype=float)
+RIGHT_TICKS_KM = np.array([12, 9, 7, 5, 3, 2], dtype=float)
+
+# Black is reserved for OBS, so it is deliberately absent from the palette.
+_PALETTE = [
+    "#e6194b", "#3cb44b", "#4363d8", "#f58231",
+    "#911eb4", "#42d4f4", "#f032e6", "#9a6324", "#808000",
+    "#008080", "#bcbd22", "#17becf", "#8c564b", "#469990",
+]
+_LINESTYLES = ["-", "--", "-.", ":"]
+_MARKERS = ["o", "s", "^", "D", "v", "P", "X", "*"]
 
 
 def _norm_name(s: str) -> str:
@@ -117,60 +139,217 @@ def _compute_pss_for_var(args, loaded, obs_eval: xr.DataArray, var: str) -> pd.D
     return table
 
 
+def _model_style(i: int) -> dict:
+    """Unique (colour, linestyle, marker) triple per model index."""
+    return dict(
+        color=_PALETTE[i % len(_PALETTE)],
+        ls=_LINESTYLES[i % len(_LINESTYLES)],
+        marker=_MARKERS[i % len(_MARKERS)],
+        markersize=3.5,
+        # Integer stride, not a fraction: the broken axis clips each subplot to
+        # a narrow window, and fractional markevery is computed over the FULL
+        # data extent, which can leave a panel with zero markers.
+        markevery=max(1, 3 + i),
+        lw=1.6,
+        alpha=0.9,
+    )
+
+
+def _add_x_break_marks(ax_left: plt.Axes, ax_right: plt.Axes) -> None:
+    """Diagonal tick marks indicating the axis break."""
+    d = 0.012
+    kl = dict(transform=ax_left.transAxes, color="0.35", clip_on=False, lw=1.0)
+    kr = dict(transform=ax_right.transAxes, color="0.35", clip_on=False, lw=1.0)
+    ax_left.plot((1 - d, 1 + d), (-d, +d), **kl)
+    ax_left.plot((1 - d, 1 + d), (1 - d, 1 + d), **kl)
+    ax_right.plot((-d, +d), (-d, +d), **kr)
+    ax_right.plot((-d, +d), (1 - d, 1 + d), **kr)
+
+
+def _format_broken_pair(
+    ax_left: plt.Axes,
+    ax_right: plt.Axes,
+    *,
+    show_ylabel: bool,
+    show_xticklabels: bool,
+) -> None:
+    ax_left.spines["right"].set_visible(False)
+    ax_right.spines["left"].set_visible(False)
+    ax_left.spines["top"].set_visible(False)
+    ax_right.spines["top"].set_visible(False)
+
+    ax_left.tick_params(axis="y", right=False, labelleft=show_ylabel)
+    ax_right.tick_params(axis="y", left=False, right=False, labelleft=False)
+
+    ax_left.tick_params(axis="x", labelbottom=show_xticklabels)
+    ax_right.tick_params(axis="x", labelbottom=show_xticklabels)
+
+    if not show_ylabel:
+        ax_left.set_ylabel("")
+
+
+def _to_wavelength(
+    k: np.ndarray,
+    ps: np.ndarray,
+    shape: tuple[int, int],
+    grid_spacing_km: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """k -> wavelength (km), Nyquist-clipped and sorted ascending."""
+    wl = wavenumber_to_wavelength_km(k, shape, grid_spacing_km)
+    nyquist = 2.0 * grid_spacing_km
+    keep = np.isfinite(wl) & (wl >= nyquist)
+    wl, ps = wl[keep], ps[keep]
+    order = np.argsort(wl)
+    return wl[order], ps[order]
+
+
 def _plot_rapsd_summary(
     out: Path,
     tas_ref: tuple[np.ndarray, np.ndarray],
     tas_spectra: dict[str, tuple[np.ndarray, np.ndarray, float]],
     pr_ref: tuple[np.ndarray, np.ndarray],
     pr_spectra: dict[str, tuple[np.ndarray, np.ndarray, float]],
+    tas_shape: tuple[int, int],
+    pr_shape: tuple[int, int],
+    grid_spacing_km: float = 1.0,
 ) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(2, 2, figsize=(16, 10))
-    cmap = plt.get_cmap("tab20")
-    linestyles = ["-", "--", ":", "-."]
+    fig = plt.figure(figsize=(15, 8))
+    gs = fig.add_gridspec(
+        2, 4,
+        width_ratios=[1.0, 1.5, 1.0, 1.5],
+        height_ratios=[2.2, 1.0],
+        wspace=0.06,
+        hspace=0.10,
+    )
 
-    panel_data = [
-        ("tas", axes[0, 0], axes[1, 0], tas_ref, tas_spectra),
-        ("pr", axes[0, 1], axes[1, 1], pr_ref, pr_spectra),
+    # Top row: share y only WITHIN a variable — tas power (K^2) and pr power
+    # (mm^2/day^2) differ by orders of magnitude, so a global share would
+    # flatten one panel into a line.
+    # Bottom row: share y across everything (all ratios are 0-1.75).
+    ax_t0 = fig.add_subplot(gs[0, 0])
+    ax_b0 = fig.add_subplot(gs[1, 0])
+    ax_t1 = fig.add_subplot(gs[0, 1], sharey=ax_t0)
+    ax_b1 = fig.add_subplot(gs[1, 1], sharey=ax_b0)
+    ax_t2 = fig.add_subplot(gs[0, 2])                       # own y-scale
+    ax_b2 = fig.add_subplot(gs[1, 2], sharey=ax_b0)
+    ax_t3 = fig.add_subplot(gs[0, 3], sharey=ax_t2)
+    ax_b3 = fig.add_subplot(gs[1, 3], sharey=ax_b0)
+
+    # (var, label, ref, spectra, shape, axes, show_power_ylabel, show_ratio_ylabel)
+    panels = [
+        ("tas", "Temperature", tas_ref, tas_spectra, tas_shape,
+         (ax_t0, ax_t1, ax_b0, ax_b1), True, True),
+        ("pr", "Precipitation", pr_ref, pr_spectra, pr_shape,
+         (ax_t2, ax_t3, ax_b2, ax_b3), True, False),
     ]
 
-    for var, ax_psd, ax_ratio, (k_ref, ps_ref), spectra in panel_data:
-        if k_ref.size:
-            ax_psd.loglog(k_ref, ps_ref, color="black", lw=2.2, label="OBS")
+    # Consistent style per model NAME across both variables.
+    all_names = list(dict.fromkeys([*tas_spectra, *pr_spectra]))
+    styles = {name: _model_style(i) for i, name in enumerate(all_names)}
+    handles: dict[str, plt.Line2D] = {}
 
-        ax_ratio.axhline(1.0, color="black", lw=1.3, ls="--", zorder=3)
+    for (_var, var_label, (k_ref, ps_ref), spectra, shape, axs,
+         show_power_ylabel, show_ratio_ylabel) in panels:
+        ax_tl, ax_tr, ax_bl, ax_br = axs
 
-        for i, (baseline, (k_mod, ps_mod, score)) in enumerate(spectra.items()):
-            color = cmap(i % 20)
-            ls = linestyles[i % len(linestyles)]
-            label = f"{baseline} | RALSD={score:.4f}" if np.isfinite(score) else baseline
+        wl_ref, ps_ref_wl = _to_wavelength(k_ref, ps_ref, shape, grid_spacing_km)
 
-            if k_mod.size:
-                ax_psd.loglog(k_mod, ps_mod, color=color, lw=1.4, ls=ls, label=label)
+        # ── top row: spectra ────────────────────────────────────────────────
+        for ax in (ax_tl, ax_tr):
+            if wl_ref.size:
+                (h_obs,) = ax.semilogy(
+                    wl_ref, ps_ref_wl, color="black", lw=1.8, ls="-",
+                    zorder=5, label="OBS",
+                )
+                handles.setdefault("OBS", h_obs)
 
-            if k_ref.size and k_mod.size:
+            for baseline, (k_mod, ps_mod, _) in spectra.items():
+                wl_m, ps_m = _to_wavelength(k_mod, ps_mod, shape, grid_spacing_km)
+                if not wl_m.size:
+                    continue
+                (h,) = ax.semilogy(wl_m, ps_m, **styles[baseline])
+                handles.setdefault(baseline, h)
+
+            ax.grid(True, which="major", alpha=0.25, ls=":")
+            # Descending limits put large scales on the left; do NOT also call
+            # invert_xaxis() or the two cancel out.
+            ax.set_xlim(
+                (WL_LEFT_MAX_KM, WL_BREAK_KM) if ax is ax_tl
+                else (WL_BREAK_KM, WL_MIN_KM)
+            )
+
+        # ── bottom row: model / obs ratio ───────────────────────────────────
+        for ax in (ax_bl, ax_br):
+            ax.axhline(1.0, color="black", lw=1.0, zorder=3)
+
+            for baseline, (k_mod, ps_mod, _) in spectra.items():
+                if not (k_ref.size and k_mod.size):
+                    continue
+                # interpolate onto the obs k-grid, then relabel to wavelength
                 n = min(k_ref.size, k_mod.size)
                 k_grid = k_ref[:n]
-                ps_ref_i = np.interp(k_grid, k_ref, ps_ref)
-                ps_mod_i = np.interp(k_grid, k_mod, ps_mod)
-                ratio = ps_mod_i / np.maximum(ps_ref_i, EPS)
-                ax_ratio.plot(k_grid, ratio, color=color, lw=1.4, ls=ls, label=baseline)
+                ps_r = np.interp(k_grid, k_ref, ps_ref)
+                ps_m = np.interp(k_grid, k_mod, ps_mod)
+                wl_g, ratio = _to_wavelength(
+                    k_grid, ps_m / np.maximum(ps_r, EPS), shape, grid_spacing_km
+                )
+                ax.plot(wl_g, ratio, **styles[baseline])
 
-        ax_psd.set_title(f"RAPSD — {var}")
-        ax_psd.set_xlabel("Wavenumber")
-        ax_psd.set_ylabel("Power")
-        ax_psd.grid(True, which="both", alpha=0.25)
-        ax_psd.legend(fontsize=7, frameon=False)
+            ax.grid(True, which="major", alpha=0.25, ls=":")
+            ax.set_xlim(
+                (WL_LEFT_MAX_KM, WL_BREAK_KM) if ax is ax_bl
+                else (WL_BREAK_KM, WL_MIN_KM)
+            )
+            ax.set_ylim(*RATIO_YLIM)          # identical, fixed 0–1.75
 
-        ax_ratio.set_title(f"Spectral ratio — {var}")
-        ax_ratio.set_xscale("log")
-        ax_ratio.set_xlabel("Wavenumber k (pixel units)")
-        ax_ratio.set_ylabel("pred / obs")
-        ax_ratio.grid(True, which="both", ls="--", alpha=0.3)
+        ax_tl.set_title(var_label, fontsize=13, fontweight="bold", loc="left")
 
-    fig.tight_layout()
-    fig.savefig(out, dpi=180, bbox_inches="tight")
+        if show_power_ylabel:
+            ax_tl.set_ylabel("Power", fontsize=11)
+        if show_ratio_ylabel:
+            ax_bl.set_ylabel("Model / Obs", fontsize=11)
+
+        for ax, ticks in (
+            (ax_tl, LEFT_TICKS_KM), (ax_tr, RIGHT_TICKS_KM),
+            (ax_bl, LEFT_TICKS_KM), (ax_br, RIGHT_TICKS_KM),
+        ):
+            ax.set_xticks(ticks)
+            ax.set_xticklabels([str(int(v)) for v in ticks], fontsize=9)
+            ax.tick_params(axis="both", labelsize=10)
+
+        ax_bl.set_xlabel("Wavelength (km)", fontsize=11, loc="right")
+
+        _format_broken_pair(ax_tl, ax_tr, show_ylabel=show_power_ylabel,
+                            show_xticklabels=False)
+        _format_broken_pair(ax_bl, ax_br, show_ylabel=show_ratio_ylabel,
+                            show_xticklabels=True)
+        _add_x_break_marks(ax_tl, ax_tr)
+        _add_x_break_marks(ax_bl, ax_br)
+
+        # RALSD scores as a compact monospace table.
+        if spectra:
+            txt = "RALSD (dB)\n" + "\n".join(
+                f"{n:<12s}{s:6.3f}"
+                for n, (_, _, s) in spectra.items() if np.isfinite(s)
+            )
+            ax_tr.text(
+                0.97, 0.97, txt, transform=ax_tr.transAxes, fontsize=8,
+                family="monospace", va="top", ha="right",
+                bbox=dict(boxstyle="round,pad=0.3", fc="white",
+                          alpha=0.85, ec="0.85"),
+            )
+
+    fig.legend(
+        list(handles.values()), list(handles.keys()),
+        loc="lower center", ncol=min(len(handles), 6),
+        fontsize=10, frameon=False, bbox_to_anchor=(0.5, 0.005),
+        handlelength=3.0, columnspacing=1.8,
+    )
+
+    fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.13)
+    fig.savefig(out, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"[ok] saved RAPSD summary → {out}")
 
@@ -178,7 +357,20 @@ def _plot_rapsd_summary(
 def _compute_ralsd_for_var(args, loaded, obs_eval: xr.DataArray, var: str):
     table = pd.DataFrame(index=ROW_ORDER, columns=["RALSD"], dtype=float)
     available = loaded.data.get(var, {})
-    k_ref, ps_ref = rapsd(obs_eval, time_dim="time")
+
+    # precip only: drop near-empty frames (unpaired, per-dataset filter)
+    min_mean = PRECIP_MIN_MEAN if var == "pr" else None
+
+    # spatial shape (H, W) — needed to map wavenumber -> wavelength in km
+    spatial_dims = [d for d in obs_eval.dims if d != "time"]
+    field_shape = tuple(int(obs_eval.sizes[d]) for d in spatial_dims[-2:])
+
+    k_ref, ps_ref = rapsd(
+        obs_eval,
+        time_dim="time",
+        min_frame_mean=min_mean,
+        desc=f"RAPSD obs {var}",
+    )
 
     spectra: dict[str, tuple[np.ndarray, np.ndarray, float]] = {}
 
@@ -192,13 +384,19 @@ def _compute_ralsd_for_var(args, loaded, obs_eval: xr.DataArray, var: str):
             continue
 
         sample_dim = _resolve_sample_dim(pred_eval)
-        k_mod, ps_mod = rapsd(pred_eval, time_dim="time", sample_dim=sample_dim)
+        k_mod, ps_mod = rapsd(
+            pred_eval,
+            time_dim="time",
+            sample_dim=sample_dim,
+            min_frame_mean=min_mean,
+            desc=f"RAPSD {baseline} {var}",
+        )
         score = ralsd(k_ref, ps_ref, k_mod, ps_mod)
 
         table.loc[baseline, "RALSD"] = score
         spectra[baseline] = (k_mod, ps_mod, score)
 
-    return table, (k_ref, ps_ref), spectra
+    return table, (k_ref, ps_ref), spectra, field_shape
 
 
 def _write_table(table: pd.DataFrame, out: Path) -> None:
@@ -241,6 +439,8 @@ def main() -> None:
     ap.add_argument("--pss_csv", default="Analysis/BCSR_Stats/Tables/metrics_pss.csv")
     ap.add_argument("--ralsd_csv", default="Analysis/BCSR_Stats/Tables/metrics_rapsd.csv")
     ap.add_argument("--rapsd_plot_dir", default="Analysis/BCSR_Stats/Figures")
+    ap.add_argument("--grid_spacing_km", type=float, default=1.0,
+                    help="HR grid spacing in km (used for the wavelength axis)")
     ap.add_argument("--verbose_loader", action="store_true")
     args = ap.parse_args()
 
@@ -298,8 +498,12 @@ def main() -> None:
         return
 
     if args.mode == "rapsd":
-        tas_ralsd, tas_ref, tas_spectra = _compute_ralsd_for_var(args, loaded_pooled, obs_map["tas"], "tas")
-        pr_ralsd, pr_ref, pr_spectra = _compute_ralsd_for_var(args, loaded_pooled, obs_map["pr"], "pr")
+        tas_ralsd, tas_ref, tas_spectra, tas_shape = _compute_ralsd_for_var(
+            args, loaded_pooled, obs_map["tas"], "tas"
+        )
+        pr_ralsd, pr_ref, pr_spectra, pr_shape = _compute_ralsd_for_var(
+            args, loaded_pooled, obs_map["pr"], "pr"
+        )
 
         out = pd.DataFrame(index=ROW_ORDER)
         out["tas_RALSD"] = tas_ralsd["RALSD"]
@@ -314,6 +518,9 @@ def main() -> None:
             tas_spectra=tas_spectra,
             pr_ref=pr_ref,
             pr_spectra=pr_spectra,
+            tas_shape=tas_shape,
+            pr_shape=pr_shape,
+            grid_spacing_km=args.grid_spacing_km,
         )
         return
 

@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
-from matplotlib import colors as mcolors
 from numpy.fft import fft2, fftshift
 from tqdm import tqdm
 
@@ -18,24 +17,22 @@ PROCESSING_ROOT = PAPER_STATS_DIR.parent.parent.parent
 START = "2015-01-01"
 END = "2023-12-31"
 
-
-
 SAMPLE_DIMS = ("member", "sample", "samples")
 EPS = 1e-30
 GRID_SPACING_KM = 1.0
-NYQUIST_KM = 2.0 * GRID_SPACING_KM  # 2 km
-PRECIP_MIN_MEAN = 0.048  # mm/day (Harris et al. 0.002 mm/hr * 24)
+NYQUIST_KM = 2.0 * GRID_SPACING_KM
+PRECIP_MIN_MEAN = 0.05  # mm/day (Harris et al. 0.002 mm/hr * 24)
 
-# Broken x-axis: make 1–12 km prominent, keep the rest to 50 km.
 
-WL_LEFT_MAX_KM = 80.0
+WL_LEFT_MAX_KM = 50.0
 WL_BREAK_KM = 12.0
 WL_MIN_KM = 1.0
 
+
 LEFT_TICKS_KM = np.array([50, 40, 30, 20, 12], dtype=float)
-RIGHT_TICKS_KM = np.array([12, 10, 8, 6, 4, 2, 1], dtype=float)
+RIGHT_TICKS_KM = np.array([12, 9, 7, 5, 3, 1], dtype=float)
 
-
+RATIO_YLIM = (0.0, 2.0)
 
 MODEL_COLORS = {
     "Coarse": "#7f7f7f",
@@ -46,7 +43,18 @@ MODEL_COLORS = {
     "CFM": "#9467bd",
 }
 
+STYLE = {
+    "Obs": dict(color="black", ls="-", lw=1.8),
+    "Coarse": dict(ls="--", lw=1.0),
+    "Bicubic": dict(ls="--", lw=1.0),
+    "Bilinear": dict(ls="--", lw=1.0),
+    "UNet": dict(ls="-", lw=1.2),
+    "DDIM": dict(ls="-", lw=1.5),
+    "CFM": dict(ls="-", lw=1.5),
+}
 
+
+# ── IO helpers ────────────────────────────────────────────────────────────────
 def _load_field(path, var, mask=None, clip=False):
     with xr.open_dataset(path) as ds:
         da = ds[var].sel(time=slice(START, END)).load()
@@ -64,15 +72,16 @@ def _sample_dim(da):
     return next((d for d in SAMPLE_DIMS if d in da.dims), None)
 
 
-#  RAPSD (Harris et al. 2022 / pySTEPS / Ruzanski & Chandrasekar 2011) 
+# ── RAPSD (Harris et al. 2022 / pySTEPS) ──────────────────────────────────────
+
+
 def _compute_rapsd(img: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     img = img.astype(np.float64)
     valid = np.isfinite(img)
     if valid.sum() < 4:
         return np.array([]), np.array([])
 
-    field_mean = img[valid].mean()
-    img = np.where(valid, img, field_mean)
+    img = np.where(valid, img, img[valid].mean())
     img = img - img.mean()
 
     if np.std(img) < 1e-6:
@@ -93,8 +102,7 @@ def _compute_rapsd(img: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         if annulus.sum() > 0:
             rapsd[r] = np.mean(power[annulus])
 
-    bin_centers = np.arange(max_radius, dtype=float)
-    frequencies = bin_centers / max_radius * 0.5
+    frequencies = np.arange(max_radius, dtype=float) / max_radius * 0.5
     return rapsd, frequencies
 
 
@@ -126,16 +134,14 @@ def rapsd_timemean(
         frame_da = da.isel(time=int(t)) if "time" in da.dims else da
 
         if sd and sd in frame_da.dims:
-            for s in range(frame_da.sizes[sd]):
-                frame = frame_da.isel({sd: s}).values.astype(float)
-                r, f = _compute_rapsd(frame)
-                if r.size == 0:
-                    skipped += 1
-                else:
-                    spectra.append(r)
-                    freqs = f
+            frames = [
+                frame_da.isel({sd: s}).values.astype(float)
+                for s in range(frame_da.sizes[sd])
+            ]
         else:
-            frame = frame_da.values.astype(float)
+            frames = [frame_da.values.astype(float)]
+
+        for frame in frames:
             r, f = _compute_rapsd(frame)
             if r.size == 0:
                 skipped += 1
@@ -151,41 +157,21 @@ def rapsd_timemean(
     return np.mean(spectra, axis=0), freqs
 
 
-# ── RALSD (Harris et al. 2022: log10 ratio, Eq. 8) ────────────────────────────
-
-
 def _ralsd(rapsd_pred: np.ndarray, rapsd_ref: np.ndarray) -> float:
     N = len(rapsd_pred)
     d = 10.0 * np.log10(np.maximum(rapsd_pred, EPS) / np.maximum(rapsd_ref, EPS))
     return float(np.sqrt(np.sum(d**2) / N))
 
 
-# ── Style ──────────────────────────────────────────────────────────────────────
-STYLE = {
-    "Obs": dict(color="black", ls="-", lw=1.5),
-    "Coarse": dict(ls="--", lw=0.98),
-    "Bicubic": dict(ls="--", lw=0.98),
-    "Bilinear": dict(ls="--", lw=0.98),
-    "UNet": dict(ls="-", lw=1.0),
-    "DDIM": dict(ls="-", lw=1.5),
-    "CFM": dict(ls="-", lw=1.5),
-}
-
-
+# ── Plot helpers ──────────────────────────────────────────────────────────────
 def _add_x_break_marks(ax_left: plt.Axes, ax_right: plt.Axes) -> None:
     d = 0.012
-    kwargs_left = dict(
-        transform=ax_left.transAxes, color="0.35", clip_on=False, lw=1.0
-    )
-    kwargs_right = dict(
-        transform=ax_right.transAxes, color="0.35", clip_on=False, lw=1.0
-    )
-
-    ax_left.plot((1 - d, 1 + d), (-d, +d), **kwargs_left)
-    ax_left.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs_left)
-
-    ax_right.plot((-d, +d), (-d, +d), **kwargs_right)
-    ax_right.plot((-d, +d), (1 - d, 1 + d), **kwargs_right)
+    kl = dict(transform=ax_left.transAxes, color="0.35", clip_on=False, lw=1.0)
+    kr = dict(transform=ax_right.transAxes, color="0.35", clip_on=False, lw=1.0)
+    ax_left.plot((1 - d, 1 + d), (-d, +d), **kl)
+    ax_left.plot((1 - d, 1 + d), (1 - d, 1 + d), **kl)
+    ax_right.plot((-d, +d), (-d, +d), **kr)
+    ax_right.plot((-d, +d), (1 - d, 1 + d), **kr)
 
 
 def _format_broken_pair(
@@ -197,20 +183,20 @@ def _format_broken_pair(
 ) -> None:
     ax_left.spines["right"].set_visible(False)
     ax_right.spines["left"].set_visible(False)
+    ax_left.spines["top"].set_visible(False)
+    ax_right.spines["top"].set_visible(False)
 
-    ax_left.tick_params(axis="y", right=False)
-    ax_right.tick_params(axis="y", left=False, labelleft=False)
+    ax_left.tick_params(axis="y", right=False, labelleft=show_ylabel)
+    ax_right.tick_params(axis="y", left=False, right=False, labelleft=False)
 
-    if not show_xticklabels:
-        ax_left.tick_params(axis="x", labelbottom=False)
-        ax_right.tick_params(axis="x", labelbottom=False)
+    ax_left.tick_params(axis="x", labelbottom=show_xticklabels)
+    ax_right.tick_params(axis="x", labelbottom=show_xticklabels)
 
     if not show_ylabel:
         ax_left.set_ylabel("")
 
 
 def _plot_variable(
-    fig: plt.Figure,
     ax_top_left: plt.Axes,
     ax_top_right: plt.Axes,
     ax_bot_left: plt.Axes,
@@ -222,84 +208,54 @@ def _plot_variable(
     psd_units: str,
     show_ylabel: bool = True,
 ) -> None:
-    ralsd_vals = np.array([v[1] for v in model_spectra.values()], dtype=float)
-    norm = mcolors.Normalize(
-        vmin=float(np.min(ralsd_vals)),
-        vmax=float(np.max(ralsd_vals)),
-    )
-    cmap = plt.cm.viridis
+    colors = {n: MODEL_COLORS.get(n, "C0") for n in model_spectra}
 
-    model_colors = {
-        name: MODEL_COLORS.get(name, "C0")
-        for name in model_spectra.keys()
-    }
-
-
+    # Top row: spectra
     for ax in (ax_top_left, ax_top_right):
         ax.semilogy(wl_km, ps_obs, zorder=5, **STYLE["Obs"])
         for name, (ps_pred, _) in model_spectra.items():
-            style = dict(STYLE.get(name, {}))
-            style["color"] = model_colors[name]
-            ax.semilogy(wl_km, ps_pred, markersize=0, **style)
-
-        ax.grid(True, which="both", alpha=0.3, ls="--")
+            style = dict(STYLE.get(name, {}), color=colors[name])
+            ax.semilogy(wl_km, ps_pred, **style)
+        ax.grid(True, which="major", alpha=0.25, ls=":")
         ax.set_xlim(
-            WL_LEFT_MAX_KM if ax is ax_top_left else WL_BREAK_KM,
-            WL_BREAK_KM if ax is ax_top_left else WL_MIN_KM,
+            (WL_LEFT_MAX_KM, WL_BREAK_KM)
+            if ax is ax_top_left
+            else (WL_BREAK_KM, WL_MIN_KM)
         )
-        for sc in [1, 2, 5, 10, 12, 20, 50, 80]:
-            if wl_km.min() <= sc <= wl_km.max():
-                ax.axvline(sc, color="gray", lw=0.8, ls=":", alpha=0.45)
 
-    ax_top_left.set_title(var_label, fontsize=14, fontweight="bold")
-    if show_ylabel:
-        ax_top_left.set_ylabel(f"Power Spectral Density\n({psd_units})", fontsize=12)
+    # Bottom row: model / obs ratio
 
-    ax_top_left.tick_params(axis="both", labelsize=11)
-    ax_top_right.tick_params(axis="both", labelsize=11)
 
-    # Ratio bottom row
-    all_ratios = []
     for ax in (ax_bot_left, ax_bot_right):
-        ax.axhline(1.0, color="black", lw=1.0, ls="-", zorder=3)
+        ax.axhline(1.0, color="black", lw=1.0, zorder=3)
         for name, (ps_pred, _) in model_spectra.items():
-            ratio = ps_pred / np.maximum(ps_obs, EPS)
-            all_ratios.append(ratio)
-            style = dict(STYLE.get(name, {}))
-            style["color"] = model_colors[name]
-            ax.plot(wl_km, ratio, markersize=0, **style)
-
-        ax.grid(True, which="both", alpha=0.3, ls="--")
+            style = dict(STYLE.get(name, {}), color=colors[name])
+            ax.plot(wl_km, ps_pred / np.maximum(ps_obs, EPS), **style)
+        ax.grid(True, which="major", alpha=0.25, ls=":")
         ax.set_xlim(
-            WL_LEFT_MAX_KM if ax is ax_bot_left else WL_BREAK_KM,
-            WL_BREAK_KM if ax is ax_bot_left else WL_MIN_KM,
+            (WL_LEFT_MAX_KM, WL_BREAK_KM)
+            if ax is ax_bot_left
+            else (WL_BREAK_KM, WL_MIN_KM)
         )
-        for sc in [1, 2, 5, 10, 12, 20, 50]:
-            if wl_km.min() <= sc <= wl_km.max():
-                ax.axvline(sc, color="gray", lw=0.8, ls=":", alpha=0.45)
+        ax.set_ylim(*RATIO_YLIM)
 
-    max_ratio = np.nanmax([np.nanmax(r) for r in all_ratios]) if all_ratios else 3.0
-    y_max = max(4.0, float(max_ratio) * 1.1)
-    ax_bot_left.set_ylim(0, y_max)
-    ax_bot_right.set_ylim(0, y_max)
+    ax_top_left.set_title(var_label, fontsize=13, fontweight="bold", loc="left")
 
     if show_ylabel:
-        ax_bot_left.set_ylabel("Spectral ratio\n(model / obs)  [–]", fontsize=11)
+        ax_top_left.set_ylabel(f"PSD ({psd_units})", fontsize=11)
+        ax_bot_left.set_ylabel("Model / Obs", fontsize=11)
 
-    ax_bot_left.set_xlabel("Wavelength (km)", fontsize=12)
-    ax_bot_right.set_xlabel("Wavelength (km)", fontsize=12)
-    ax_bot_left.tick_params(axis="both", labelsize=11)
-    ax_bot_right.tick_params(axis="both", labelsize=11)
+    for ax, ticks in (
+        (ax_top_left, LEFT_TICKS_KM),
+        (ax_top_right, RIGHT_TICKS_KM),
+        (ax_bot_left, LEFT_TICKS_KM),
+        (ax_bot_right, RIGHT_TICKS_KM),
+    ):
+        ax.set_xticks(ticks)
+        ax.set_xticklabels([str(int(v)) for v in ticks], fontsize=9)
+        ax.tick_params(axis="both", labelsize=10)
 
-    ax_top_left.set_xticks(LEFT_TICKS_KM)
-    ax_top_right.set_xticks(RIGHT_TICKS_KM)
-    ax_bot_left.set_xticks(LEFT_TICKS_KM)
-    ax_bot_right.set_xticks(RIGHT_TICKS_KM)
-
-    ax_top_left.set_xticklabels([str(int(v)) for v in LEFT_TICKS_KM], fontsize=10)
-    ax_top_right.set_xticklabels([str(int(v)) for v in RIGHT_TICKS_KM], fontsize=10)
-    ax_bot_left.set_xticklabels([str(int(v)) for v in LEFT_TICKS_KM], fontsize=10)
-    ax_bot_right.set_xticklabels([str(int(v)) for v in RIGHT_TICKS_KM], fontsize=10)
+    ax_bot_left.set_xlabel("Wavelength (km)", fontsize=11, loc="right")
 
     _format_broken_pair(
         ax_top_left, ax_top_right, show_ylabel=show_ylabel, show_xticklabels=False
@@ -310,58 +266,26 @@ def _plot_variable(
     _add_x_break_marks(ax_top_left, ax_top_right)
     _add_x_break_marks(ax_bot_left, ax_bot_right)
 
-    sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
-    sm.set_array([])
-    cbar = fig.colorbar(
-        sm,
-        ax=[ax_top_left, ax_top_right, ax_bot_left, ax_bot_right],
-        fraction=0.022,
-        pad=0.015,
-    )
-    cbar.set_label("RALSD (dB)", fontsize=11)
-    cbar.ax.tick_params(labelsize=10)
-
-    # Compact score box for the variable.
-    score_text = "\n".join(
-        f"{name}: {ralsd:.2f} dB" for name, (_, ralsd) in model_spectra.items()
+    # Compact RALSD table replaces the misplaced colorbar.
+    score_text = "RALSD (dB)\n" + "\n".join(
+        f"{name:<9s}{ralsd:5.2f}" for name, (_, ralsd) in model_spectra.items()
     )
     ax_top_right.text(
-        0.03,
-        0.05,
+        0.97,
+        0.97,
         score_text,
         transform=ax_top_right.transAxes,
-        fontsize=8.5,
-        va="bottom",
-        ha="left",
-        bbox=dict(
-            boxstyle="round,pad=0.25",
-            facecolor="white",
-            alpha=0.82,
-            edgecolor="0.8",
-        ),
-    )
-    ax_top_right.text(
-        0.03,
-        0.98,
-        "Zoomed 1–12 km region",
-        transform=ax_top_right.transAxes,
-        fontsize=9,
-        color="0.35",
+        fontsize=8,
+        family="monospace",
         va="top",
-        ha="left",
+        ha="right",
+        bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.85, ec="0.85"),
     )
 
 
-def _add_shared_legend(fig: plt.Figure, model_spectra_per_col: list[dict]) -> None:
-    """Shared legend at the bottom with model names only."""
-    model_names = list(model_spectra_per_col[0].keys())
-
-    handles = []
-    labels = []
-
-    handles.append(mlines.Line2D([], [], **STYLE["Obs"]))
-    labels.append("Obs (reference)")
-
+def _add_shared_legend(fig: plt.Figure, model_names: list[str]) -> None:
+    handles = [mlines.Line2D([], [], **STYLE["Obs"])]
+    labels = ["Obs (reference)"]
     for name in model_names:
         handles.append(
             mlines.Line2D(
@@ -378,15 +302,14 @@ def _add_shared_legend(fig: plt.Figure, model_spectra_per_col: list[dict]) -> No
         handles,
         labels,
         loc="lower center",
-        ncol=7,
+        ncol=len(labels),
         fontsize=10,
-        framealpha=0.92,
-        bbox_to_anchor=(0.5, -0.02),
-        title="Model lines",
-        title_fontsize=10,
+        frameon=False,
+        bbox_to_anchor=(0.5, 0.005),
     )
 
 
+# ── Main ──────────────────────────────────────────────────────────────────────
 def main() -> None:
     mask_lr = _load_mask(
         PROCESSING_ROOT
@@ -430,9 +353,9 @@ def main() -> None:
         (
             "temp",
             obs_temp,
-            "Temperature (K)",
+            "Temperature",
             False,
-            "K²  (cycles pixel⁻¹)⁻¹",
+            "K² km",
             {
                 "Coarse": coarse_temp,
                 "Bicubic": _load_field(
@@ -470,9 +393,9 @@ def main() -> None:
         (
             "precip",
             obs_precip,
-            "Precipitation (mm/day)",
+            "Precipitation",
             True,
-            "(mm day⁻¹)²  (cycles pixel⁻¹)⁻¹",
+            "(mm day⁻¹)² km",
             {
                 "Coarse": coarse_precip,
                 "Bicubic": _load_field(
@@ -514,33 +437,33 @@ def main() -> None:
         ),
     ]
 
-    fig = plt.figure(figsize=(18, 10))
+    fig = plt.figure(figsize=(15, 8))
     gs = fig.add_gridspec(
         2,
         4,
-        width_ratios=[1.0, 1.7, 1.0, 1.7],
-        height_ratios=[2, 1],
-        wspace=0.05,
-        hspace=0.18,
+        width_ratios=[1.0, 1.5, 1.0, 1.5],
+        height_ratios=[2.2, 1.0],
+        wspace=0.06,
+        hspace=0.10,
     )
 
+    # Shared y-axis across the whole top row and across the whole bottom row.
+    ax_t0 = fig.add_subplot(gs[0, 0])
+    ax_b0 = fig.add_subplot(gs[1, 0])
+    ax_t1 = fig.add_subplot(gs[0, 1], sharey=ax_t0)
+    ax_b1 = fig.add_subplot(gs[1, 1], sharey=ax_b0)
+    ax_t2 = fig.add_subplot(gs[0, 2], sharey=ax_t0)
+    ax_b2 = fig.add_subplot(gs[1, 2], sharey=ax_b0)
+    ax_t3 = fig.add_subplot(gs[0, 3], sharey=ax_t0)
+    ax_b3 = fig.add_subplot(gs[1, 3], sharey=ax_b0)
+
     axes = {
-        "temp": (
-            fig.add_subplot(gs[0, 0]),
-            fig.add_subplot(gs[0, 1], sharey=None),
-            fig.add_subplot(gs[1, 0]),
-            fig.add_subplot(gs[1, 1], sharey=None),
-        ),
-        "precip": (
-            fig.add_subplot(gs[0, 2]),
-            fig.add_subplot(gs[0, 3], sharey=None),
-            fig.add_subplot(gs[1, 2]),
-            fig.add_subplot(gs[1, 3], sharey=None),
-        ),
+        "temp": (ax_t0, ax_t1, ax_b0, ax_b1),
+        "precip": (ax_t2, ax_t3, ax_b2, ax_b3),
     }
 
     rows = []
-    model_spectra_per_col: list[dict] = []
+    model_names: list[str] = []
 
     for col, (variable, obs, var_label, is_precip, psd_units, models) in enumerate(
         tqdm(VAR_DEFS, desc="variables")
@@ -548,8 +471,6 @@ def main() -> None:
         print(f"\n=== {variable} ===")
 
         valid_times = _get_valid_precip_times(obs) if is_precip else None
-
-
         rapsd_obs, freqs = rapsd_timemean(obs, valid_times=valid_times)
 
         positive = freqs > 0
@@ -561,48 +482,43 @@ def main() -> None:
         ps_obs = rapsd_obs[valid]
         wl_km = 1.0 / (k / GRID_SPACING_KM)
 
-
         sort_idx = np.argsort(wl_km)
         wl_km = wl_km[sort_idx]
         ps_obs = ps_obs[sort_idx]
 
         model_spectra: dict[str, tuple[np.ndarray, float]] = {}
-
         for name, pred in tqdm(models.items(), desc=variable, leave=False):
             rapsd_pred, _ = rapsd_timemean(pred, valid_times=valid_times)
             ps_pred = rapsd_pred[valid][sort_idx]
             ralsd_val = _ralsd(ps_pred, ps_obs)
-
             print(f"  {name:10s}  RALSD = {ralsd_val:.4f} dB")
             rows.append({"model": name, "variable": variable, "RALSD_mean": ralsd_val})
             model_spectra[name] = (ps_pred, ralsd_val)
 
-        model_spectra_per_col.append(model_spectra)
+        model_names = list(model_spectra.keys())
 
         ax_tl, ax_tr, ax_bl, ax_br = axes[variable]
         _plot_variable(
-            fig=fig,
-            ax_top_left=ax_tl,
-            ax_top_right=ax_tr,
-            ax_bot_left=ax_bl,
-            ax_bot_right=ax_br,
-            wl_km=wl_km,
-            ps_obs=ps_obs,
-            model_spectra=model_spectra,
-            var_label=var_label,
-            psd_units=psd_units,
+            ax_tl,
+            ax_tr,
+            ax_bl,
+            ax_br,
+            wl_km,
+            ps_obs,
+            model_spectra,
+            var_label,
+            psd_units,
             show_ylabel=(col == 0),
         )
 
-    _add_shared_legend(fig, model_spectra_per_col)
+    _add_shared_legend(fig, model_names)
+    fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.13)
 
-    fig.subplots_adjust(left=0.05, right=0.90, top=0.95, bottom=0.18)
-
-
-    fig.savefig(PAPER_STATS_DIR / "Figures"/ "rapsd_combined_method_I.png", dpi=400, bbox_inches="tight")
+    (PAPER_STATS_DIR / "Figures").mkdir(parents=True, exist_ok=True)
+    out_png = PAPER_STATS_DIR / "Figures" / "rapsd_combined_method_I.png"
+    fig.savefig(out_png, dpi=400, bbox_inches="tight")
     plt.close(fig)
-
-    print("\nSaved rapsd_combined.png")
+    print(f"\nSaved {out_png}")
 
     df = (
         pd.DataFrame(rows)
@@ -610,9 +526,7 @@ def main() -> None:
         .reset_index(drop=True)[["model", "variable", "RALSD_mean"]]
     )
     out_csv = PAPER_STATS_DIR / "SR_metrics_rapsd_ralsd_I.csv"
-
     df.to_csv(out_csv, index=False)
-
     print(f"Saved {out_csv}")
     print(df.to_string(index=False))
 
