@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gc
 from pathlib import Path
 
 import matplotlib.lines as mlines
@@ -8,9 +7,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
+from numpy.fft import fft2, fftshift
 from tqdm import tqdm
 
 SCRIPT_PATH = Path(__file__).resolve()
+
 PAPER_STATS_DIR = SCRIPT_PATH.parent
 PROCESSING_ROOT = PAPER_STATS_DIR.parent.parent.parent
 
@@ -19,20 +20,23 @@ END = "2023-12-31"
 
 SAMPLE_DIMS = ("member", "sample", "samples")
 EPS = 1e-30
+
 GRID_SPACING_KM = 1.0
+
 NYQUIST_KM = 2.0 * GRID_SPACING_KM
+
 PRECIP_MIN_MEAN = 0.05  # mm/day (Harris et al. 0.002 mm/hr * 24)
 
-# Memory knob: number of 2-D frames FFT'd at once. Lower => less RAM.
-CHUNK_FRAMES = 32
 
-# Broken x-axis: continuous 50 -> 12 km, zoom 12 -> 1 km.
+COARSE_SPACING_KM = 12.0
+COARSE_NYQUIST_KM = 2.0 * COARSE_SPACING_KM
+
 WL_LEFT_MAX_KM = 50.0
 WL_BREAK_KM = 12.0
 WL_MIN_KM = 1.0
 
-LEFT_TICKS_KM = np.array([50, 40, 30, 20, 12], dtype=float)
-RIGHT_TICKS_KM = np.array([12, 8, 6, 4, 3, 2, 1], dtype=float)
+LEFT_TICKS_KM = np.array([50, 36, 24, 12], dtype=float)
+RIGHT_TICKS_KM = np.array([12, 9, 7, 5, 3, 1], dtype=float)
 
 RATIO_YLIM = (0.0, 2.0)
 
@@ -57,10 +61,11 @@ STYLE = {
 
 
 # ── IO helpers ────────────────────────────────────────────────────────────────
+
+
 def _load_field(path, var, mask=None, clip=False):
-    """Lazy: data stays on disk and is streamed one timestep at a time."""
-    ds = xr.open_dataset(path, chunks={"time": 16})
-    da = ds[var].sel(time=slice(START, END))
+    with xr.open_dataset(path) as ds:
+        da = ds[var].sel(time=slice(START, END)).load()
     if clip:
         da = da.clip(min=0)
     return da.where(mask) if mask is not None else da
@@ -75,134 +80,89 @@ def _sample_dim(da):
     return next((d for d in SAMPLE_DIMS if d in da.dims), None)
 
 
-# ── Streaming RAPSD ───────────────────────────────────────────────────────────
-def _iter_frames(da: xr.DataArray, valid_times=None):
-    """Yield cleaned 2-D frames one at a time; never stacks the full record."""
-    sd = _sample_dim(da)
-    nt = da.sizes.get("time", 1)
-    time_indices = valid_times if valid_times is not None else np.arange(nt)
-    skipped = 0
-
-    for t in tqdm(time_indices, desc="RAPSD", leave=False):
-        frame_da = da.isel(time=int(t)) if "time" in da.dims else da
-        has_samples = bool(sd and sd in frame_da.dims)
-        n_s = frame_da.sizes[sd] if has_samples else 1
-
-        for s in range(n_s):
-            sub = frame_da.isel({sd: s}) if has_samples else frame_da
-            frame = np.asarray(sub.values, dtype=np.float32)
-            finite = np.isfinite(frame)
-            if finite.sum() < 4 or np.nanstd(frame[finite]) < 1e-6:
-                skipped += 1
-                continue
-            yield np.where(finite, frame, np.nanmean(frame[finite]))
-
-    if skipped:
-        print(f"  [rapsd] skipped {skipped} near-constant/empty frames")
+# ── RAPSD (Harris et al. 2022 / pySTEPS) ──────────────────────────────────────
 
 
-def _radial_binning(Ny, Nx, x_length, y_length, rotation_angle=0.0):
-    """Precompute the radial wavenumber bin index for every pixel (once)."""
-    kx = 2 * np.pi * np.fft.fftfreq(Nx, d=x_length / Nx)
-    ky = 2 * np.pi * np.fft.fftfreq(Ny, d=y_length / Ny)
-    ky_grid, kx_grid = np.meshgrid(kx, ky)  # yes, reversed
+def _compute_rapsd(img: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    img = img.astype(np.float64)
+    valid = np.isfinite(img)
+    if valid.sum() < 4:
+        return np.array([]), np.array([])
 
-    c, s = np.cos(rotation_angle), np.sin(rotation_angle)
-    k_grid = np.sqrt((c * kx_grid - s * ky_grid) ** 2 + (s * kx_grid + c * ky_grid) ** 2)
+    img = np.where(valid, img, img[valid].mean())
+    img = img - img.mean()
 
-    Nbins = max(int(np.sqrt(Nx * Ny) / 2), 2)
-    k_bins = np.linspace(0, np.max(k_grid) + 1e-5, Nbins)
-    k_centers = 0.5 * (k_bins[1:] + k_bins[:-1])
+    if np.std(img) < 1e-6:
+        return np.array([]), np.array([])
 
-    bin_idx = np.clip(np.digitize(k_grid.ravel(), k_bins) - 1, 0, len(k_centers) - 1)
-    counts = np.bincount(bin_idx, minlength=len(k_centers))
-    return k_centers, bin_idx, counts
+    h, w = img.shape
+    power = (np.abs(fftshift(fft2(img))) ** 2) / (h * w)
 
+    cy, cx = h // 2, w // 2
+    yy, xx = np.ogrid[:h, :w]
+    radius = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+    max_radius = min(h, w) // 2
 
-def rapsd_timemean(
-    da: xr.DataArray,
-    valid_times: np.ndarray | None = None,
-    data_std: float = 1.0,
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Time-mean radially averaged PSD computed in a streaming fashion.
+    radius_int = np.round(radius).astype(int)
+    rapsd = np.zeros(max_radius)
+    for r in range(max_radius):
+        annulus = radius_int == r
+        if annulus.sum() > 0:
+            rapsd[r] = np.mean(power[annulus])
 
-    Peak memory is O(CHUNK_FRAMES) instead of O(n_frames). The global
-    normalisation is applied at the end as a scalar, which is exact except for
-    the k=0 bin (dropped later by the freqs > 0 filter).
-    """
-    state = {"binning": None, "psd_sum": None, "n_frames": 0}
-    total_sum = 0.0
-    total_sqsum = 0.0
-    total_n = 0
-
-    def _flush(chunk: list[np.ndarray]) -> None:
-        if not chunk:
-            return
-        block = np.stack(chunk, axis=0)
-        Ny, Nx = block.shape[1:]
-
-        if state["binning"] is None:
-            state["binning"] = _radial_binning(
-                Ny, Nx, Nx * GRID_SPACING_KM, Ny * GRID_SPACING_KM
-            )
-            state["psd_sum"] = np.zeros(len(state["binning"][0]), dtype=np.float64)
-
-        _, bin_idx, _ = state["binning"]
-        power = np.abs(np.fft.fft2(block, axes=(1, 2))) ** 2
-        del block
-
-        for p in power:
-            state["psd_sum"] += np.bincount(
-                bin_idx,
-                weights=p.ravel().astype(np.float64),
-                minlength=state["psd_sum"].size,
-            )
-            state["n_frames"] += 1
-        del power
-
-    chunk: list[np.ndarray] = []
-    for frame in _iter_frames(da, valid_times=valid_times):
-        total_sum += float(frame.sum())
-        total_sqsum += float((frame.astype(np.float64) ** 2).sum())
-        total_n += frame.size
-
-        chunk.append(frame)
-        if len(chunk) >= CHUNK_FRAMES:
-            _flush(chunk)
-            chunk.clear()
-
-    _flush(chunk)
-    chunk.clear()
-    gc.collect()
-
-    if state["psd_sum"] is None or state["n_frames"] == 0:
-        raise RuntimeError("No valid frames for RAPSD.")
-
-    k_centers, _, counts = state["binning"]
-    npix2 = float(counts.sum()) ** 2  # (Nx * Ny)^2
-
-    mask = counts != 0
-    psd = (state["psd_sum"][mask] / state["n_frames"]) / npix2 / counts[mask]
-
-    mean = total_sum / total_n
-    std = np.sqrt(max(total_sqsum / total_n - mean**2, 1e-30))
-    psd = psd * (data_std / std) ** 2
-
-    freqs = (k_centers[mask][::-1]) / (2 * np.pi)  # cycles / km
-    return psd[::-1], freqs
+    frequencies = np.arange(max_radius, dtype=float) / max_radius * 0.5
+    return rapsd, frequencies
 
 
 def _get_valid_precip_times(obs: xr.DataArray) -> np.ndarray:
     nt = obs.sizes.get("time", 1)
     valid = []
-    for t in tqdm(range(nt), desc="precip filter", leave=False):
-        frame = np.asarray(obs.isel(time=t).values, dtype=np.float32)
+    for t in range(nt):
+        frame = obs.isel(time=t).values.astype(float)
         finite = np.isfinite(frame)
         if finite.sum() > 0 and np.nanmean(frame[finite]) >= PRECIP_MIN_MEAN:
             valid.append(t)
     print(f"  [precip] {len(valid)}/{nt} frames pass low-rain filter")
     return np.array(valid, dtype=int)
+
+
+def rapsd_timemean(
+    da: xr.DataArray,
+    valid_times: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    sd = _sample_dim(da)
+    nt = da.sizes.get("time", 1)
+    time_indices = valid_times if valid_times is not None else np.arange(nt)
+
+    spectra: list[np.ndarray] = []
+    freqs: np.ndarray | None = None
+    skipped = 0
+
+    for t in tqdm(time_indices, desc="RAPSD", leave=False):
+        frame_da = da.isel(time=int(t)) if "time" in da.dims else da
+
+        if sd and sd in frame_da.dims:
+            frames = [
+                frame_da.isel({sd: s}).values.astype(float)
+                for s in range(frame_da.sizes[sd])
+            ]
+        else:
+            frames = [frame_da.values.astype(float)]
+
+        for frame in frames:
+            r, f = _compute_rapsd(frame)
+            if r.size == 0:
+                skipped += 1
+            else:
+                spectra.append(r)
+                freqs = f
+
+    if skipped:
+        print(f"  [rapsd] skipped {skipped} near-constant/empty frames")
+    if not spectra:
+        raise RuntimeError("No valid frames for RAPSD.")
+
+    return np.mean(spectra, axis=0), freqs
 
 
 def _ralsd(rapsd_pred: np.ndarray, rapsd_ref: np.ndarray) -> float:
@@ -211,7 +171,35 @@ def _ralsd(rapsd_pred: np.ndarray, rapsd_ref: np.ndarray) -> float:
     return float(np.sqrt(np.sum(d**2) / N))
 
 
-# ── Plot helpers ──────────────────────────────────────────────────────────────
+def _interp_spectrum(
+    source_wl: np.ndarray,
+    source_psd: np.ndarray,
+    target_wl: np.ndarray,
+) -> np.ndarray:
+    source_wl = np.asarray(source_wl, dtype=float)
+    source_psd = np.asarray(source_psd, dtype=float)
+    target_wl = np.asarray(target_wl, dtype=float)
+
+    valid = np.isfinite(source_wl) & np.isfinite(source_psd)
+    if valid.sum() < 2:
+        return np.full_like(target_wl, np.nan, dtype=float)
+
+    x = source_wl[valid]
+    y = source_psd[valid]
+    order = np.argsort(x)
+    x = x[order]
+    y = y[order]
+
+    out = np.full_like(target_wl, np.nan, dtype=float)
+    inside = (target_wl >= x[0]) & (target_wl <= x[-1])
+    out[inside] = np.interp(target_wl[inside], x, y)
+    return out
+
+
+# ── Plot helpers 
+
+
+
 def _add_x_break_marks(ax_left: plt.Axes, ax_right: plt.Axes) -> None:
     d = 0.012
     kl = dict(transform=ax_left.transAxes, color="0.35", clip_on=False, lw=1.0)
@@ -244,6 +232,7 @@ def _format_broken_pair(
         ax_left.set_ylabel("")
 
 
+
 def _plot_variable(
     ax_top_left: plt.Axes,
     ax_top_right: plt.Axes,
@@ -251,7 +240,7 @@ def _plot_variable(
     ax_bot_right: plt.Axes,
     wl_km: np.ndarray,
     ps_obs: np.ndarray,
-    model_spectra: dict[str, tuple[np.ndarray, float]],
+    model_spectra: dict[str, dict[str, np.ndarray | float]],
     var_label: str,
     psd_units: str,
     show_ylabel: bool = True,
@@ -260,8 +249,11 @@ def _plot_variable(
 
     for ax in (ax_top_left, ax_top_right):
         ax.semilogy(wl_km, ps_obs, zorder=5, **STYLE["Obs"])
-        for name, (ps_pred, _) in model_spectra.items():
-            ax.semilogy(wl_km, ps_pred, **dict(STYLE.get(name, {}), color=colors[name]))
+        for name, payload in model_spectra.items():
+            ps_pred = np.asarray(payload["psd"], dtype=float)
+            x = np.asarray(payload["wl"], dtype=float)
+            style = dict(STYLE.get(name, {}), color=colors[name])
+            ax.semilogy(x, ps_pred, **style)
         ax.grid(True, which="major", alpha=0.25, ls=":")
         ax.set_xlim(
             (WL_LEFT_MAX_KM, WL_BREAK_KM)
@@ -271,12 +263,12 @@ def _plot_variable(
 
     for ax in (ax_bot_left, ax_bot_right):
         ax.axhline(1.0, color="black", lw=1.0, zorder=3)
-        for name, (ps_pred, _) in model_spectra.items():
-            ax.plot(
-                wl_km,
-                ps_pred / np.maximum(ps_obs, EPS),
-                **dict(STYLE.get(name, {}), color=colors[name]),
-            )
+        for name, payload in model_spectra.items():
+            ps_pred = np.asarray(payload["psd"], dtype=float)
+            x = np.asarray(payload["wl"], dtype=float)
+            ps_ref = np.asarray(payload["obs_psd"], dtype=float)
+            style = dict(STYLE.get(name, {}), color=colors[name])
+            ax.plot(x, ps_pred / np.maximum(ps_ref, EPS), **style)
         ax.grid(True, which="major", alpha=0.25, ls=":")
         ax.set_xlim(
             (WL_LEFT_MAX_KM, WL_BREAK_KM)
@@ -313,8 +305,10 @@ def _plot_variable(
     _add_x_break_marks(ax_bot_left, ax_bot_right)
 
     score_text = "RALSD (dB)\n" + "\n".join(
-        f"{name:<9s}{ralsd:5.2f}" for name, (_, ralsd) in model_spectra.items()
+        f"{name:<9s}{payload['ralsd']:5.2f}" for name, payload in model_spectra.items()
     )
+
+
     ax_top_right.text(
         0.97,
         0.97,
@@ -356,49 +350,81 @@ def _add_shared_legend(fig: plt.Figure, model_names: list[str]) -> None:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main() -> None:
-    D_SETUP = PROCESSING_ROOT / "Downscaling_Models/Dataset_Setup_I_Chronological_12km"
-    D_DDIM = (
-        PROCESSING_ROOT / "Downscaling_Models/DDIM_conditional_derived/output_inference"
-    )
-    D_FM = (
-        PROCESSING_ROOT / "Downscaling_Models/FM_conditional_derived/output_inference"
-    )
-    D_OBS = (
+    mask_lr = _load_mask(
         PROCESSING_ROOT
-        / "Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full"
+        / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/Swiss_Mask_LR.nc",
+        "TabsD",
+    )
+    mask_hr = _load_mask(
+        PROCESSING_ROOT
+        / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/Swiss_Mask_HR.nc",
+        "TabsD",
     )
 
-    mask_lr = _load_mask(D_SETUP / "Swiss_Mask_LR.nc", "TabsD")
-    mask_hr = _load_mask(D_SETUP / "Swiss_Mask_HR.nc", "TabsD")
+    obs_temp = _load_field(
+        PROCESSING_ROOT
+        / "Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/TabsD_1971_2023.nc",
+        "TabsD",
+    )
+    obs_precip = _load_field(
+        PROCESSING_ROOT
+        / "Processing_and_Analysis_Scripts/data_1971_2023/HR_files_full/RhiresD_1971_2023.nc",
+        "RhiresD",
+        clip=True,
+    )
 
-    # Lazy factories: a model is only opened when its turn comes, then released.
+    # Native coarse grid retained; no NN upsampling to HR.
+    coarse_temp = _load_field(
+        PROCESSING_ROOT
+        / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/TabsD_step2_coarse.nc",
+        "TabsD",
+        mask_lr,
+    )
+
+    coarse_precip = _load_field(
+        PROCESSING_ROOT
+        / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/RhiresD_step2_coarse.nc",
+        "RhiresD",
+        mask_lr,
+        clip=True,
+    )
+
     VAR_DEFS = [
         (
             "temp",
-            lambda: _load_field(D_OBS / "TabsD_1971_2023.nc", "TabsD"),
+            obs_temp,
             "Temperature",
             False,
             "K² km",
             {
-                "Coarse": lambda: _load_field(
-                    D_SETUP / "TabsD_step2_coarse.nc", "TabsD", mask_lr
-                ).interp_like(mask_hr, method="nearest"),
-                "Bicubic": lambda: _load_field(
-                    D_SETUP / "TabsD_step3_interp_bicubic.nc", "TabsD", mask_hr
+                "Coarse": coarse_temp,
+                "Bicubic": _load_field(
+                    PROCESSING_ROOT
+                    / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/TabsD_step3_interp_bicubic.nc",
+                    "TabsD",
+                    mask_hr,
                 ),
-                "Bilinear": lambda: _load_field(
-                    D_SETUP / "TabsD_step3_interp_bilinear.nc", "TabsD", mask_hr
+                "Bilinear": _load_field(
+                    PROCESSING_ROOT
+                    / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/TabsD_step3_interp_bilinear.nc",
+                    "TabsD",
+                    mask_hr,
                 ),
-                "UNet": lambda: _load_field(
-                    D_DDIM / "unet_downscaled_test_set_2015_2023.nc", "temp", mask_hr
-                ),
-                "DDIM": lambda: _load_field(
-                    D_DDIM / "ddim_downscaled_test_set_S30_samples10_eta0.0.nc",
+                "UNet": _load_field(
+                    PROCESSING_ROOT
+                    / "Downscaling_Models/DDIM_conditional_derived/output_inference/unet_downscaled_test_set_2015_2023.nc",
                     "temp",
                     mask_hr,
                 ),
-                "CFM": lambda: _load_field(
-                    D_FM / "fm_downscaled_test_set_allframes_steps10_samples10.nc",
+                "DDIM": _load_field(
+                    PROCESSING_ROOT
+                    / "Downscaling_Models/DDIM_conditional_derived/output_inference/ddim_downscaled_test_set_S30_samples10_eta0.0.nc",
+                    "temp",
+                    mask_hr,
+                ),
+                "CFM": _load_field(
+                    PROCESSING_ROOT
+                    / "Downscaling_Models/FM_conditional_derived/output_inference/fm_downscaled_test_set_allframes_steps10_samples10.nc",
                     "temp",
                     mask_hr,
                 ),
@@ -406,40 +432,43 @@ def main() -> None:
         ),
         (
             "precip",
-            lambda: _load_field(D_OBS / "RhiresD_1971_2023.nc", "RhiresD", clip=True),
+            obs_precip,
             "Precipitation",
             True,
             "(mm day⁻¹)² km",
             {
-                "Coarse": lambda: _load_field(
-                    D_SETUP / "RhiresD_step2_coarse.nc", "RhiresD", mask_lr, clip=True
-                ).interp_like(mask_hr, method="nearest"),
-                "Bicubic": lambda: _load_field(
-                    D_SETUP / "RhiresD_step3_interp_bicubic.nc",
+                "Coarse": coarse_precip,
+                "Bicubic": _load_field(
+                    PROCESSING_ROOT
+                    / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/RhiresD_step3_interp_bicubic.nc",
                     "RhiresD",
                     mask_hr,
                     clip=True,
                 ),
-                "Bilinear": lambda: _load_field(
-                    D_SETUP / "RhiresD_step3_interp_bilinear.nc",
+                "Bilinear": _load_field(
+                    PROCESSING_ROOT
+                    / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/RhiresD_step3_interp_bilinear.nc",
                     "RhiresD",
                     mask_hr,
                     clip=True,
                 ),
-                "UNet": lambda: _load_field(
-                    D_DDIM / "unet_downscaled_test_set_2015_2023.nc",
+                "UNet": _load_field(
+                    PROCESSING_ROOT
+                    / "Downscaling_Models/DDIM_conditional_derived/output_inference/unet_downscaled_test_set_2015_2023.nc",
                     "precip",
                     mask_hr,
                     clip=True,
                 ),
-                "DDIM": lambda: _load_field(
-                    D_DDIM / "ddim_downscaled_test_set_S30_samples10_eta0.0.nc",
+                "DDIM": _load_field(
+                    PROCESSING_ROOT
+                    / "Downscaling_Models/DDIM_conditional_derived/output_inference/ddim_downscaled_test_set_S30_samples10_eta0.0.nc",
                     "precip",
                     mask_hr,
                     clip=True,
                 ),
-                "CFM": lambda: _load_field(
-                    D_FM / "fm_downscaled_test_set_allframes_steps10_samples10.nc",
+                "CFM": _load_field(
+                    PROCESSING_ROOT
+                    / "Downscaling_Models/FM_conditional_derived/output_inference/fm_downscaled_test_set_allframes_steps10_samples10.nc",
                     "precip",
                     mask_hr,
                     clip=True,
@@ -448,17 +477,18 @@ def main() -> None:
         ),
     ]
 
+
     fig = plt.figure(figsize=(15, 8))
     gs = fig.add_gridspec(
         2,
         4,
-        width_ratios=[1.0, 1.4, 1.0, 1.4],
+        width_ratios=[1.0, 1.5, 1.0, 1.5],
         height_ratios=[2.2, 1.0],
         wspace=0.06,
         hspace=0.10,
     )
 
-    # Shared y-axis across the whole top row and across the whole bottom row.
+
     ax_t0 = fig.add_subplot(gs[0, 0])
     ax_b0 = fig.add_subplot(gs[1, 0])
     ax_t1 = fig.add_subplot(gs[0, 1], sharey=ax_t0)
@@ -468,6 +498,7 @@ def main() -> None:
     ax_t3 = fig.add_subplot(gs[0, 3], sharey=ax_t0)
     ax_b3 = fig.add_subplot(gs[1, 3], sharey=ax_b0)
 
+
     axes = {
         "temp": (ax_t0, ax_t1, ax_b0, ax_b1),
         "precip": (ax_t2, ax_t3, ax_b2, ax_b3),
@@ -476,43 +507,68 @@ def main() -> None:
     rows = []
     model_names: list[str] = []
 
-    for col, (variable, obs_fn, var_label, is_precip, psd_units, model_fns) in enumerate(
+    for col, (variable, obs, var_label, is_precip, psd_units, models) in enumerate(
         tqdm(VAR_DEFS, desc="variables")
     ):
-        print(f"\n=== {variable} ===", flush=True)
+        print(f"\n=== {variable} ===")
 
-        obs = obs_fn()
         valid_times = _get_valid_precip_times(obs) if is_precip else None
         rapsd_obs, freqs = rapsd_timemean(obs, valid_times=valid_times)
-        del obs
-        gc.collect()
 
         positive = freqs > 0
         wavelengths = np.full_like(freqs, np.inf, dtype=float)
         wavelengths[positive] = 1.0 / (freqs[positive] / GRID_SPACING_KM)
         valid = positive & (wavelengths >= NYQUIST_KM)
 
+        k = freqs[valid]
         ps_obs = rapsd_obs[valid]
-        wl_km = 1.0 / (freqs[valid] / GRID_SPACING_KM)
+        wl_km = 1.0 / (k / GRID_SPACING_KM)
 
         sort_idx = np.argsort(wl_km)
         wl_km = wl_km[sort_idx]
         ps_obs = ps_obs[sort_idx]
 
-        model_spectra: dict[str, tuple[np.ndarray, float]] = {}
-        for name, load_fn in tqdm(model_fns.items(), desc=variable, leave=False):
-            pred = load_fn()
-            rapsd_pred, _ = rapsd_timemean(pred, valid_times=valid_times)
-            del pred
-            gc.collect()
+        model_spectra: dict[str, dict[str, np.ndarray | float]] = {}
 
-            ps_pred = rapsd_pred[valid][sort_idx]
-            ralsd_val = _ralsd(ps_pred, ps_obs)
-            print(f"  {name:10s}  RALSD = {ralsd_val:.4f} dB", flush=True)
+        for name, pred in tqdm(models.items(), desc=variable, leave=False):
+            if name == "Coarse":
+                rapsd_pred, freqs_pred = rapsd_timemean(pred, valid_times=valid_times)
+
+                positive_c = freqs_pred > 0
+                wl_c = np.full_like(freqs_pred, np.inf, dtype=float)
+                wl_c[positive_c] = 1.0 / (freqs_pred[positive_c] / COARSE_SPACING_KM)
+                valid_c = positive_c & (wl_c >= COARSE_NYQUIST_KM)
+
+                wl_c = wl_c[valid_c]
+                ps_pred_c = rapsd_pred[valid_c]
+
+                obs_on_coarse = _interp_spectrum(wl_km, ps_obs, wl_c)
+                common = np.isfinite(obs_on_coarse) & np.isfinite(ps_pred_c)
+                ralsd_val = _ralsd(ps_pred_c[common], obs_on_coarse[common])
+
+                model_spectra[name] = {
+                    "wl": wl_c,
+                    "psd": ps_pred_c,
+                    "obs_psd": obs_on_coarse,
+                    "ralsd": ralsd_val,
+                }
+            else:
+                rapsd_pred, _ = rapsd_timemean(pred, valid_times=valid_times)
+                ps_pred = rapsd_pred[valid][sort_idx]
+                ralsd_val = _ralsd(ps_pred, ps_obs)
+                model_spectra[name] = {
+                    "wl": wl_km,
+                    "psd": ps_pred,
+                    "obs_psd": ps_obs,
+                    "ralsd": ralsd_val,
+                }
+
+            print(f"  {name:10s}  RALSD = {ralsd_val:.4f} dB")
             rows.append({"model": name, "variable": variable, "RALSD_mean": ralsd_val})
-            model_spectra[name] = (ps_pred, ralsd_val)
+
 
         model_names = list(model_spectra.keys())
+
 
         ax_tl, ax_tr, ax_bl, ax_br = axes[variable]
         _plot_variable(
@@ -528,21 +584,27 @@ def main() -> None:
             show_ylabel=(col == 0),
         )
 
+
     _add_shared_legend(fig, model_names)
     fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.13)
 
+
     (PAPER_STATS_DIR / "Figures").mkdir(parents=True, exist_ok=True)
-    out_png = PAPER_STATS_DIR / "Figures" / "rapsd_combined_method_II.png"
+    out_png = PAPER_STATS_DIR / "Figures" / "rapsd_combined_method_I_backup.png"
+
     fig.savefig(out_png, dpi=400, bbox_inches="tight")
     plt.close(fig)
     print(f"\nSaved {out_png}")
+
 
     df = (
         pd.DataFrame(rows)
         .sort_values(["variable", "model"])
         .reset_index(drop=True)[["model", "variable", "RALSD_mean"]]
     )
-    out_csv = PAPER_STATS_DIR / "SR_metrics_rapsd_ralsd_method_II.csv"
+
+
+    out_csv = PAPER_STATS_DIR / "SR_metrics_rapsd_ralsd_I_backup.csv"
     df.to_csv(out_csv, index=False)
     print(f"Saved {out_csv}")
     print(df.to_string(index=False))

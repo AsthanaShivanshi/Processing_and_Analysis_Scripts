@@ -31,10 +31,10 @@ RATIO_YLIM = (0.0, 1.75)
 # so the zoom panel must not extend past it (otherwise it renders blank).
 WL_LEFT_MAX_KM = 50.0
 WL_BREAK_KM = 12.0
-WL_MIN_KM = 2.0
+WL_MIN_KM = 1.0
 
-LEFT_TICKS_KM = np.array([50, 40, 30, 20, 12], dtype=float)
-RIGHT_TICKS_KM = np.array([12, 9, 7, 5, 3, 2], dtype=float)
+LEFT_TICKS_KM = np.array([50, 36, 24, 12], dtype=float)
+RIGHT_TICKS_KM = np.array([12, 9, 7, 5, 3, 1], dtype=float)
 
 # Black is reserved for OBS, so it is deliberately absent from the palette.
 _PALETTE = [

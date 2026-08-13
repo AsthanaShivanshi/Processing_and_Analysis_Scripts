@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=RAPSD
-#SBATCH --output=logs/RAPSD_%j.log
-#SBATCH --error=logs/RAPSD_%j.log
+#SBATCH --job-name=BCSR_RAPSD
+#SBATCH --output=logs/BCSR_RAPSD_%j.log
+#SBATCH --error=logs/BCSR_RAPSD_%j.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=128G
@@ -67,6 +67,13 @@ python Analysis/BCSR_Stats/metrics_table_4.py \
   --mode "$MODE" \
   --eval_start 2015 --eval_end 2023 \
   --verbose_loader
+
+
+#------#
+
+#python Analysis/BCSR_Stats/Spread_Skill.py
+
+
 
 
 
