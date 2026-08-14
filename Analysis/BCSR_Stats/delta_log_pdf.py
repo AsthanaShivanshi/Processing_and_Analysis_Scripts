@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 
+
 import config
 from load_pooled import (
     ROW_ORDER,
@@ -41,6 +42,26 @@ OBS_CFG = {
     },
 }
 
+MODEL_COLORS = {
+    "MCH (spatial analysis)": "black",
+    "Coarse": "#7f7f7f",
+    "Bicubic": "#1f77b4",
+    "Bilinear": "#ff7f0e",
+    "UNet": "#2ca02c",
+    "DDIM": "#d62728",
+    "CFM": "#9467bd",
+}
+
+MODEL_STYLES = {
+    "MCH (spatial analysis)": dict(color="black", ls="-", lw=1.0, zorder=10),
+    "Coarse": dict(color="#7f7f7f", ls="--", lw=0.8, zorder=10),
+    "Bicubic": dict(color="#1f77b4", ls="-.", lw=0.8, zorder=10),
+    "Bilinear": dict(color="#ff7f0e", ls="-.", lw=0.8, zorder=10),
+    "UNet": dict(color="#2ca02c", ls="-", lw=1.0, zorder=10),
+    "DDIM": dict(color="#d62728", ls="-", lw=1.0, zorder=10),
+    "CFM": dict(color="#9467bd", ls="-", lw=1.0, zorder=10),
+}
+
 
 def _values(da: xr.DataArray) -> np.ndarray:
     vals = np.asarray(da.values, dtype=np.float32).ravel()
@@ -70,30 +91,6 @@ def _hist_logpdf(values: np.ndarray, bins: np.ndarray) -> tuple[np.ndarray, np.n
     pdf, edges = np.histogram(values, bins=bins, density=True)
     x = 0.5 * (edges[:-1] + edges[1:])
     return x, np.log(np.maximum(pdf, EPS))
-
-
-def _save_logpdf_nc(
-    var: str,
-    curves: dict[str, tuple[np.ndarray, np.ndarray]],
-    out_nc: Path,
-) -> None:
-    if not curves:
-        return
-
-    labels = list(curves.keys())
-    x = next(iter(curves.values()))[0]
-    y = np.full((len(labels), len(x)), np.nan, dtype=np.float32)
-
-    for i, label in enumerate(labels):
-        y[i, :] = curves[label][1].astype(np.float32, copy=False)
-
-    ds = xr.Dataset(
-        data_vars={"ln_pdf": (("label", "x"), y)},
-        coords={"label": labels, "x": x.astype(np.float32, copy=False)},
-        attrs={"variable": var, "note": "Natural log of PDF"},
-    )
-    out_nc.parent.mkdir(parents=True, exist_ok=True)
-    ds.to_netcdf(out_nc)
 
 
 plt.rcParams.update(
@@ -163,7 +160,6 @@ for col, var in enumerate(panel_order):
 
     bins = np.linspace(x_lo, x_hi, NBINS + 1, dtype=np.float32)
     curves: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-
     obs_curve: tuple[np.ndarray, np.ndarray] | None = None
 
     for i, (label, da) in enumerate(items):
@@ -178,18 +174,26 @@ for col, var in enumerate(panel_order):
         x, y = out
         curves[label] = (x, y)
 
+        sty = dict(MODEL_STYLES.get(label, {}))
+        if label not in sty:
+            sty = {
+                "color": MODEL_COLORS.get(label, cmap(i % 20)),
+                "ls": linestyles[i % len(linestyles)],
+                "lw": 1.8,
+            }
+
+        ax_pdf.plot(
+            x,
+            y,
+            label=label,
+            solid_capstyle="round",
+            solid_joinstyle="round",
+            antialiased=True,
+            **sty,
+        )
+
         if label == obs_label:
             obs_curve = (x, y)
-            ax_pdf.plot(x, y, color="black", lw=3.0, label=label, zorder=100)
-        else:
-            ax_pdf.plot(
-                x,
-                y,
-                color=cmap(i % 20),
-                lw=1.8,
-                ls=linestyles[i % len(linestyles)],
-                label=label,
-            )
 
     if obs_curve is not None:
         x_obs, y_obs = obs_curve
@@ -199,25 +203,34 @@ for col, var in enumerate(panel_order):
             if label == obs_label:
                 continue
             delta = y - y_obs
+            sty = dict(MODEL_STYLES.get(label, {}))
+            if label not in sty:
+                sty = {
+                    "color": MODEL_COLORS.get(label, cmap(i % 20)),
+                    "ls": linestyles[i % len(linestyles)],
+                    "lw": 1.8,
+                }
+
             ax_delta.plot(
                 x,
                 delta,
-                color=cmap(i % 20),
-                lw=1.8,
-                ls=linestyles[i % len(linestyles)],
                 label=label,
+                solid_capstyle="round",
+                solid_joinstyle="round",
+                antialiased=True,
+                **sty,
             )
-
-    _save_logpdf_nc(
-        var=var,
-        curves=curves,
-        out_nc=base
-        / "Processing_and_Analysis_Scripts/Analysis/BCSR_Stats/Figures"
-        / f"logpdf_{var}.nc",
-    )
 
     style_axis(ax_pdf, xlabel=cfg["xlabel"], ylabel="ln(PDF)", grid=False)
     style_axis(ax_delta, xlabel=cfg["xlabel"], ylabel="Δ ln(PDF)", grid=False)
+
+    ax_pdf.grid(True, which="major", alpha=0.18, linestyle="--", linewidth=0.8)
+    ax_pdf.minorticks_on()
+    ax_pdf.grid(True, which="minor", alpha=0.08, linestyle=":", linewidth=0.6)
+
+    ax_delta.grid(True, which="major", alpha=0.18, linestyle="--", linewidth=0.8)
+    ax_delta.minorticks_on()
+    ax_delta.grid(True, which="minor", alpha=0.08, linestyle=":", linewidth=0.6)
 
     ax_pdf.set_title(f"{var.upper()} log-PDF")
     ax_delta.set_title(f"{var.upper()} delta vs obs")
@@ -262,12 +275,18 @@ fig.legend(
     loc="lower center",
     ncol=4,
     frameon=True,
+    fancybox=False,
+    edgecolor="0.75",
+    facecolor="white",
+    framealpha=0.95,
+    handlelength=2.6,
+    columnspacing=1.4,
     bbox_to_anchor=(0.5, -0.02),
 )
 
 fig.subplots_adjust(bottom=0.12, wspace=0.18, hspace=0.26)
 
-out = base / "Processing_and_Analysis_Scripts/Analysis/BCSR_Stats/Figures/logpdf_delta.pdf"
+out = base / "Processing_and_Analysis_Scripts/Analysis/BCSR_Stats/Figures/logpdf_delta.png"
 out.parent.mkdir(parents=True, exist_ok=True)
 save_figure(fig, out)
 plt.close(fig)

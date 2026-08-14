@@ -7,15 +7,14 @@ import pandas as pd
 import seaborn as sns
 import xarray as xr
 from numpy.fft import fft2, fftshift
+
+
 from properscoring import crps_ensemble
 from scipy.ndimage import uniform_filter
+
+
 from skimage.metrics import structural_similarity
 from tqdm import tqdm
-
-try:
-    from scores.categorical.fss import fss as scores_fss
-except Exception:
-    scores_fss = None
 
 sns.set_style("whitegrid")
 
@@ -33,9 +32,15 @@ NYQUIST_KM = 2.0 * GRID_SPACING_KM
 PRECIP_MIN_MEAN = 0.05  # mm/day (Harris et al. 0.002 mm/hr * 24)
 
 # FSS settings for paired precipitation fields
-FSS_THRESHOLD_MM_DAY = 1.0 #mm/day threshold. 
-FSS_WINDOW_KM = 3.0
+
+FSS_THRESHOLD_MM_DAY = 1.0
+
+FSS_WINDOW_KM = 4.0
 FSS_WINDOW_PX = max(1, int(round(FSS_WINDOW_KM / GRID_SPACING_KM)))
+
+
+if FSS_WINDOW_PX % 2 == 0:
+    FSS_WINDOW_PX += 1
 
 
 def _load_field(path: Path, var: str, mask: xr.DataArray | None = None, clip: bool = False) -> xr.DataArray:
@@ -62,6 +67,11 @@ def _spatial_mask(mask2d: xr.DataArray | None, shape: tuple[int, int]) -> np.nda
     return np.isfinite(mv) & (mv != 0)
 
 
+def _finite(x) -> np.ndarray:
+    a = np.asarray(list(x), dtype=float)
+    return a[np.isfinite(a)]
+
+
 def _mean(x) -> float:
     a = np.asarray(list(x), dtype=float)
     a = a[np.isfinite(a)]
@@ -74,14 +84,6 @@ def _frame_to_ensemble(pred_frame: xr.DataArray) -> np.ndarray:
         return pred_frame.values[None, ...]
     spatial = [d for d in pred_frame.dims if d != sd]
     return pred_frame.transpose(sd, *spatial).values
-
-
-def _time_indices(da: xr.DataArray, valid_times: np.ndarray | None = None) -> list[int | None]:
-    if "time" not in da.dims:
-        return [None]
-    if valid_times is not None:
-        return [int(t) for t in valid_times]
-    return list(range(da.sizes.get("time", 0)))
 
 
 # ── RAPSD ─────────────────────────────────────────────────────────────────────
@@ -107,7 +109,7 @@ def _compute_rapsd_raw(img: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     max_radius = min(h, w) // 2
 
     radius_int = np.round(radius).astype(int)
-    rapsd = np.zeros(max_radius, dtype=float)
+    rapsd = np.zeros(max_radius)
     for r in range(max_radius):
         annulus = radius_int == r
         if annulus.sum() > 0:
@@ -115,66 +117,6 @@ def _compute_rapsd_raw(img: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     frequencies = np.arange(max_radius, dtype=float) / max_radius * 0.5
     return rapsd, frequencies
-
-
-def _ralsd_2d(
-    obs2d: np.ndarray,
-    pred2d: np.ndarray,
-    mask2d: xr.DataArray | None = None,
-    is_precip: bool = False,
-) -> float:
-    valid = np.isfinite(obs2d) & np.isfinite(pred2d)
-    if mask2d is not None:
-        valid &= _spatial_mask(mask2d, obs2d.shape)
-
-    if not np.any(valid):
-        return np.nan
-
-    if is_precip:
-        obs_mean = np.nanmean(obs2d[valid])
-        if not np.isfinite(obs_mean) or obs_mean < PRECIP_MIN_MEAN:
-            return np.nan
-
-    obs = np.where(valid, obs2d, np.nan)
-    pred = np.where(valid, pred2d, np.nan)
-
-    robs, freqs = _compute_rapsd_raw(obs)
-    rpred, _ = _compute_rapsd_raw(pred)
-
-    if robs.size == 0 or rpred.size == 0 or freqs.size == 0:
-        return np.nan
-
-    n = min(robs.size, rpred.size, freqs.size)
-    robs = robs[:n]
-    rpred = rpred[:n]
-    freqs = freqs[:n]
-
-    wavelength_km = np.where(freqs > 0, GRID_SPACING_KM / freqs, np.inf)
-    valid_bins = np.isfinite(robs) & np.isfinite(rpred) & (wavelength_km >= NYQUIST_KM) & (freqs > 0)
-    if not np.any(valid_bins):
-        return np.nan
-
-    d = 10.0 * np.log10(np.maximum(rpred[valid_bins], EPS) / np.maximum(robs[valid_bins], EPS))
-    return float(np.sqrt(np.mean(d**2)))
-
-
-def _series_ralsd(obs: xr.DataArray, pred: xr.DataArray, mask2d=None, is_precip: bool = False) -> float:
-    obs, pred = xr.align(obs, pred, join="inner")
-    sd = _sample_dim(pred)
-    vals: list[float] = []
-
-    valid_times = _get_valid_precip_times(obs) if is_precip else None
-    for t in _time_indices(obs, valid_times):
-        obs_t = obs if t is None else obs.isel(time=t)
-        pred_t = pred if t is None else pred.isel(time=t)
-
-        if sd is not None and sd in pred_t.dims:
-            for s in range(pred_t.sizes[sd]):
-                vals.append(_ralsd_2d(obs_t.values, pred_t.isel({sd: s}).values, mask2d, is_precip=is_precip))
-        else:
-            vals.append(_ralsd_2d(obs_t.values, pred_t.values, mask2d, is_precip=is_precip))
-
-    return _mean(vals)
 
 
 def _get_valid_precip_times(obs: xr.DataArray) -> np.ndarray:
@@ -188,8 +130,69 @@ def _get_valid_precip_times(obs: xr.DataArray) -> np.ndarray:
     return np.array(valid, dtype=int)
 
 
+def _rapsd_timemean(
+    da: xr.DataArray,
+    valid_times: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    sd = _sample_dim(da)
+    nt = da.sizes.get("time", 1)
+    time_indices = valid_times if valid_times is not None else np.arange(nt)
+
+    spectra: list[np.ndarray] = []
+    freqs: np.ndarray | None = None
+
+    for t in time_indices:
+        frame_da = da.isel(time=int(t)) if "time" in da.dims else da
+        if sd is not None and sd in frame_da.dims:
+            for s in range(frame_da.sizes[sd]):
+                frame = frame_da.isel({sd: s}).values.astype(float)
+                r, f = _compute_rapsd_raw(frame)
+                if r.size > 0:
+                    spectra.append(r)
+                    freqs = f
+        else:
+            frame = frame_da.values.astype(float)
+            r, f = _compute_rapsd_raw(frame)
+            if r.size > 0:
+                spectra.append(r)
+                freqs = f
+
+    if not spectra or freqs is None:
+        return np.array([]), np.array([])
+
+    return np.mean(spectra, axis=0), freqs
+
+
+def _ralsd_from_timemean(
+    obs: xr.DataArray,
+    pred: xr.DataArray,
+    is_precip: bool = False,
+) -> float:
+    valid_times = _get_valid_precip_times(obs) if is_precip else None
+
+    rapsd_obs, freqs = _rapsd_timemean(obs, valid_times=valid_times)
+    rapsd_pred, _ = _rapsd_timemean(pred, valid_times=valid_times)
+
+    if rapsd_obs.size == 0 or rapsd_pred.size == 0 or freqs.size == 0:
+        return np.nan
+
+    valid = (freqs > 0) & (1.0 / (freqs / GRID_SPACING_KM) >= NYQUIST_KM)
+    ps_obs = rapsd_obs[valid]
+    ps_pred = rapsd_pred[valid]
+
+    n = min(ps_obs.size, ps_pred.size)
+    ps_obs = ps_obs[:n]
+    ps_pred = ps_pred[:n]
+
+    if n == 0:
+        return np.nan
+
+    d = 10.0 * np.log10(np.maximum(ps_pred, EPS) / np.maximum(ps_obs, EPS))
+    return float(np.sqrt(np.sum(d ** 2) / n))
+
+
 # ── FSS ───────────────────────────────────────────────────────────────────────
-def _fss_fallback(
+def _fss_2d(
     obs2d: np.ndarray,
     pred2d: np.ndarray,
     mask2d: xr.DataArray | None = None,
@@ -227,55 +230,16 @@ def _fss_fallback(
     return float(1.0 - mse / denom) if denom > 0 else np.nan
 
 
-def _fss_2d(
-    obs2d: np.ndarray,
-    pred2d: np.ndarray,
-    mask2d: xr.DataArray | None = None,
-    threshold: float = FSS_THRESHOLD_MM_DAY,
-    window_px: int = FSS_WINDOW_PX,
-) -> float:
-    valid = np.isfinite(obs2d) & np.isfinite(pred2d)
-    if mask2d is not None:
-        valid &= _spatial_mask(mask2d, obs2d.shape)
-
-    if not np.any(valid):
-        return np.nan
-
-    obs = np.where(valid, obs2d, np.nan)
-    pred = np.where(valid, pred2d, np.nan)
-
-    if scores_fss is not None:
-        attempts = (
-            lambda: scores_fss(fcst=pred, obs=obs, threshold=threshold, window_size=window_px),
-            lambda: scores_fss(pred, obs, threshold=threshold, window_size=window_px),
-            lambda: scores_fss(fcst=pred, obs=obs, threshold=threshold, neighbourhood_size=window_px),
-            lambda: scores_fss(pred, obs, threshold=threshold, neighbourhood_size=window_px),
-        )
-        for call in attempts:
-            try:
-                return float(call())
-            except Exception:
-                pass
-
-    return _fss_fallback(obs2d, pred2d, mask2d, threshold=threshold, window_px=window_px)
-
-
 def _series_fss(obs: xr.DataArray, pred: xr.DataArray, mask2d=None) -> float:
-    obs, pred = xr.align(obs, pred, join="inner")
     sd = _sample_dim(pred)
-    vals: list[float] = []
-
-    for t in _time_indices(obs):
-        obs_t = obs if t is None else obs.isel(time=t)
-        pred_t = pred if t is None else pred.isel(time=t)
-
-        if sd is not None and sd in pred_t.dims:
-            for s in range(pred_t.sizes[sd]):
-                vals.append(_fss_2d(obs_t.values, pred_t.isel({sd: s}).values, mask2d))
-        else:
-            vals.append(_fss_2d(obs_t.values, pred_t.values, mask2d))
-
-    return _mean(vals)
+    if sd is not None:
+        pred = pred.mean(dim=sd, skipna=True)
+    obs, pred = xr.align(obs, pred, join="inner")
+    tmax = min(obs.sizes.get("time", 0), pred.sizes.get("time", 0))
+    return _mean(
+        _fss_2d(obs.isel(time=t).values, pred.isel(time=t).values, mask2d)
+        for t in range(tmax)
+    )
 
 
 # ── Other metrics ────────────────────────────────────────────────────────────
@@ -354,23 +318,13 @@ def _pitd_frame(
     return float(np.sqrt(np.mean((p - u) ** 2)))
 
 
-def _series_framewise(obs: xr.DataArray, pred: xr.DataArray, fn, mask2d=None, is_precip: bool = False) -> float:
-    obs, pred = xr.align(obs, pred, join="inner")
+def _series_mean(obs: xr.DataArray, pred: xr.DataArray, fn, mask2d=None) -> float:
     sd = _sample_dim(pred)
-    vals: list[float] = []
-
-    valid_times = _get_valid_precip_times(obs) if is_precip else None
-    for t in _time_indices(obs, valid_times):
-        obs_t = obs if t is None else obs.isel(time=t)
-        pred_t = pred if t is None else pred.isel(time=t)
-
-        if sd is not None and sd in pred_t.dims:
-            for s in range(pred_t.sizes[sd]):
-                vals.append(fn(obs_t.values, pred_t.isel({sd: s}).values, mask2d))
-        else:
-            vals.append(fn(obs_t.values, pred_t.values, mask2d))
-
-    return _mean(vals)
+    if sd is not None:
+        pred = pred.mean(dim=sd, skipna=True)
+    obs, pred = xr.align(obs, pred, join="inner")
+    tmax = min(obs.sizes.get("time", 0), pred.sizes.get("time", 0))
+    return _mean(fn(obs.isel(time=t).values, pred.isel(time=t).values, mask2d) for t in range(tmax))
 
 
 def _series_crps(obs: xr.DataArray, pred: xr.DataArray, mask2d=None) -> float:
@@ -394,17 +348,20 @@ def _row(
 ) -> dict[str, float | str]:
     is_precip = variable == "precip"
 
-    return {
+    ralsd_mean = _ralsd_from_timemean(obs, pred, is_precip=is_precip)
+
+    out: dict[str, float | str] = {
         "model": model,
         "variable": variable,
         "CRPS": _series_crps(obs, pred, mask2d),
-        "RALSD": _series_ralsd(obs, pred, mask2d, is_precip=is_precip),
-        "SSIM": _series_framewise(obs, pred, _ssim_2d, mask2d),
-        "RMSE": _series_framewise(obs, pred, _rmse_2d, mask2d),
-        "MAE": _series_framewise(obs, pred, _mae_2d, mask2d),
+        "RALSD": ralsd_mean,
+        "SSIM": _series_mean(obs, pred, _ssim_2d, mask2d),
+        "RMSE": _series_mean(obs, pred, _rmse_2d, mask2d),
+        "MAE": _series_mean(obs, pred, _mae_2d, mask2d),
         "PITD": _series_pitd(obs, pred, mask2d),
         "FSS": _series_fss(obs, pred, mask2d) if is_precip else np.nan,
     }
+    return out
 
 
 def main() -> None:

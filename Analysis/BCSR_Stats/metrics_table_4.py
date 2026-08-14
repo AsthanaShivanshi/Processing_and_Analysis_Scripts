@@ -11,6 +11,8 @@ import xarray as xr
 import config
 from PSS import pss_gridwise_spatial_mean
 from RAPSD import EPS, PRECIP_MIN_MEAN, ralsd, rapsd, wavenumber_to_wavelength_km
+
+
 from mbe import mbe_gridwise_spatial_mean
 from load_means import load_all_means_masked
 from load_pooled import (
@@ -215,54 +217,40 @@ def _plot_rapsd_summary(
 ) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    fig = plt.figure(figsize=(15, 8))
+    fig = plt.figure(figsize=(16.5, 11.2))
     gs = fig.add_gridspec(
         2, 4,
-        width_ratios=[1.0, 1.5, 1.0, 1.5],
-        height_ratios=[2.2, 1.0],
-        wspace=0.06,
-        hspace=0.10,
+        width_ratios=[1.0, 1.7, 1.0, 1.7],
+        height_ratios=[2.7, 1.15],
+        wspace=0.08,
+        hspace=0.14,
     )
 
-    # Top row: share y only WITHIN a variable — tas power (K^2) and pr power
-    # (mm^2/day^2) differ by orders of magnitude, so a global share would
-    # flatten one panel into a line.
-    # Bottom row: share y across everything (all ratios are 0-1.75).
     ax_t0 = fig.add_subplot(gs[0, 0])
     ax_b0 = fig.add_subplot(gs[1, 0])
     ax_t1 = fig.add_subplot(gs[0, 1], sharey=ax_t0)
     ax_b1 = fig.add_subplot(gs[1, 1], sharey=ax_b0)
-    ax_t2 = fig.add_subplot(gs[0, 2])                       # own y-scale
+    ax_t2 = fig.add_subplot(gs[0, 2])
     ax_b2 = fig.add_subplot(gs[1, 2], sharey=ax_b0)
     ax_t3 = fig.add_subplot(gs[0, 3], sharey=ax_t2)
     ax_b3 = fig.add_subplot(gs[1, 3], sharey=ax_b0)
 
-    # (var, label, ref, spectra, shape, axes, show_power_ylabel, show_ratio_ylabel)
     panels = [
-        ("tas", "Temperature", tas_ref, tas_spectra, tas_shape,
-         (ax_t0, ax_t1, ax_b0, ax_b1), True, True),
-        ("pr", "Precipitation", pr_ref, pr_spectra, pr_shape,
-         (ax_t2, ax_t3, ax_b2, ax_b3), True, False),
+        ("tas", "Temperature", tas_ref, tas_spectra, tas_shape, (ax_t0, ax_t1, ax_b0, ax_b1), True, True),
+        ("pr", "Precipitation", pr_ref, pr_spectra, pr_shape, (ax_t2, ax_t3, ax_b2, ax_b3), True, False),
     ]
 
-    # Consistent style per model NAME across both variables.
     all_names = list(dict.fromkeys([*tas_spectra, *pr_spectra]))
     styles = {name: _model_style(i) for i, name in enumerate(all_names)}
     handles: dict[str, plt.Line2D] = {}
 
-    for (_var, var_label, (k_ref, ps_ref), spectra, shape, axs,
-         show_power_ylabel, show_ratio_ylabel) in panels:
+    for (_var, var_label, (k_ref, ps_ref), spectra, shape, axs, show_power_ylabel, show_ratio_ylabel) in panels:
         ax_tl, ax_tr, ax_bl, ax_br = axs
-
         wl_ref, ps_ref_wl = _to_wavelength(k_ref, ps_ref, shape, grid_spacing_km)
 
-        # ── top row: spectra ────────────────────────────────────────────────
         for ax in (ax_tl, ax_tr):
             if wl_ref.size:
-                (h_obs,) = ax.semilogy(
-                    wl_ref, ps_ref_wl, color="black", lw=1.8, ls="-",
-                    zorder=5, label="OBS",
-                )
+                (h_obs,) = ax.semilogy(wl_ref, ps_ref_wl, color="black", lw=2.6, ls="-", zorder=6, label="OBS")
                 handles.setdefault("OBS", h_obs)
 
             for baseline, (k_mod, ps_mod, _) in spectra.items():
@@ -272,22 +260,18 @@ def _plot_rapsd_summary(
                 (h,) = ax.semilogy(wl_m, ps_m, **styles[baseline])
                 handles.setdefault(baseline, h)
 
-            ax.grid(True, which="major", alpha=0.25, ls=":")
-            # Descending limits put large scales on the left; do NOT also call
-            # invert_xaxis() or the two cancel out.
-            ax.set_xlim(
-                (WL_LEFT_MAX_KM, WL_BREAK_KM) if ax is ax_tl
-                else (WL_BREAK_KM, WL_MIN_KM)
-            )
+            ax.grid(True, which="major", alpha=0.22, ls=":")
+            ax.minorticks_on()
+            ax.set_xlim((WL_LEFT_MAX_KM, WL_BREAK_KM) if ax is ax_tl else (WL_BREAK_KM, WL_MIN_KM))
+            ax.tick_params(axis="both", labelsize=10.5)
+            ax.set_facecolor("white")
 
-        # ── bottom row: model / obs ratio ───────────────────────────────────
         for ax in (ax_bl, ax_br):
             ax.axhline(1.0, color="black", lw=1.0, zorder=3)
 
             for baseline, (k_mod, ps_mod, _) in spectra.items():
                 if not (k_ref.size and k_mod.size):
                     continue
-                # interpolate onto the obs k-grid, then relabel to wavelength
                 n = min(k_ref.size, k_mod.size)
                 k_grid = k_ref[:n]
                 ps_r = np.interp(k_grid, k_ref, ps_ref)
@@ -297,61 +281,54 @@ def _plot_rapsd_summary(
                 )
                 ax.plot(wl_g, ratio, **styles[baseline])
 
-            ax.grid(True, which="major", alpha=0.25, ls=":")
-            ax.set_xlim(
-                (WL_LEFT_MAX_KM, WL_BREAK_KM) if ax is ax_bl
-                else (WL_BREAK_KM, WL_MIN_KM)
-            )
-            ax.set_ylim(*RATIO_YLIM)          # identical, fixed 0–1.75
+            ax.grid(True, which="major", alpha=0.22, ls=":")
+            ax.minorticks_on()
+            ax.set_xlim((WL_LEFT_MAX_KM, WL_BREAK_KM) if ax is ax_bl else (WL_BREAK_KM, WL_MIN_KM))
+            ax.set_ylim(*RATIO_YLIM)
+            ax.tick_params(axis="both", labelsize=10.5)
 
-        ax_tl.set_title(var_label, fontsize=13, fontweight="bold", loc="left")
-
+        ax_tl.set_title(var_label, fontsize=14, fontweight="bold", loc="left")
         if show_power_ylabel:
-            ax_tl.set_ylabel("Power", fontsize=11)
+            ax_tl.set_ylabel("Power", fontsize=12)
         if show_ratio_ylabel:
-            ax_bl.set_ylabel("Model / Obs", fontsize=11)
+            ax_bl.set_ylabel("Model / Obs", fontsize=12)
 
         for ax, ticks in (
             (ax_tl, LEFT_TICKS_KM), (ax_tr, RIGHT_TICKS_KM),
             (ax_bl, LEFT_TICKS_KM), (ax_br, RIGHT_TICKS_KM),
         ):
             ax.set_xticks(ticks)
-            ax.set_xticklabels([str(int(v)) for v in ticks], fontsize=9)
-            ax.tick_params(axis="both", labelsize=10)
+            ax.set_xticklabels([str(int(v)) for v in ticks], fontsize=10)
 
-        ax_bl.set_xlabel("Wavelength (km)", fontsize=11, loc="right")
+        ax_bl.set_xlabel("Wavelength (km)", fontsize=12, loc="right")
 
-        _format_broken_pair(ax_tl, ax_tr, show_ylabel=show_power_ylabel,
-                            show_xticklabels=False)
-        _format_broken_pair(ax_bl, ax_br, show_ylabel=show_ratio_ylabel,
-                            show_xticklabels=True)
+        _format_broken_pair(ax_tl, ax_tr, show_ylabel=show_power_ylabel, show_xticklabels=False)
+        _format_broken_pair(ax_bl, ax_br, show_ylabel=show_ratio_ylabel, show_xticklabels=True)
         _add_x_break_marks(ax_tl, ax_tr)
         _add_x_break_marks(ax_bl, ax_br)
 
-        # RALSD scores as a compact monospace table.
-        if spectra:
-            txt = "RALSD (dB)\n" + "\n".join(
-                f"{n:<12s}{s:6.3f}"
-                for n, (_, _, s) in spectra.items() if np.isfinite(s)
-            )
-            ax_tr.text(
-                0.97, 0.97, txt, transform=ax_tr.transAxes, fontsize=8,
-                family="monospace", va="top", ha="right",
-                bbox=dict(boxstyle="round,pad=0.3", fc="white",
-                          alpha=0.85, ec="0.85"),
-            )
+        txt = "RALSD (dB)\n" + "\n".join(
+            f"{n:<12s}{s:6.3f}" for n, (_, _, s) in spectra.items() if np.isfinite(s)
+        )
+        ax_tr.text(
+            0.97, 0.97, txt, transform=ax_tr.transAxes, fontsize=9.5,
+            family="monospace", va="top", ha="right",
+            bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.9, ec="0.85"),
+        )
 
     fig.legend(
         list(handles.values()), list(handles.keys()),
         loc="lower center", ncol=min(len(handles), 6),
-        fontsize=10, frameon=False, bbox_to_anchor=(0.5, 0.005),
-        handlelength=3.0, columnspacing=1.8,
+        fontsize=10, frameon=True, fancybox=False,
+        edgecolor="0.75", facecolor="white", framealpha=0.96,
+        handlelength=3.0, columnspacing=1.6,
+        bbox_to_anchor=(0.5, 0.01),
     )
 
-    fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.13)
+    fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.12)
     fig.savefig(out, dpi=300, bbox_inches="tight")
     plt.close(fig)
-    print(f"[ok] saved RAPSD summary → {out}")
+    print(f"[ok] saved RAPSD summary  {out}")
 
 
 def _compute_ralsd_for_var(args, loaded, obs_eval: xr.DataArray, var: str):

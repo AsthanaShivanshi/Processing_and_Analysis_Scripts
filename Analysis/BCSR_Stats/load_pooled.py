@@ -21,7 +21,7 @@ ROW_ORDER = [
     "EQM + Bilinear + U-Net + DDIM",
     "CDF-t + Bilinear + U-Net + DDIM",
     "dOTC + Bilinear + U-Net + DDIM",
-    "CH2025 methodological baseline",
+    "Fine-scale EQM",
 ]
 
 MASK_LEVEL = {k: "hr" for k in ROW_ORDER}
@@ -123,7 +123,7 @@ def _build_case_templates() -> Dict[str, List[str]]:
             "BC+SR/Bilinear_UNet_DDIM/dOTC/historical/day/{var}/v20250415/MME_pooled_dOTC_historical_{var}_*.nc",
             "BC+SR/Bilinear_UNet_DDIM/dOTC/ssp370/day/{var}/v20250415/MME_pooled_dOTC_ssp370_{var}_*.nc",
         ],
-        "CH2025 methodological baseline": [
+        "Fine-scale EQM": [
             "BC/EQM/historical/day/{var}/v20250415/MME_pooled_EQM_historical_{var}_*.nc",
             "BC/EQM/ssp370/day/{var}/v20250415/MME_pooled_EQM_ssp370_{var}_all.nc",
             "BC/EQM/ssp370/day/{var}/v20250415/MME_pooled_EQM_ssp370_{var}_*.nc",

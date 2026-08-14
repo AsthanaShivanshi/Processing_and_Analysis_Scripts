@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=BCSR_RAPSD
-#SBATCH --output=logs/BCSR_RAPSD_%j.log
-#SBATCH --error=logs/BCSR_RAPSD_%j.log
+#SBATCH --job-name=RAPSD
+#SBATCH --output=logs/RAPSD_%j.log
+#SBATCH --error=logs/RAPSD_%j.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=128G
-#SBATCH --time=01-00:00:00
+#SBATCH --time=10:00:00
 #SBATCH --partition=cpu
 
 
@@ -43,14 +43,7 @@ cd ../Processing_and_Analysis_Scripts
 
 
 
-#deltapdf
-
-#python Analysis/BCSR_Stats/delta_log_pdf.py
-
-
-#with Enspools
-
-#python Analysis/BCSR_Stats/logpdf.py  #Requires pooling
+#python Analysis/BCSR_Stats/delta_log_pdf.py  #Requires pooling.. bins cxentre.. 
 
 
 
@@ -71,7 +64,7 @@ python Analysis/BCSR_Stats/metrics_table_4.py \
 
 #------#
 
-#python Analysis/BCSR_Stats/Spread_Skill.py
+#python Analysis/BCSR_Stats/Correlogram.py
 
 
 

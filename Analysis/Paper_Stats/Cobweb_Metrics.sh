@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Spectra_Backup
-#SBATCH --output=logs/Spectra_Backup_job_%j.log
-#SBATCH --error=logs/Spectra_Backup_job_%j.log
+#SBATCH --job-name=Cobweb_Metrics
+#SBATCH --output=logs/Cobweb_Metrics_job_%j.log
+#SBATCH --error=logs/Cobweb_Metrics_job_%j.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --time=8:00:00
@@ -28,11 +28,9 @@ which python
 python -c "import wandb; print(wandb.__version__)"
 
 
-#python Analysis/Paper_Stats/cobweb_metrics.py
+python Analysis/Paper_Stats/cobweb_metrics.py
 
-#python Analysis/Paper_Stats/plot_cobweb.py
 
 #python Analysis/Paper_Stats/sal.py
-#python Analysis/Paper_Stats/rapsd_method_I.py
 
-python Analysis/Paper_Stats/rapsd_backup.py
+#python Analysis/Paper_Stats/rapsd.py

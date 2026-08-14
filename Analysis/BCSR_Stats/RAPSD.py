@@ -22,7 +22,7 @@ WL_BREAK_KM = 12.0
 WL_MIN_KM = 1.0
 
 LEFT_TICKS_KM = np.array([50, 40, 30, 20, 12], dtype=float)
-RIGHT_TICKS_KM = np.array([12, 9, 7, 5, 3, 1], dtype=float)
+RIGHT_TICKS_KM = np.array([12, 7, 5, 3, 2, 1], dtype=float)
 
 RATIO_YLIM = (0.0, 2.0)
 
@@ -37,13 +37,13 @@ MODEL_COLORS = {
 }
 
 DEFAULT_STYLES = {
-    "Obs": dict(color="black", ls="-", lw=1.8),
-    "Coarse": dict(ls="--", lw=1.0),
-    "Bicubic": dict(ls="--", lw=1.0),
-    "Bilinear": dict(ls="--", lw=1.0),
-    "UNet": dict(ls="-", lw=1.2),
-    "DDIM": dict(ls="-", lw=1.5),
-    "CFM": dict(ls="-", lw=1.5),
+    "Obs": dict(color="black", ls="-", lw=2.6),
+    "Coarse": dict(color="#7f7f7f", ls="--", lw=1.8),
+    "Bicubic": dict(color="#1f77b4", ls="-.", lw=1.9),
+    "Bilinear": dict(color="#ff7f0e", ls=":", lw=2.0),
+    "UNet": dict(color="#2ca02c", ls="-", lw=2.0),
+    "DDIM": dict(color="#d62728", ls="-", lw=2.2),
+    "CFM": dict(color="#9467bd", ls="-", lw=2.2),
 }
 
 
@@ -177,6 +177,15 @@ def _format_broken_pair(
 
     if not show_ylabel:
         ax_left.set_ylabel("")
+
+
+def _style_for(name: str, style_map: dict | None = None) -> dict:
+    sty = dict(DEFAULT_STYLES.get(name, {}))
+    if style_map and name in style_map:
+        sty.update(style_map[name])
+    if "color" not in sty:
+        sty["color"] = MODEL_COLORS.get(name, "C0")
+    return sty
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +334,7 @@ def plot_rapsd(
             continue
         score = ralsd(k_obs, ps_obs, k, ps)
         label = f"{name}  (RALSD={score:.2f} dB)"
-        sty = dict((style_map or {}).get(name, {}))
+        sty = _style_for(name, style_map)
         ax.semilogy(_x(k), ps, label=label, **sty)
 
     if field_shape is None:
@@ -336,7 +345,7 @@ def plot_rapsd(
 
     ax.set_ylabel("Power Spectral Density", fontsize=12)
     ax.set_title(title, fontsize=13)
-    ax.legend(fontsize=9, loc="upper right")
+    ax.legend(fontsize=9, loc="upper right", frameon=True, framealpha=0.95)
     ax.grid(True, which="both", alpha=0.3)
     return ax
 
@@ -350,20 +359,20 @@ def plot_rapsd_broken(
     style_map: dict | None = None,
 ) -> tuple[plt.Figure, tuple[plt.Axes, plt.Axes, plt.Axes, plt.Axes]]:
     """
-    Backup-style broken-axis plot:
+    Page-long broken-axis plot with clear legend and readable annotations:
     - wavelength space
     - left panel: 50 -> 12 km
     - right panel: 12 -> 1 km
     - ratio panel below
     """
-    fig = plt.figure(figsize=(15, 8))
+    fig = plt.figure(figsize=(16.5, 10.8))
     gs = fig.add_gridspec(
         2,
         2,
-        width_ratios=[1.0, 1.5],
-        height_ratios=[2.2, 1.0],
-        wspace=0.06,
-        hspace=0.10,
+        width_ratios=[1.0, 1.55],
+        height_ratios=[2.7, 1.15],
+        wspace=0.08,
+        hspace=0.16,
     )
 
     ax_tl = fig.add_subplot(gs[0, 0])
@@ -382,16 +391,36 @@ def plot_rapsd_broken(
     colors = {name: MODEL_COLORS.get(name, "C0") for name in spectra}
 
     for ax in (ax_tl, ax_tr):
-        ax.semilogy(obs_x, obs_ps, color="black", lw=1.8, ls="-", zorder=5, label=obs_key)
+        ax.semilogy(
+            obs_x,
+            obs_ps,
+            color="black",
+            lw=2.8,
+            ls="-",
+            zorder=6,
+            label=obs_key,
+        )
         for name, (k, ps) in spectra.items():
             if name == obs_key:
                 continue
             x = _x(k)
-            sty = dict((style_map or {}).get(name, {}))
+            sty = _style_for(name, style_map)
             sty.setdefault("color", colors[name])
-            ax.semilogy(x, ps, **sty)
+            ax.semilogy(
+                x,
+                ps,
+                zorder=4,
+                solid_capstyle="round",
+                solid_joinstyle="round",
+                antialiased=True,
+                **sty,
+            )
         ax.grid(True, which="major", alpha=0.25, ls=":")
+        ax.grid(True, which="minor", alpha=0.10, ls=":")
+        ax.minorticks_on()
         ax.set_xlim((WL_LEFT_MAX_KM, WL_BREAK_KM) if ax is ax_tl else (WL_BREAK_KM, WL_MIN_KM))
+        ax.tick_params(axis="both", labelsize=10.5)
+        ax.set_facecolor("white")
 
     for ax in (ax_bl, ax_br):
         ax.axhline(1.0, color="black", lw=1.0, zorder=3)
@@ -400,17 +429,29 @@ def plot_rapsd_broken(
                 continue
             x = _x(k)
             obs_on_x = _interp_1d(obs_x, obs_ps, x)
-            sty = dict((style_map or {}).get(name, {}))
+            sty = _style_for(name, style_map)
             sty.setdefault("color", colors[name])
-            ax.plot(x, ps / np.maximum(obs_on_x, EPS), **sty)
+            ax.plot(
+                x,
+                ps / np.maximum(obs_on_x, EPS),
+                zorder=4,
+                solid_capstyle="round",
+                solid_joinstyle="round",
+                antialiased=True,
+                **sty,
+            )
         ax.grid(True, which="major", alpha=0.25, ls=":")
+        ax.grid(True, which="minor", alpha=0.10, ls=":")
+        ax.minorticks_on()
         ax.set_xlim((WL_LEFT_MAX_KM, WL_BREAK_KM) if ax is ax_bl else (WL_BREAK_KM, WL_MIN_KM))
         ax.set_ylim(*RATIO_YLIM)
+        ax.tick_params(axis="both", labelsize=10.5)
+        ax.set_facecolor("white")
 
-    ax_tl.set_title(title, fontsize=13, fontweight="bold", loc="left")
-    ax_tl.set_ylabel("PSD", fontsize=11)
-    ax_bl.set_ylabel("Model / Obs", fontsize=11)
-    ax_bl.set_xlabel("Wavelength (km)", fontsize=11, loc="right")
+    ax_tl.set_title(title, fontsize=15, fontweight="bold", loc="left")
+    ax_tl.set_ylabel("PSD", fontsize=12)
+    ax_bl.set_ylabel("Model / Obs", fontsize=12)
+    ax_bl.set_xlabel("Wavelength (km)", fontsize=12, loc="right")
 
     for ax, ticks in (
         (ax_tl, LEFT_TICKS_KM),
@@ -419,8 +460,7 @@ def plot_rapsd_broken(
         (ax_br, RIGHT_TICKS_KM),
     ):
         ax.set_xticks(ticks)
-        ax.set_xticklabels([str(int(v)) for v in ticks], fontsize=9)
-        ax.tick_params(axis="both", labelsize=10)
+        ax.set_xticklabels([str(int(v)) for v in ticks], fontsize=10)
 
     _format_broken_pair(ax_tl, ax_tr, show_ylabel=True, show_xticklabels=False)
     _format_broken_pair(ax_bl, ax_br, show_ylabel=True, show_xticklabels=True)
@@ -433,29 +473,29 @@ def plot_rapsd_broken(
         if name != obs_key
     )
     ax_tr.text(
-        0.97,
-        0.97,
+        0.975,
+        0.975,
         score_text,
         transform=ax_tr.transAxes,
-        fontsize=8,
+        fontsize=10.5,
         family="monospace",
         va="top",
         ha="right",
-        bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.85, ec="0.85"),
+        bbox=dict(boxstyle="round,pad=0.45", fc="white", alpha=0.92, ec="0.80"),
     )
 
-    handles = [mlines.Line2D([], [], color="black", lw=1.8, ls="-")]
+    handles = [mlines.Line2D([], [], color="black", lw=2.8, ls="-")]
     labels = [obs_key]
     for name in spectra:
         if name == obs_key:
             continue
-        sty = dict((style_map or {}).get(name, {}))
+        sty = _style_for(name, style_map)
         handles.append(
             mlines.Line2D(
                 [],
                 [],
-                color=colors[name],
-                lw=sty.get("lw", 1.5),
+                color=sty.get("color", colors[name]),
+                lw=sty.get("lw", 1.8),
                 ls=sty.get("ls", "-"),
             )
         )
@@ -465,13 +505,19 @@ def plot_rapsd_broken(
         handles,
         labels,
         loc="lower center",
-        ncol=len(labels),
-        fontsize=10,
-        frameon=False,
-        bbox_to_anchor=(0.5, 0.005),
+        ncol=4,
+        fontsize=11,
+        frameon=True,
+        fancybox=False,
+        edgecolor="0.75",
+        facecolor="white",
+        framealpha=0.96,
+        handlelength=2.8,
+        columnspacing=1.4,
+        bbox_to_anchor=(0.5, 0.02),
     )
 
-    fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.13)
+    fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.16)
     return fig, (ax_tl, ax_tr, ax_bl, ax_br)
 
 

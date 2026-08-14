@@ -12,15 +12,16 @@ from plotstyle import add_bottom_legend, save_paper_figure, style_model_line
 
 sns.set_style("whitegrid")
 
-DEFAULT_METRICS = (
+TEMP_METRICS = (
     ("CRPS", "CRPS ↓"),
+    ("RALSD", "RALSD ↓"),
     ("SSIM", "1-SSIM ↓"),
     ("RMSE", "RMSE ↓"),
     ("MAE", "MAE ↓"),
     ("PITD", "PITD ↓"),
 )
 
-FALLBACK_METRICS = {"CRPS", "PITD"}
+PRECIP_METRICS = TEMP_METRICS + (("FSS", "FSS ↑"),)
 
 MODEL_STYLE_OVERRIDES = {
     "DDIM": {"color": "black", "linewidth": 3.2},
@@ -37,8 +38,9 @@ def _find_column(df: pd.DataFrame, candidates: tuple[str, ...] | list[str]) -> s
     raise ValueError(f"Could not find any of {candidates}. Available columns: {df.columns.tolist()}")
 
 
-def _first_finite(row: pd.Series, cols: list[str]) -> float:
-    for c in cols:
+def _metric_value(row: pd.Series, metric_name: str) -> float:
+    candidates = (metric_name, f"{metric_name}_mean", f"{metric_name}_avg")
+    for c in candidates:
         if c in row.index:
             v = pd.to_numeric(row[c], errors="coerce")
             if pd.notna(v):
@@ -68,21 +70,7 @@ def _extract_variable_data(
     mean_values = []
 
     for metric_name, _ in metric_specs:
-        mean_col = f"{metric_name}_mean"
-        min_col = f"{metric_name}_min"
-        max_col = f"{metric_name}_max"
-
-        if metric_name in FALLBACK_METRICS:
-            mean = np.array(
-                [_first_finite(row, [mean_col, min_col, max_col]) for _, row in subset.iterrows()],
-                dtype=float,
-            )
-        else:
-            mean = (
-                pd.to_numeric(subset[mean_col], errors="coerce").to_numpy(dtype=float)
-                if mean_col in df.columns
-                else np.full(len(subset), np.nan)
-            )
+        mean = np.array([_metric_value(row, metric_name) for _, row in subset.iterrows()], dtype=float)
 
         if metric_name == "SSIM":
             mean = 1.0 - mean
@@ -139,7 +127,6 @@ def plot_kiviat_from_csv(
     csv_path: str | Path,
     save_name: str | Path | None = None,
     models: tuple[str, ...] = ("Coarse", "Bicubic", "Bilinear", "UNet", "DDIM", "CFM"),
-    metric_specs: tuple[tuple[str, str], ...] = DEFAULT_METRICS,
     temperature_name: str = "temp",
     precipitation_name: str = "precip",
 ):
@@ -149,13 +136,14 @@ def plot_kiviat_from_csv(
     model_col = _find_column(df, ("model", "models", "method", "methods"))
     variable_col = _find_column(df, ("variable", "var", "variables"))
 
-    temp_mean = _extract_variable_data(df, temperature_name, models, metric_specs, model_col, variable_col)
-    pr_mean = _extract_variable_data(df, precipitation_name, models, metric_specs, model_col, variable_col)
+    temp_mean = _extract_variable_data(df, temperature_name, models, TEMP_METRICS, model_col, variable_col)
+    pr_mean = _extract_variable_data(df, precipitation_name, models, PRECIP_METRICS, model_col, variable_col)
 
     temp_mean = _normalise_metric_data(temp_mean)
     pr_mean = _normalise_metric_data(pr_mean)
 
-    metric_labels = [label for _, label in metric_specs]
+    temp_labels = [label for _, label in TEMP_METRICS]
+    precip_labels = [label for _, label in PRECIP_METRICS]
 
     fig, axes = plt.subplots(
         1,
@@ -164,8 +152,8 @@ def plot_kiviat_from_csv(
         subplot_kw={"polar": True},
     )
 
-    _plot_kiviat_axis(axes[0], temp_mean, models, metric_labels)
-    _plot_kiviat_axis(axes[1], pr_mean, models, metric_labels)
+    _plot_kiviat_axis(axes[0], temp_mean, models, temp_labels)
+    _plot_kiviat_axis(axes[1], pr_mean, models, precip_labels)
 
     fig.subplots_adjust(wspace=0.35, bottom=0.18, top=0.92)
 
