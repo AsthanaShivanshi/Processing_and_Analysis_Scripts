@@ -12,6 +12,7 @@ import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 
 from plotstyle import apply_paper_style, get_variable_cmap
+
 from config import (
     CH2025_DIR,
     DATASETS_TRAINING_DIR,
@@ -384,10 +385,11 @@ def main():
         (f"{mlabel} coarse BC (12 km)", c[0] if c is not None else None, c_lat, c_lon),
         (f"{mlabel} coarse + Bilinear (1 km)", b[0] if b is not None else None, b_lat, b_lon),
         (f"{mlabel} coarse + Bilinear + UNet mean", np.mean(u, axis=0) if u is not None else None, u_lat, u_lon),
-        ("CH2025 methodological baseline", h[0] if h is not None else None, h_lat, h_lon),
+        ("Fine-scale EQM", h[0] if h is not None else None, h_lat, h_lon),
     ]
 
     right = []
+    
     if d is not None:
         for i in range(min(DDIM_SAMPLES_TO_PLOT, d.shape[0], 4)):
             right.append((f"{mlabel} DDIM sample {i+1}", d[i], d_lat, d_lon))

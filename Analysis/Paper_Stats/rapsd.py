@@ -23,7 +23,7 @@ EPS = 1e-30
 
 GRID_SPACING_KM = 1.0
 
-NYQUIST_KM = 2.0 * GRID_SPACING_KM
+NYQUIST_KM = 1.0 * GRID_SPACING_KM
 
 PRECIP_MIN_MEAN = 0.05  # mm/day (Harris et al. 0.002 mm/hr * 24)
 
@@ -50,17 +50,25 @@ MODEL_COLORS = {
 }
 
 STYLE = {
-    "Obs": dict(color="black", ls="-", lw=1.8),
+    "Obs": dict(color="black", ls="-", lw=1.5),
+
     "Coarse": dict(ls="--", lw=1.0),
-    "Bicubic": dict(ls="--", lw=1.0),
-    "Bilinear": dict(ls="--", lw=1.0),
-    "UNet": dict(ls="-", lw=1.2),
-    "DDIM": dict(ls="-", lw=1.5),
-    "CFM": dict(ls="-", lw=1.5),
+
+
+    "Bicubic": dict(ls="--", lw=1.35),
+    "Bilinear": dict(ls="--", lw=1.35),
+
+
+
+    "UNet": dict(ls="-.", lw=1.35),
+
+
+
+    "DDIM": dict(ls="-", lw=1.35),
+    "CFM": dict(ls="-", lw=1.35),
 }
 
 
-# ── IO helpers ────────────────────────────────────────────────────────────────
 
 
 def _load_field(path, var, mask=None, clip=False):
@@ -80,7 +88,7 @@ def _sample_dim(da):
     return next((d for d in SAMPLE_DIMS if d in da.dims), None)
 
 
-# ── RAPSD (Harris et al. 2022 / pySTEPS) ──────────────────────────────────────
+#  RAPSD (Harris et al. 2022 
 
 
 def _compute_rapsd(img: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -332,7 +340,7 @@ def _add_shared_legend(fig: plt.Figure, model_names: list[str]) -> None:
                 [],
                 color=MODEL_COLORS.get(name, "C0"),
                 ls=STYLE.get(name, {}).get("ls", "-"),
-                lw=STYLE.get(name, {}).get("lw", 1.5),
+                lw=STYLE.get(name, {}).get("lw", 1.35),
             )
         )
         labels.append(name)
@@ -341,14 +349,20 @@ def _add_shared_legend(fig: plt.Figure, model_names: list[str]) -> None:
         handles,
         labels,
         loc="lower center",
-        ncol=len(labels),
-        fontsize=10,
+        ncol=3,
+        fontsize=9,
         frameon=False,
-        bbox_to_anchor=(0.5, 0.005),
+        bbox_to_anchor=(0.5, 0.01),
+        handlelength=2.8,
+        handletextpad=0.7,
+        columnspacing=1.4,
+        labelspacing=0.8,
+        borderaxespad=0.0,
     )
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+
+
 def main() -> None:
     mask_lr = _load_mask(
         PROCESSING_ROOT
@@ -373,7 +387,9 @@ def main() -> None:
         clip=True,
     )
 
-    # Native coarse grid retained; no NN upsampling to HR.
+    # Native coarse grid retained; no NN upsampling to HR. Nyquist trucation. 
+
+
     coarse_temp = _load_field(
         PROCESSING_ROOT
         / "Downscaling_Models/Dataset_Setup_I_Chronological_12km/TabsD_step2_coarse.nc",
@@ -566,9 +582,10 @@ def main() -> None:
             print(f"  {name:10s}  RALSD = {ralsd_val:.4f} dB")
             rows.append({"model": name, "variable": variable, "RALSD_mean": ralsd_val})
 
-
-        model_names = list(model_spectra.keys())
-
+        model_names = [name for name in model_spectra.keys() if name != "Coarse"]
+        plot_model_spectra = {
+            name: payload for name, payload in model_spectra.items() if name != "Coarse"
+        }
 
         ax_tl, ax_tr, ax_bl, ax_br = axes[variable]
         _plot_variable(
@@ -578,7 +595,7 @@ def main() -> None:
             ax_br,
             wl_km,
             ps_obs,
-            model_spectra,
+            plot_model_spectra,
             var_label,
             psd_units,
             show_ylabel=(col == 0),
@@ -586,28 +603,16 @@ def main() -> None:
 
 
     _add_shared_legend(fig, model_names)
+
     fig.subplots_adjust(left=0.06, right=0.985, top=0.94, bottom=0.13)
 
 
     (PAPER_STATS_DIR / "Figures").mkdir(parents=True, exist_ok=True)
-    out_png = PAPER_STATS_DIR / "Figures" / "rapsd_combined_method_I_backup.png"
+    out_png = PAPER_STATS_DIR / "Figures" / "rapsd_combined.png"
 
     fig.savefig(out_png, dpi=400, bbox_inches="tight")
     plt.close(fig)
     print(f"\nSaved {out_png}")
-
-
-    df = (
-        pd.DataFrame(rows)
-        .sort_values(["variable", "model"])
-        .reset_index(drop=True)[["model", "variable", "RALSD_mean"]]
-    )
-
-
-    out_csv = PAPER_STATS_DIR / "SR_metrics_rapsd_ralsd_I_backup.csv"
-    df.to_csv(out_csv, index=False)
-    print(f"Saved {out_csv}")
-    print(df.to_string(index=False))
 
 
 if __name__ == "__main__":

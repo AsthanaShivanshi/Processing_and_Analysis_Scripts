@@ -1,0 +1,92 @@
+mkdir: cannot create directory ‘/var/spool/slurm/d/job63580016/Figures’: Permission denied
+Running method=EQM_C, model=MPI-ESM1-2-HR, date=2014-07-10
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=MPI-ESM1-2-HR, date=2045-05-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=MPI-ESM1-2-HR, date=2096-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=MPI-ESM1-2-HR, date=2099-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=MPI-ESM1-2-HR, date=2020-10-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=EC-Earth3-Veg, date=2014-07-10
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=EC-Earth3-Veg, date=2045-05-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=EC-Earth3-Veg, date=2096-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=EC-Earth3-Veg, date=2099-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=EC-Earth3-Veg, date=2020-10-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=NorESM2-MM, date=2014-07-10
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=NorESM2-MM, date=2045-05-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=NorESM2-MM, date=2096-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=NorESM2-MM, date=2099-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=EQM_C, model=NorESM2-MM, date=2020-10-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=MPI-ESM1-2-HR, date=2014-07-10
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=MPI-ESM1-2-HR, date=2045-05-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=MPI-ESM1-2-HR, date=2096-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=MPI-ESM1-2-HR, date=2099-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=MPI-ESM1-2-HR, date=2020-10-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=EC-Earth3-Veg, date=2014-07-10
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=EC-Earth3-Veg, date=2045-05-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=EC-Earth3-Veg, date=2096-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=EC-Earth3-Veg, date=2099-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=EC-Earth3-Veg, date=2020-10-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=NorESM2-MM, date=2014-07-10
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=NorESM2-MM, date=2045-05-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=NorESM2-MM, date=2096-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=NorESM2-MM, date=2099-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=dOTC, model=NorESM2-MM, date=2020-10-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=MPI-ESM1-2-HR, date=2014-07-10
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=MPI-ESM1-2-HR, date=2045-05-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=MPI-ESM1-2-HR, date=2096-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=MPI-ESM1-2-HR, date=2099-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=MPI-ESM1-2-HR, date=2020-10-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=EC-Earth3-Veg, date=2014-07-10
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=EC-Earth3-Veg, date=2045-05-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=EC-Earth3-Veg, date=2096-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=EC-Earth3-Veg, date=2099-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=EC-Earth3-Veg, date=2020-10-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=NorESM2-MM, date=2014-07-10
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=NorESM2-MM, date=2045-05-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=NorESM2-MM, date=2096-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=NorESM2-MM, date=2099-01-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Running method=CDFT-t, model=NorESM2-MM, date=2020-10-15
+python: can't open file '/var/spool/slurm/d/job63580016/plot_frame_model_run.py': [Errno 2] No such file or directory
+Done: /var/spool/slurm/d/job63580016/Figures/multi_model_runs

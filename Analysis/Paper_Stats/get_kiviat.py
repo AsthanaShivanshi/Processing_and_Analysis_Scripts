@@ -21,7 +21,7 @@ TEMP_METRICS = (
     ("PITD", "PITD ↓"),
 )
 
-PRECIP_METRICS = TEMP_METRICS + (("FSS", "FSS ↑"),)
+PRECIP_METRICS = TEMP_METRICS + (("FSS", "1-FSS ↓"),)
 
 MODEL_STYLE_OVERRIDES = {
     "DDIM": {"color": "black", "linewidth": 3.2},
@@ -72,7 +72,7 @@ def _extract_variable_data(
     for metric_name, _ in metric_specs:
         mean = np.array([_metric_value(row, metric_name) for _, row in subset.iterrows()], dtype=float)
 
-        if metric_name == "SSIM":
+        if metric_name in ("SSIM", "FSS"):
             mean = 1.0 - mean
 
         mean_values.append(mean)

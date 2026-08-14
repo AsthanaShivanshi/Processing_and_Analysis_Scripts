@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=Cobweb_Metrics
-#SBATCH --output=logs/Cobweb_Metrics_job_%j.log
-#SBATCH --error=logs/Cobweb_Metrics_job_%j.log
+#SBATCH --job-name=rapsc_SR
+#SBATCH --output=logs/rapsd_SR_job_%j.log
+#SBATCH --error=logs/rapsd_job_%j.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --time=8:00:00
@@ -28,9 +28,9 @@ which python
 python -c "import wandb; print(wandb.__version__)"
 
 
-python Analysis/Paper_Stats/cobweb_metrics.py
+#python Analysis/Paper_Stats/cobweb_metrics.py
 
 
 #python Analysis/Paper_Stats/sal.py
 
-#python Analysis/Paper_Stats/rapsd.py
+python Analysis/Paper_Stats/rapsd.py

@@ -2,16 +2,16 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY_SCRIPT="${SCRIPT_DIR}/plot_frame_model_run.py"
 
-VAR="tas"                      # pr or tas
+VAR="pr"                      # pr or tas
 SCENARIO="ssp370"
 MEMBER="r1i1p1f1"
 RCM="RegCM5-0"
 VERSION="v1-r1"
 
 METHODS=(
-  #"EQM_C"
+  "EQM_C"
   "dOTC"
-  #"CDFT-t"
+  "CDFT-t"
 )
 
 MODELS=(
@@ -21,11 +21,10 @@ MODELS=(
 )
 
 DATES=(
-  "2014-07-10"
   "2045-05-15"
   "2096-01-15"
   "2099-01-15"
-  "2020-10-15"63+
+  "2020-10-15"
 )
 
 OUTDIR="${SCRIPT_DIR}/Figures/multi_model_runs"
