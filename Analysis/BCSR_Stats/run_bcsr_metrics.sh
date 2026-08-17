@@ -1,11 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=RAPSD
-#SBATCH --output=logs/RAPSD_%j.log
-#SBATCH --error=logs/RAPSD_%j.log
+#SBATCH --job-name=Correlogram
+#SBATCH --output=logs/Correlogram_%j.log
+#SBATCH --error=logs/Correlogram_%j.log
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
-#SBATCH --mem=128G
-#SBATCH --time=10:00:00
+#SBATCH --mem=256G
+#SBATCH --time=01-00:00:00
 #SBATCH --partition=cpu
 
 
@@ -54,19 +54,20 @@ cd ../Processing_and_Analysis_Scripts
 #---------------------------------#
 
 
-MODE="${MODE:-rapsd}"
+#MODE="${MODE:-rapsd}"
 
-python Analysis/BCSR_Stats/metrics_table_4.py \
-  --mode "$MODE" \
-  --eval_start 2015 --eval_end 2023 \
-  --verbose_loader
+####python Analysis/BCSR_Stats/metrics_table_4.py \
+  ###--mode "$MODE" \
+  ##--eval_start 2015 --eval_end 2023 \
+  #--verbose_loader
 
 
 #------#
 
-#python Analysis/BCSR_Stats/Correlogram.py
 
+python Analysis/BCSR_Stats/Correlogram.py
 
+#------#
 
 
 

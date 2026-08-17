@@ -14,7 +14,6 @@ sns.set_style("whitegrid")
 
 TEMP_METRICS = (
     ("CRPS", "CRPS ↓"),
-    ("RALSD", "RALSD ↓"),
     ("SSIM", "1-SSIM ↓"),
     ("RMSE", "RMSE ↓"),
     ("MAE", "MAE ↓"),

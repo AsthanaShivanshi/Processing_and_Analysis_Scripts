@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import xarray as xr
-from numpy.fft import fft2, fftshift
 from properscoring import crps_ensemble
 from scipy.ndimage import uniform_filter
 from skimage.metrics import structural_similarity
@@ -32,8 +31,9 @@ GRID_SPACING_KM = 1.0
 NYQUIST_KM = 2.0 * GRID_SPACING_KM
 PRECIP_MIN_MEAN = 0.05  # mm/day (Harris et al. 0.002 mm/hr * 24)
 
-# FSS settings for paired precipitation fields
-FSS_THRESHOLD_MM_DAY = 1.0 #mm/day threshold. 
+# FSS settings
+
+FSS_THRESHOLD_MM_DAY = 1.0  
 FSS_WINDOW_KM = 3.0
 FSS_WINDOW_PX = max(1, int(round(FSS_WINDOW_KM / GRID_SPACING_KM)))
 
@@ -84,99 +84,6 @@ def _time_indices(da: xr.DataArray, valid_times: np.ndarray | None = None) -> li
     return list(range(da.sizes.get("time", 0)))
 
 
-# ── RAPSD ─────────────────────────────────────────────────────────────────────
-def _compute_rapsd_raw(img: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    img = img.astype(np.float64)
-    valid = np.isfinite(img)
-    if valid.sum() < 4:
-        return np.array([]), np.array([])
-
-    field_mean = img[valid].mean()
-    img = np.where(valid, img, field_mean)
-    img = img - img.mean()
-
-    if np.std(img) < 1e-6:
-        return np.array([]), np.array([])
-
-    h, w = img.shape
-    power = (np.abs(fftshift(fft2(img))) ** 2) / (h * w)
-
-    cy, cx = h // 2, w // 2
-    yy, xx = np.ogrid[:h, :w]
-    radius = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
-    max_radius = min(h, w) // 2
-
-    radius_int = np.round(radius).astype(int)
-    rapsd = np.zeros(max_radius, dtype=float)
-    for r in range(max_radius):
-        annulus = radius_int == r
-        if annulus.sum() > 0:
-            rapsd[r] = np.mean(power[annulus])
-
-    frequencies = np.arange(max_radius, dtype=float) / max_radius * 0.5
-    return rapsd, frequencies
-
-
-def _ralsd_2d(
-    obs2d: np.ndarray,
-    pred2d: np.ndarray,
-    mask2d: xr.DataArray | None = None,
-    is_precip: bool = False,
-) -> float:
-    valid = np.isfinite(obs2d) & np.isfinite(pred2d)
-    if mask2d is not None:
-        valid &= _spatial_mask(mask2d, obs2d.shape)
-
-    if not np.any(valid):
-        return np.nan
-
-    if is_precip:
-        obs_mean = np.nanmean(obs2d[valid])
-        if not np.isfinite(obs_mean) or obs_mean < PRECIP_MIN_MEAN:
-            return np.nan
-
-    obs = np.where(valid, obs2d, np.nan)
-    pred = np.where(valid, pred2d, np.nan)
-
-    robs, freqs = _compute_rapsd_raw(obs)
-    rpred, _ = _compute_rapsd_raw(pred)
-
-    if robs.size == 0 or rpred.size == 0 or freqs.size == 0:
-        return np.nan
-
-    n = min(robs.size, rpred.size, freqs.size)
-    robs = robs[:n]
-    rpred = rpred[:n]
-    freqs = freqs[:n]
-
-    wavelength_km = np.where(freqs > 0, GRID_SPACING_KM / freqs, np.inf)
-    valid_bins = np.isfinite(robs) & np.isfinite(rpred) & (wavelength_km >= NYQUIST_KM) & (freqs > 0)
-    if not np.any(valid_bins):
-        return np.nan
-
-    d = 10.0 * np.log10(np.maximum(rpred[valid_bins], EPS) / np.maximum(robs[valid_bins], EPS))
-    return float(np.sqrt(np.mean(d**2)))
-
-
-def _series_ralsd(obs: xr.DataArray, pred: xr.DataArray, mask2d=None, is_precip: bool = False) -> float:
-    obs, pred = xr.align(obs, pred, join="inner")
-    sd = _sample_dim(pred)
-    vals: list[float] = []
-
-    valid_times = _get_valid_precip_times(obs) if is_precip else None
-    for t in _time_indices(obs, valid_times):
-        obs_t = obs if t is None else obs.isel(time=t)
-        pred_t = pred if t is None else pred.isel(time=t)
-
-        if sd is not None and sd in pred_t.dims:
-            for s in range(pred_t.sizes[sd]):
-                vals.append(_ralsd_2d(obs_t.values, pred_t.isel({sd: s}).values, mask2d, is_precip=is_precip))
-        else:
-            vals.append(_ralsd_2d(obs_t.values, pred_t.values, mask2d, is_precip=is_precip))
-
-    return _mean(vals)
-
-
 def _get_valid_precip_times(obs: xr.DataArray) -> np.ndarray:
     nt = obs.sizes.get("time", 1)
     valid = []
@@ -188,7 +95,9 @@ def _get_valid_precip_times(obs: xr.DataArray) -> np.ndarray:
     return np.array(valid, dtype=int)
 
 
-# ── FSS ───────────────────────────────────────────────────────────────────────
+# FSS 
+
+
 def _fss_fallback(
     obs2d: np.ndarray,
     pred2d: np.ndarray,
@@ -278,7 +187,8 @@ def _series_fss(obs: xr.DataArray, pred: xr.DataArray, mask2d=None) -> float:
     return _mean(vals)
 
 
-# ── Other metrics ────────────────────────────────────────────────────────────
+
+
 def _rmse_2d(obs2d: np.ndarray, pred2d: np.ndarray, mask2d: xr.DataArray | None = None) -> float:
     valid = np.isfinite(obs2d) & np.isfinite(pred2d)
     if mask2d is not None:
@@ -398,7 +308,6 @@ def _row(
         "model": model,
         "variable": variable,
         "CRPS": _series_crps(obs, pred, mask2d),
-        "RALSD": _series_ralsd(obs, pred, mask2d, is_precip=is_precip),
         "SSIM": _series_framewise(obs, pred, _ssim_2d, mask2d),
         "RMSE": _series_framewise(obs, pred, _rmse_2d, mask2d),
         "MAE": _series_framewise(obs, pred, _mae_2d, mask2d),
@@ -518,7 +427,6 @@ def main() -> None:
         "model",
         "variable",
         "CRPS",
-        "RALSD",
         "FSS",
         "SSIM",
         "RMSE",

@@ -213,6 +213,7 @@ def _open_baseline_var(
     return da
 
 
+
 def load_all_pooled_masked(
     ens_root: str | Path,
     mask_hr_file: str | Path,
@@ -221,10 +222,19 @@ def load_all_pooled_masked(
     eval_start: int = 2015,
     eval_end: int = 2023,
     variables: List[str] | None = None,
+    labels: List[str] | None = None,
     verbose: bool = False,
 ) -> LoadedPooled:
     ens_root = Path(ens_root)
     variables = variables or ["pr", "tas"]
+
+    if labels is not None:
+        unknown = set(labels) - set(ROW_ORDER)
+        if unknown:
+            raise ValueError(f"Unknown baseline labels: {sorted(unknown)}")
+        selected_baselines = [b for b in ROW_ORDER if b in labels]
+    else:
+        selected_baselines = ROW_ORDER
 
     hr_mask = _load_mask(mask_hr_file, mask_hr_var)
     templates = _build_case_templates()
@@ -233,17 +243,19 @@ def load_all_pooled_masked(
     missing = {v: [] for v in variables}
 
     for var in variables:
-        for baseline in ROW_ORDER:
+        for baseline in selected_baselines:
             rels = templates[baseline]
+
             files = _select_files_for_window(
                 _expand_relpaths(ens_root, rels, var),
                 eval_start=eval_start,
                 eval_end=eval_end,
             )
+
             if verbose:
                 print(f"[info] {var} | {baseline} | files={len(files)}")
-                for f in files:
-                    print(f"       - {f}")
+                for file in files:
+                    print(f"       - {file}")
 
             da = _open_baseline_var(
                 ens_root=ens_root,
@@ -252,18 +264,24 @@ def load_all_pooled_masked(
                 eval_start=eval_start,
                 eval_end=eval_end,
             )
+
             if da is None:
                 missing[var].append(baseline)
                 continue
 
             da = _subset_years(da, eval_start, eval_end)
+
             if "time" in da.coords and da.sizes.get("time", 0) == 0:
                 missing[var].append(baseline)
                 continue
 
             data[var][baseline] = _apply_mask(da, hr_mask)
 
-    return LoadedPooled(data=data, hr_mask=hr_mask, missing=missing)
+    return LoadedPooled(
+        data=data,
+        hr_mask=hr_mask,
+        missing=missing,
+    )
 
 
 def load_all_pooled_masked_defaults(
