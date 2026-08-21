@@ -73,8 +73,9 @@ for eta, ds_path in zip(etas, downscaled_paths):
     fig, ax = plt.subplots(figsize=(10, 5))
     ax.bar(bin_centers - width/2, ref_hist, width=width, label="Reference (2011–2023)",
            color='#4575b4', alpha=0.85, edgecolor='black')
-    ax.bar(bin_centers + width/2, pit_hist, width=width, label=f"Diffusion (η={eta})",
+    ax.bar(bin_centers + width/2, pit_hist, width=width, label="DDIM pooled samples", 
            color=VARIABLE_COLORS["temp"], alpha=0.85, edgecolor='black')
+
     ax.plot([0, 1], [1, 1], color='gray', linestyle='-', linewidth=2)
     ax.set_xlabel("PIT")
     ax.set_ylabel("Density")

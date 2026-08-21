@@ -21,6 +21,15 @@ import config
 from load_pooled import load_all_pooled_masked
 
 
+#Conceptual source : https://github.com/LouiseIII/extreme-precip-sr 
+
+#Many samples per location. : mmeber wise correlogram,  then averaging . 
+# one normalized field per location
+# pooling
+# One correlogram per timestep. 
+
+
+
 MIN_TIME_SAMPLES = 2
 MIN_SPATIAL_POINTS = 3
 
@@ -32,7 +41,7 @@ REPLICATE_DIMS = {
 }
 
 PAIR_CHUNK_SIZE = 1_000_000
-REPLICATE_CHUNK_SIZE = 500
+REPLICATE_CHUNK_SIZE = 1000
 
 
 @dataclass
@@ -62,6 +71,10 @@ def _spatial_dims(da: xr.DataArray) -> tuple[str, ...]:
 
 def _replicate_dims(da: xr.DataArray) -> list[str]:
     return [d for d in da.dims if d.lower() in REPLICATE_DIMS]
+
+
+def _member_dims(da: xr.DataArray) -> list[str]:
+    return [d for d in da.dims if d.lower() in {"member", "sample", "samples"}]
 
 
 def _coord_name(da: xr.DataArray, names: Sequence[str]) -> str | None:
@@ -120,13 +133,18 @@ def _standardize_over_time(da: xr.DataArray) -> xr.DataArray:
     if "time" not in da.dims:
         return da
 
+
+
+#Averaging over replicates., 
+    # Multiple samples belong to the same timestep.
+
     valid_time = da.count("time") >= MIN_TIME_SAMPLES
     da = da.where(valid_time)
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         mean = da.mean("time", skipna=True)
-        std = da.std("time", skipna=True)
+        std = da.std("time", skipna=True, ddof=1)
 
     std = xr.where((std == 0) | ~np.isfinite(std), np.nan, std)
     return (da - mean) / std
@@ -142,13 +160,26 @@ def _prepare_payload(label: str, da: xr.DataArray) -> DatasetPayload:
     point_work = work.stack(point=spatial_dims).reset_index("point")
 
     kind, c1, c2 = _extract_coords(point_work)
-    replicate_dims = _replicate_dims(point_work)
 
-    if replicate_dims:
-        stacked = point_work.stack(replicate=replicate_dims).transpose("replicate", "point")
-        values = np.asarray(stacked.values, dtype=float)
+    # Correlogram per member inside each timestep, then average over time.
+
+
+    if "time" in point_work.dims:
+        member_dims = _member_dims(point_work)
+        if member_dims:
+            stacked = point_work.stack(member=member_dims).transpose("time", "member", "point")
+            values = np.asarray(stacked.values, dtype=float)
+        else:
+            values = np.asarray(point_work.transpose("time", "point").values, dtype=float)[:, None, :]
     else:
-        values = np.asarray(point_work.values, dtype=float)[None, :]
+        member_dims = _member_dims(point_work)
+        if member_dims:
+            stacked = point_work.stack(member=member_dims).transpose("member", "point")
+            values = np.asarray(stacked.values, dtype=float)[None, :, :]
+        else:
+            values = np.asarray(point_work.values, dtype=float)[None, None, :]
+
+
 
     return DatasetPayload(
         label=label,
@@ -292,35 +323,49 @@ def compute_correlogram_payload(
         flush=True,
     )
 
-    correlation_sum = np.zeros(nbins, dtype=float)
-    correlation_count = np.zeros(nbins, dtype=int)
+    # Final average: first over members inside each timestep, then over time.
 
-    replicate_count = payload.values.shape[0]
+    correlation_sum = np.zeros(nbins, dtype=float)
+    time_count = np.zeros(nbins, dtype=int)
+
+    ntime, nmember, _ = payload.values.shape
 
     for start in tqdm(
-        range(0, replicate_count, replicate_chunk_size),
+        range(0, ntime, replicate_chunk_size),
         desc=payload.label,
         leave=False,
     ):
-        end = min(start + replicate_chunk_size, replicate_count)
+        end = min(start + replicate_chunk_size, ntime)
         values_chunk = payload.values[start:end]
 
-        for values in values_chunk:
-            correlation = _bin_stats_precomputed(
-                values,
-                pair_i,
-                pair_j,
-                bin_pair_idx,
-                nbins,
-            )
+        for timestep_values in values_chunk:
+            member_sum = np.zeros(nbins, dtype=float)
+            member_count = np.zeros(nbins, dtype=int)
 
-            good = np.isfinite(correlation)
-            correlation_sum[good] += correlation[good]
-            correlation_count[good] += 1
+            for member_values in timestep_values:
+                correlation = _bin_stats_precomputed(
+                    member_values,
+                    pair_i,
+                    pair_j,
+                    bin_pair_idx,
+                    nbins,
+                )
+
+                good = np.isfinite(correlation)
+                member_sum[good] += correlation[good]
+                member_count[good] += 1
+
+            timestep_correlation = np.full(nbins, np.nan, dtype=float)
+            good_member = member_count > 0
+            timestep_correlation[good_member] = member_sum[good_member] / member_count[good_member]
+
+            good_time = np.isfinite(timestep_correlation)
+            correlation_sum[good_time] += timestep_correlation[good_time]
+            time_count[good_time] += 1
 
     result_correlation = np.full(nbins, np.nan, dtype=float)
-    good = correlation_count > 0
-    result_correlation[good] = correlation_sum[good] / correlation_count[good]
+    good = time_count > 0
+    result_correlation[good] = correlation_sum[good] / time_count[good]
 
     bin_centers = 0.5 * (bin_edges_km[:-1] + bin_edges_km[1:])
 
@@ -505,6 +550,7 @@ def main() -> None:
         default=str(dataset_root / "Swiss_Mask_HR.nc"),
     )
     parser.add_argument("--mask_hr_var", default="TabsD")
+
     parser.add_argument("--eval_start", type=int, default=2015)
     parser.add_argument("--eval_end", type=int, default=2023)
     parser.add_argument(
@@ -524,7 +570,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    bins = np.arange(0, 12.5 + 0.5, 0.5, dtype=float)
+    bins = np.arange(0.0, 12.0, 1.0, dtype=float)
 
 
 
